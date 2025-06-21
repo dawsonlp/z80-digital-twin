@@ -87,19 +87,16 @@ This demonstrates the emulator running actual Z80 machine code with complete vis
 ### Prerequisites
 
 - **C++23 Compiler**: GCC 13+, Clang 16+, or MSVC 2022+
-- **CMake**: Version 3.20 or higher
 - **No external dependencies**: Core library is self-contained
+- **CMake**: Optional, makes building easier but not required
 
-### Build Targets
+### Tested Platforms
 
-| Target | Description |
-|--------|-------------|
-| `z80_cpu` | Core CPU emulation library |
-| `gcd_example` | GCD calculator with command line interface |
-| `cpu_test` | Comprehensive CPU functionality tests |
+- **Linux 6.14.0-15-generic (Ubuntu)** with GCC 14.2.0 - tested fine ✅
 
 ### Build Commands
 
+**Option 1: Using CMake (Recommended)**
 ```bash
 # Standard build
 make
@@ -108,6 +105,23 @@ make
 cmake -DCMAKE_BUILD_TYPE=Debug .
 make
 ```
+
+**Option 2: Direct g++ compilation**
+```bash
+# Build GCD example
+g++ -std=c++23 -O2 -Wall -Wextra src/z80_cpu.cpp examples/gcd_example.cpp -o gcd_example
+
+# Build CPU tests
+g++ -std=c++23 -O2 -Wall -Wextra -Isrc src/z80_cpu.cpp tests/cpu_test.cpp -o cpu_test
+```
+
+### Build Targets
+
+| Target | Description |
+|--------|-------------|
+| `z80_cpu` | Core CPU emulation library |
+| `gcd_example` | GCD calculator with command line interface |
+| `cpu_test` | Comprehensive CPU functionality tests |
 
 ## 🧪 Testing
 

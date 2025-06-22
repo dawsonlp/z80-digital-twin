@@ -101,7 +101,7 @@ This demonstrates the emulator running actual Z80 machine code with complete vis
 ### Tested Platforms
 
 - **Linux 6.14.0-15-generic (Ubuntu)** with GCC 14.2.0 - tested fine ✅
->>>>>>> 4fe549d86798caf770920a317efa5c03da6306d5
+
 **Current Testing Status:**
 - ✅ **Fully tested**: macOS with Apple Silicon processors
 - ✅ **Fully tested**: Ubuntu Linux on AMD64 architecture  
@@ -112,8 +112,7 @@ The codebase uses standard C++23 and CMake, so it should be highly portable acro
 ### Tested Platforms
 
 - **Linux 6.14.0-15-generic (Ubuntu)** with GCC 14.2.0 - tested fine ✅
->>>>>>> 4fe549d86798caf770920a317efa5c03da6306d5
-
+- **macOS 15.5 (Sequioa)** with Apple Silicon (M4) - tested fine ✅
 ### Build Commands
 
 **Option 1: Using CMake (Recommended)**

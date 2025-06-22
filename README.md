@@ -160,56 +160,23 @@ The project includes comprehensive testing:
 ./performance_benchmark --quick    # Faster testing during development
 ```
 
-### Performance Benchmark Suite
+### Performance Testing
 
-The included performance benchmark provides professional-grade performance analysis:
+The project includes comprehensive performance testing through the stress test framework:
 
 ```bash
-$ ./performance_benchmark
-Z80 Digital Twin - Performance Benchmark Suite
-
-Running full benchmark mode (100 iterations per test)
-
-Executing benchmark tests...
-----------------------------------------
-Running: Fibonacci Calculation (100 iterations).......... ✅
-Running: Memory Access Pattern (100 iterations).......... ✅
-Running: Sorting Algorithm (100 iterations).......... ✅
-Running: Prime Number Search (100 iterations).......... ✅
-
-Z80 DIGITAL TWIN - PERFORMANCE BENCHMARK RESULTS
-
-Test Name                 Time (ms)      Cycles  MHz Equiv  Iterations   Status
---------------------------------------------------------------------------------
-Fibonacci Calculation          45.23      234567       5.19         100     PASS
-Memory Access Pattern          67.89      456789       6.73         100     PASS
-Sorting Algorithm              32.15      123456       3.84         100     PASS
-Prime Number Search            78.45      567890       7.24         100     PASS
---------------------------------------------------------------------------------
-SUMMARY                       223.72     1382702       6.18           4    TOTAL
-
-PERFORMANCE ANALYSIS
-Average Performance: 5.75 MHz equivalent
-Performance Range:   3.84 - 7.24 MHz
-Standard Deviation:  1.42 MHz
-Consistency:         Good
-
-REAL Z80 COMPARISON
--------------------------
-Original Z80 (1976):     4.0 MHz
-Z80A (1978):             6.0 MHz
-Z80B (1982):             8.0 MHz
-Digital Twin Average:    5.75 MHz
-
-✅ Performance exceeds original Z80 specifications
+# Run stress tests with different scales
+./gcd_stress_test 1000    # Medium stress test
+./gcd_stress_test 10000   # Large stress test  
+./gcd_stress_test 65535   # Maximum stress test
 ```
 
-**Benchmark Features:**
-- **Multiple Test Programs**: Fibonacci, memory access, sorting, and prime calculations
-- **Statistical Analysis**: Performance consistency and comparison metrics
-- **Real Z80 Comparison**: Direct comparison with historical Z80 processors
-- **Professional Output**: Clean, tabular results with detailed analysis
-- **Quick Mode**: `--quick` flag for faster development testing
+**Stress Test Features:**
+- **Scalable Testing**: From small (100 operations) to maximum (65,535 operations)
+- **Real-time Performance**: Measures actual Z80 cycle execution
+- **Hardware Comparison**: Direct comparison with historical Z80 processors
+- **Linear Scaling**: Validates performance consistency across all scales
+- **Authentic Computation**: No optimization shortcuts, pure Z80 emulation
 
 ## 📈 Performance
 

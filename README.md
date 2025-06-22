@@ -87,35 +87,36 @@ This demonstrates the emulator running actual Z80 machine code with complete vis
 ### Prerequisites
 
 - **C++23 Compiler**: GCC 13+, Clang 16+, or MSVC 2022+
-- **CMake**: Version 3.20 or higher
 - **No external dependencies**: Core library is self-contained
+- **CMake**: Optional, makes building easier but not required
 
 ### Platform Compatibility
 
 | Platform | Architecture | Status | Notes |
 |----------|-------------|--------|-------|
 | **macOS** | Apple Silicon (M1/M2/M3) | ✅ **Tested** | Primary development platform |
-| **Linux** | x86_64 (AMD64) | 🔄 **Expected** | Should work seamlessly, testing in progress |
+| **Linux** | x86_64 (AMD64) | ✅ **Tested** | Ubuntu 6.14.0-15-generic with GCC 14.2.0 |
 | **Windows** | x86_64 | ⚠️ **Untested** | May require minor CMake adjustments |
 
+### Tested Platforms
+
+- **Linux 6.14.0-15-generic (Ubuntu)** with GCC 14.2.0 - tested fine ✅
+>>>>>>> 4fe549d86798caf770920a317efa5c03da6306d5
 **Current Testing Status:**
 - ✅ **Fully tested**: macOS with Apple Silicon processors
-- 🔄 **Planned testing**: Ubuntu Linux on AMD64 architecture
+- ✅ **Fully tested**: Ubuntu Linux on AMD64 architecture  
 - ⚠️ **Community needed**: Windows compatibility (no test environment available)
 
 The codebase uses standard C++23 and CMake, so it should be highly portable across platforms. Any platform-specific issues will be addressed as they're discovered.
+=======
+### Tested Platforms
 
-### Build Targets
-
-| Target | Description |
-|--------|-------------|
-| `z80_cpu` | Core CPU emulation library |
-| `gcd_example` | GCD calculator with command line interface |
-| `cpu_test` | Comprehensive CPU functionality tests |
-| `performance_benchmark` | Professional performance benchmark suite |
+- **Linux 6.14.0-15-generic (Ubuntu)** with GCC 14.2.0 - tested fine ✅
+>>>>>>> 4fe549d86798caf770920a317efa5c03da6306d5
 
 ### Build Commands
 
+**Option 1: Using CMake (Recommended)**
 ```bash
 # Standard build
 make
@@ -124,6 +125,23 @@ make
 cmake -DCMAKE_BUILD_TYPE=Debug .
 make
 ```
+
+**Option 2: Direct g++ compilation**
+```bash
+# Build GCD example
+g++ -std=c++23 -O2 -Wall -Wextra src/z80_cpu.cpp examples/gcd_example.cpp -o gcd_example
+
+# Build CPU tests
+g++ -std=c++23 -O2 -Wall -Wextra -Isrc src/z80_cpu.cpp tests/cpu_test.cpp -o cpu_test
+```
+
+### Build Targets
+
+| Target | Description |
+|--------|-------------|
+| `z80_cpu` | Core CPU emulation library |
+| `gcd_example` | GCD calculator with command line interface |
+| `cpu_test` | Comprehensive CPU functionality tests |
 
 ## 🧪 Testing
 

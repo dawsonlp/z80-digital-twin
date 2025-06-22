@@ -113,14 +113,11 @@ public:
         cpu.HL() = a;  // First number in HL
         cpu.DE() = b;  // Second number in DE
         
-        // Execute the program with safety limits
-        const int MAX_CYCLES = 100000;  // Safety limit to prevent infinite loops
-        const int MAX_ITERATIONS = 10000;  // Track algorithm iterations
-        
+        // Execute the program - let it run to natural completion
         uint64_t start_cycles = cpu.GetCycleCount();
         uint32_t iterations = 0;
         
-        while (iterations < MAX_ITERATIONS) {
+        while (true) {
             uint16_t pc = cpu.PC();
             
             // Check if PC is within program bounds
@@ -144,17 +141,10 @@ public:
             // Execute one instruction
             cpu.Step();
             iterations++;
-            
-            // Safety check for cycle count
-            if (cpu.GetCycleCount() - start_cycles > MAX_CYCLES) {
-                result.error_message = "Program exceeded maximum cycle limit (" + 
-                                     std::to_string(MAX_CYCLES) + " cycles)";
-                return result;
-            }
         }
         
-        result.error_message = "Program exceeded maximum iteration limit (" + 
-                             std::to_string(MAX_ITERATIONS) + " iterations)";
+        // This should never be reached since HALT will terminate the loop
+        result.error_message = "Unexpected end of execution loop";
         return result;
     }
     

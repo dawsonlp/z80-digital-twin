@@ -62,20 +62,8 @@ void CPU::Reset() {
 // =============================================================================
 
 void CPU::RunUntilCycle(uint64_t target_cycle) {
-    while (t_cycle < target_cycle) {
-        if (_halted) {
-            // Fast-forward through HALT state efficiently
-            uint64_t remaining_cycles = target_cycle - t_cycle;
-            
-            // TODO: Check for interrupts periodically when interrupt system is implemented
-            // For now, just fast-forward through all remaining cycles
-            t_cycle = target_cycle;
-            
-            // Simulate memory refresh during HALT
-            R() += static_cast<uint8_t>(remaining_cycles / 4);
-        } else {
-            Step();
-        }
+    while (t_cycle < target_cycle && !_halted) {
+        Step();
     }
 }
 

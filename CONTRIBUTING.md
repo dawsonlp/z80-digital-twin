@@ -7,7 +7,7 @@ Thank you for your interest in contributing to the Z80 Digital Twin project! Thi
 This project demonstrates:
 - **Digital Twin Principles**: Accurate hardware state replication and monitoring
 - **Modern C++23**: Best practices and performance optimization
-- **Professional Architecture**: Clean, maintainable code suitable for production
+- **Good Architecture**: Clean, maintainable code suitable for production
 - **Educational Value**: Clear examples of CPU emulation and algorithm implementation
 
 ## 🚀 Getting Started
@@ -22,7 +22,7 @@ This project demonstrates:
 
 1. **Fork the Repository**
    ```bash
-   git clone https://github.com/[your-username]/z80-digital-twin.git
+   git clone https://github.com/dawsonlp/z80-digital-twin.git
    cd z80-digital-twin
    ```
 

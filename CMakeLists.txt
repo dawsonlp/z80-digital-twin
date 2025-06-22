@@ -71,9 +71,16 @@ target_compile_features(z80_cpu PUBLIC cxx_std_23)
 add_executable(cpu_test tests/cpu_test.cpp)
 target_link_libraries(cpu_test PRIVATE z80_cpu)
 
+# Performance benchmark
+add_executable(performance_benchmark tests/performance_benchmark.cpp)
+target_link_libraries(performance_benchmark PRIVATE z80_cpu)
+
 # Example programs
 add_executable(gcd_example examples/gcd_example.cpp)
 target_link_libraries(gcd_example PRIVATE z80_cpu)
+
+add_executable(gcd_stress_test examples/gcd_stress_test.cpp)
+target_link_libraries(gcd_stress_test PRIVATE z80_cpu)
 
 # =============================================================================
 # Installation
@@ -99,5 +106,8 @@ message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 message(STATUS "")
 message(STATUS "Available targets:")
-message(STATUS "  z80_cpu        - Core Z80 CPU emulation library")
+message(STATUS "  z80_cpu               - Core Z80 CPU emulation library")
+message(STATUS "  cpu_test              - Comprehensive CPU functionality tests")
+message(STATUS "  performance_benchmark - Performance benchmark suite")
+message(STATUS "  gcd_example           - GCD calculator demonstration")
 message(STATUS "")

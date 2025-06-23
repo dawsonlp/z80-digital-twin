@@ -44,7 +44,7 @@ public:
     
     TestResult execute_benchmark(const std::string& test_name,
                                const std::vector<uint8_t>& program,
-                               const BenchmarkConfig& config = {}) {
+                               const BenchmarkConfig& config) {
         TestResult result = {};
         result.test_name = test_name;
         result.success = false;

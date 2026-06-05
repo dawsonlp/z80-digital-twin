@@ -71,9 +71,11 @@ add_library(z80_debugger_core STATIC
     debugger/exec/debug_session.h
     debugger/disasm/disassembler.cpp
     debugger/disasm/disassembler.h
+    debugger/symbols/symbol_table.cpp
+    debugger/symbols/symbol_table.h
 )
 
-target_include_directories(z80_debugger_core PUBLIC debugger/exec debugger/disasm)
+target_include_directories(z80_debugger_core PUBLIC debugger/exec debugger/disasm debugger/symbols)
 target_link_libraries(z80_debugger_core PUBLIC z80_cpu)
 target_compile_features(z80_debugger_core PUBLIC cxx_std_23)
 
@@ -101,6 +103,10 @@ target_link_libraries(debug_session_test PRIVATE z80_debugger_core)
 # Disassembler (all prefixes, length + mnemonic + operands, symbol resolution)
 add_executable(disassembler_test tests/disassembler_test.cpp)
 target_link_libraries(disassembler_test PRIVATE z80_debugger_core)
+
+# Symbol table (JSON .sym load/save, resolver, forgiving parse)
+add_executable(symbol_table_test tests/symbol_table_test.cpp)
+target_link_libraries(symbol_table_test PRIVATE z80_debugger_core)
 
 # Performance benchmark
 add_executable(performance_benchmark tests/performance_benchmark.cpp)

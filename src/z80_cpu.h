@@ -105,7 +105,13 @@ public:
     uint16_t& IY() { return _IY.r16; }
     uint16_t& IR() { return _IR.r16; }
     uint16_t& WZ() { return _WZ.r16; }
-    
+
+    // Alternate register set (read-only view for inspection/debugging).
+    uint16_t AltAF() const { return _AF1.r16; }
+    uint16_t AltBC() const { return _BC1.r16; }
+    uint16_t AltDE() const { return _DE1.r16; }
+    uint16_t AltHL() const { return _HL1.r16; }
+
     // -------------------------------------------------------------------------
     // 8-bit Register Accessors
     // -------------------------------------------------------------------------

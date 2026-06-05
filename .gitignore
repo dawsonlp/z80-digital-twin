@@ -104,3 +104,6 @@ docs/rtf/
 *.bak
 *.backup
 *~
+
+# ImGui layout file (written at runtime)
+imgui.ini

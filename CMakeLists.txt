@@ -120,6 +120,60 @@ add_executable(gcd_stress_test examples/gcd_stress_test.cpp)
 target_link_libraries(gcd_stress_test PRIVATE z80_cpu)
 
 # =============================================================================
+# Debugger UI (ImGui) — optional, pulls GLFW + Dear ImGui via FetchContent
+# =============================================================================
+# Disable with -DZ80_BUILD_UI=OFF for offline / headless builds where the
+# debugger core and tests are all that's needed.
+option(Z80_BUILD_UI "Build the ImGui debugger UI (requires network on first configure)" ON)
+
+if(Z80_BUILD_UI)
+    include(FetchContent)
+
+    # --- GLFW (windowing) ---------------------------------------------------
+    FetchContent_Declare(glfw
+        GIT_REPOSITORY https://github.com/glfw/glfw.git
+        GIT_TAG        3.4
+        GIT_SHALLOW    TRUE)
+    set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(GLFW_INSTALL        OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(glfw)
+
+    # --- Dear ImGui (no CMakeLists upstream; compile the sources we need) ----
+    FetchContent_Declare(imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG        v1.90.4
+        GIT_SHALLOW    TRUE)
+    FetchContent_MakeAvailable(imgui)
+
+    find_package(OpenGL REQUIRED)
+
+    add_library(imgui STATIC
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
+    # SYSTEM so consumers don't get warnings from ImGui's own headers.
+    target_include_directories(imgui SYSTEM PUBLIC
+        ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+    target_link_libraries(imgui PUBLIC glfw OpenGL::GL)
+    # Don't lint vendored third-party sources.
+    target_compile_options(imgui PRIVATE -w)
+
+    # --- The debugger application -------------------------------------------
+    add_executable(z80_debugger
+        debugger/main.cpp
+        debugger/ui/debugger_app.cpp
+        debugger/ui/debugger_app.h)
+    target_include_directories(z80_debugger PRIVATE debugger/ui)
+    target_link_libraries(z80_debugger PRIVATE z80_debugger_core imgui)
+    target_compile_features(z80_debugger PRIVATE cxx_std_23)
+endif()
+
+# =============================================================================
 # Installation
 # =============================================================================
 

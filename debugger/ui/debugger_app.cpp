@@ -6,6 +6,12 @@
 
 #include "debugger_app.h"
 
+#include "panels/control_panel.h"
+#include "panels/registers_panel.h"
+#include "panels/disassembly_panel.h"
+#include "panels/memory_panel.h"
+#include "panels/io_panel.h"
+
 #define GL_SILENCE_DEPRECATION
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -13,8 +19,6 @@
 #include <GLFW/glfw3.h>
 
 #include <cstdint>
-#include <cstdio>
-#include <cstring>
 #include <fstream>
 #include <format>
 #include <iostream>
@@ -36,39 +40,22 @@ const char* reason_text(StopReason r) {
     return "?";
 }
 
-const char* state_text(RunState s) {
-    switch (s) {
-        case RunState::Paused:  return "PAUSED";
-        case RunState::Running: return "RUNNING";
-        case RunState::Halted:  return "HALTED";
-    }
-    return "?";
-}
-
-bool parse_hex16(const char* s, uint16_t& out) {
-    try {
-        const unsigned long v = std::stoul(s, nullptr, 16);
-        out = static_cast<uint16_t>(v & 0xFFFF);
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
 void glfw_error_callback(int error, const char* description) {
     std::cerr << "GLFW error " << error << ": " << description << "\n";
 }
 
 } // namespace
 
-DebuggerApp::DebuggerApp() = default;
-
-ByteReader DebuggerApp::Reader() const {
-    return [this](uint16_t a) { return cpu_.ReadMemory(a); };
+DebuggerApp::DebuggerApp() {
+    panels_.push_back(std::make_unique<ControlPanel>());
+    panels_.push_back(std::make_unique<RegistersPanel>());
+    panels_.push_back(std::make_unique<DisassemblyPanel>());
+    panels_.push_back(std::make_unique<MemoryPanel>());
+    panels_.push_back(std::make_unique<IoPanel>());
 }
 
-SymbolResolver DebuggerApp::Resolver() const {
-    return symbols_.MakeResolver();
+UiContext DebuggerApp::MakeContext() {
+    return UiContext{session_, symbols_, disasm_, commands_, status_};
 }
 
 bool DebuggerApp::LoadProgramFile(const std::string& path, uint16_t start_address) {
@@ -82,7 +69,7 @@ bool DebuggerApp::LoadProgramFile(const std::string& path, uint16_t start_addres
     cpu_.Reset();
     cpu_.LoadProgram(bytes, start_address);
     session_.ClearDirty();   // program load isn't a "change" to highlight
-    last_status_ = std::format("Loaded {} bytes from {}", bytes.size(), path);
+    status_ = std::format("Loaded {} bytes from {}", bytes.size(), path);
     return true;
 }
 
@@ -90,7 +77,7 @@ bool DebuggerApp::LoadSymbolFile(const std::string& path) {
     std::vector<std::string> warnings;
     const bool ok = symbols_.LoadFromFile(path, nullptr, &warnings);
     for (const auto& w : warnings) std::cerr << "symbols: " << w << "\n";
-    if (ok) last_status_ = std::format("Loaded {} symbols from {}", symbols_.Size(), path);
+    if (ok) status_ = std::format("Loaded {} symbols from {}", symbols_.Size(), path);
     return ok;
 }
 
@@ -117,63 +104,49 @@ void DebuggerApp::LoadDemo() {
 
     symbols_.DefineLabel(0x0000, "GCD_LOOP", SymbolType::Function, "GCD by subtraction");
     symbols_.DefineLabel(0x000F, "DONE", SymbolType::Label, "result in HL");
-    last_status_ = "Loaded built-in GCD demo (HL=1071, DE=462)";
+    status_ = "Loaded built-in GCD demo (HL=1071, DE=462)";
 }
 
 void DebuggerApp::AddBreakpoint(uint16_t address) {
     session_.AddBreakpoint(address);
 }
 
-// ===========================================================================
-// Command handling
-// ===========================================================================
-
-void DebuggerApp::BeforeExecAction() {
-    session_.ClearDirty();
-}
-
 void DebuggerApp::ExecuteCommands() {
-    if (cmd_reset_) {
+    if (commands_.reset) {
         session_.Reset();
-        last_status_ = "Reset";
+        status_ = "Reset";
     }
-    if (cmd_step_) {
-        BeforeExecAction();
+    if (commands_.step) {
+        session_.ClearDirty();
         const StepResult r = session_.StepInstruction();
-        last_status_ = std::format("Step: {} @ 0x{:04X} (+{} T)",
-                                   reason_text(r.reason), r.pc, r.cycles);
+        status_ = std::format("Step: {} @ 0x{:04X} (+{} T)",
+                              reason_text(r.reason), r.pc, r.cycles);
     }
-    if (cmd_step_over_) {
-        BeforeExecAction();
+    if (commands_.step_over) {
+        session_.ClearDirty();
         const StepResult r = session_.StepOver();
-        last_status_ = std::format("Step over: {} @ 0x{:04X} (+{} T)",
-                                   reason_text(r.reason), r.pc, r.cycles);
+        status_ = std::format("Step over: {} @ 0x{:04X} (+{} T)",
+                              reason_text(r.reason), r.pc, r.cycles);
     }
-    if (cmd_run_) {
-        BeforeExecAction();
+    if (commands_.run) {
+        session_.ClearDirty();
         session_.Run();
-        last_status_ = "Running...";
+        status_ = "Running...";
     }
-    if (cmd_pause_) {
+    if (commands_.pause) {
         session_.Pause();
-        last_status_ = "Paused";
+        status_ = "Paused";
     }
-
-    cmd_reset_ = cmd_step_ = cmd_step_over_ = cmd_run_ = cmd_pause_ = false;
+    commands_.Clear();
 
     // While running, advance a bounded slice per frame.
     if (session_.State() == RunState::Running) {
         const StepResult r = session_.RunSlice(run_budget_);
         if (session_.State() != RunState::Running) {
-            last_status_ = std::format("Stopped: {} @ 0x{:04X}",
-                                       reason_text(r.reason), r.pc);
+            status_ = std::format("Stopped: {} @ 0x{:04X}", reason_text(r.reason), r.pc);
         }
     }
 }
-
-// ===========================================================================
-// Panels
-// ===========================================================================
 
 void DebuggerApp::DrawMenuBar() {
     if (!ImGui::BeginMainMenuBar()) return;
@@ -199,273 +172,6 @@ void DebuggerApp::DrawMenuBar() {
     }
     ImGui::EndMainMenuBar();
 }
-
-void DebuggerApp::DrawControlBar() {
-    ImGui::SetNextWindowPos(ImVec2(0, 24), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(1600, 92), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Control");
-
-    const bool halted = cpu_.IsHalted();
-    ImGui::BeginDisabled(halted);
-    if (ImGui::Button("Step"))      cmd_step_ = true;       ImGui::SameLine();
-    if (ImGui::Button("Step Over")) cmd_step_over_ = true;  ImGui::SameLine();
-    if (ImGui::Button("Run"))       cmd_run_ = true;        ImGui::SameLine();
-    ImGui::EndDisabled();
-    if (ImGui::Button("Pause"))     cmd_pause_ = true;      ImGui::SameLine();
-    if (ImGui::Button("Reset"))     cmd_reset_ = true;
-
-    ImGui::Separator();
-    ImGui::Text("State: %s    PC: 0x%04X    Cycles: %llu    Halted: %s",
-                state_text(session_.State()),
-                cpu_.PC(),
-                static_cast<unsigned long long>(cpu_.GetCycleCount()),
-                halted ? "yes" : "no");
-    ImGui::TextUnformatted(last_status_.c_str());
-    ImGui::End();
-}
-
-void DebuggerApp::DrawRegisters() {
-    ImGui::SetNextWindowPos(ImVec2(0, 120), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(520, 250), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Registers");
-
-    const uint8_t f = cpu_.F();
-    auto flag = [&](const char* name, uint8_t mask) {
-        const bool set = (f & mask) != 0;
-        ImGui::TextColored(set ? ImVec4(0.4f, 1.0f, 0.4f, 1.0f)
-                               : ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
-                           "%s", name);
-        ImGui::SameLine();
-    };
-
-    // Registers are editable when paused/halted; read-only while free-running
-    // (so edits don't fight the executing program frame-to-frame).
-    const bool running = session_.State() == RunState::Running;
-    if (running) ImGui::TextDisabled("(pause to edit registers)");
-
-    if (ImGui::BeginTable("regs", 4, ImGuiTableFlags_SizingFixedFit)) {
-        auto cell = [&](const char* label, uint16_t* reg) {
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(label);
-            ImGui::SameLine();
-            ImGui::PushID(reg);
-            if (running) {
-                ImGui::Text("%04X", *reg);
-            } else {
-                ImGui::SetNextItemWidth(48);
-                ImGui::InputScalar("##r", ImGuiDataType_U16, reg, nullptr, nullptr,
-                                   "%04X", ImGuiInputTextFlags_CharsHexadecimal);
-            }
-            ImGui::PopID();
-        };
-        cell("AF ", &cpu_.AF());  cell("AF'", &cpu_.AltAF());
-        cell("BC ", &cpu_.BC());  cell("BC'", &cpu_.AltBC());
-        cell("DE ", &cpu_.DE());  cell("DE'", &cpu_.AltDE());
-        cell("HL ", &cpu_.HL());  cell("HL'", &cpu_.AltHL());
-        cell("IX ", &cpu_.IX());  cell("IY ", &cpu_.IY());
-        cell("PC ", &cpu_.PC());  cell("SP ", &cpu_.SP());
-        cell("IR ", &cpu_.IR());  cell("WZ ", &cpu_.WZ());
-        ImGui::EndTable();
-    }
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Flags: ");
-    ImGui::SameLine();
-    flag("S", Constants::Flags::SIGN);
-    flag("Z", Constants::Flags::ZERO);
-    flag("H", Constants::Flags::HALF);
-    flag("P/V", Constants::Flags::PARITY);
-    flag("N", Constants::Flags::SUBTRACT);
-    flag("C", Constants::Flags::CARRY);
-    ImGui::NewLine();
-
-    ImGui::Text("IM %u    IFF1 %d  IFF2 %d",
-                cpu_.InterruptMode(), cpu_.IFF1() ? 1 : 0, cpu_.IFF2() ? 1 : 0);
-    ImGui::End();
-}
-
-void DebuggerApp::DrawDisassembly() {
-    ImGui::SetNextWindowPos(ImVec2(0, 374), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(520, 614), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Disassembly");
-
-    ImGui::Checkbox("Follow PC", &follow_pc_);
-    ImGui::SameLine();
-    ImGui::TextDisabled("(click the gutter to toggle a breakpoint)");
-
-    if (follow_pc_ && session_.State() != RunState::Running) {
-        disasm_top_ = cpu_.PC();
-    }
-
-    const ByteReader read = Reader();
-    const SymbolResolver resolve = Resolver();
-    const uint16_t pc = cpu_.PC();
-
-    if (ImGui::BeginTable("disasm", 4,
-                          ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
-                          ImGuiTableFlags_SizingFixedFit)) {
-        ImGui::TableSetupColumn("BP",    ImGuiTableColumnFlags_WidthFixed, 16);
-        ImGui::TableSetupColumn("Addr",  ImGuiTableColumnFlags_WidthFixed, 64);
-        ImGui::TableSetupColumn("Bytes", ImGuiTableColumnFlags_WidthFixed, 110);
-        ImGui::TableSetupColumn("Instruction", ImGuiTableColumnFlags_WidthStretch);
-
-        uint16_t addr = disasm_top_;
-        for (int line = 0; line < 256; ++line) {
-            const Instruction ins = disasm_.Decode(read, addr, resolve);
-            ImGui::TableNextRow();
-            if (addr == pc) {
-                ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
-                                       ImGui::GetColorU32(ImVec4(0.20f, 0.35f, 0.55f, 0.65f)));
-            }
-            ImGui::PushID(addr);
-
-            // BP gutter: a red "@" marks a breakpoint. Clicking adds one;
-            // clicking it again removes it (a true add/remove toggle).
-            ImGui::TableSetColumnIndex(0);
-            const bool has_bp = session_.HasBreakpoint(addr);
-            if (has_bp)
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-            if (ImGui::Selectable(has_bp ? "@" : " ", false, 0, ImVec2(12, 0))) {
-                if (has_bp) session_.RemoveBreakpoint(addr);
-                else        session_.AddBreakpoint(addr);
-            }
-            if (has_bp) ImGui::PopStyleColor();
-
-            // Address
-            ImGui::TableSetColumnIndex(1);
-            ImGui::Text("%04X", addr);
-
-            // Bytes
-            ImGui::TableSetColumnIndex(2);
-            std::string hexbytes;
-            for (int b = 0; b < ins.length && b < 4; ++b)
-                hexbytes += std::format("{:02X} ", ins.bytes[b]);
-            ImGui::TextUnformatted(hexbytes.c_str());
-
-            // Instruction column: optional "LABEL:" line above the mnemonic.
-            ImGui::TableSetColumnIndex(3);
-            if (auto label = symbols_.ResolveName(addr)) {
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "%s:", label->c_str());
-            }
-            if (addr == pc) ImGui::TextColored(ImVec4(1, 1, 0.6f, 1), "%s", ins.text.c_str());
-            else            ImGui::TextUnformatted(ins.text.c_str());
-
-            ImGui::PopID();
-
-            const uint16_t next = static_cast<uint16_t>(addr + (ins.length ? ins.length : 1));
-            if (next < addr) break;   // 64K wrap: stop
-            addr = next;
-        }
-        ImGui::EndTable();
-    }
-    ImGui::End();
-}
-
-void DebuggerApp::DrawMemory() {
-    ImGui::SetNextWindowPos(ImVec2(525, 120), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(760, 868), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Memory");
-
-    ImGui::SetNextItemWidth(80);
-    if (ImGui::InputTextWithHint("##memgoto", "addr", mem_goto_buf_, sizeof(mem_goto_buf_),
-                                 ImGuiInputTextFlags_CharsHexadecimal |
-                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
-        if (parse_hex16(mem_goto_buf_, mem_goto_addr_)) mem_goto_pending_ = true;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Go")) {
-        if (parse_hex16(mem_goto_buf_, mem_goto_addr_)) mem_goto_pending_ = true;
-    }
-    ImGui::SameLine();
-    ImGui::TextDisabled("changed bytes are highlighted");
-
-    const auto& dirty = session_.DirtyAddresses();
-    const ImVec4 dirty_col(1.0f, 0.5f, 0.4f, 1.0f);
-
-    if (ImGui::BeginChild("memscroll", ImVec2(0, 0), false,
-                          ImGuiWindowFlags_HorizontalScrollbar)) {
-        const float line_h = ImGui::GetTextLineHeightWithSpacing();
-        if (mem_goto_pending_) {
-            ImGui::SetScrollY((mem_goto_addr_ / 16) * line_h);
-            mem_goto_pending_ = false;
-        }
-
-        ImGuiListClipper clipper;
-        clipper.Begin(4096, line_h);   // 65536 / 16 rows
-        while (clipper.Step()) {
-            for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
-                const uint16_t base = static_cast<uint16_t>(row * 16);
-                ImGui::Text("%04X ", base);
-                ImGui::SameLine();
-                // hex
-                for (int c = 0; c < 16; ++c) {
-                    const uint16_t a = static_cast<uint16_t>(base + c);
-                    const uint8_t v = cpu_.ReadMemory(a);
-                    if (dirty.count(a))
-                        ImGui::TextColored(dirty_col, "%02X", v);
-                    else
-                        ImGui::Text("%02X", v);
-                    ImGui::SameLine();
-                }
-                // ascii
-                ImGui::Text(" ");
-                ImGui::SameLine();
-                std::string ascii;
-                for (int c = 0; c < 16; ++c) {
-                    const uint8_t v = cpu_.ReadMemory(static_cast<uint16_t>(base + c));
-                    ascii.push_back((v >= 32 && v < 127) ? static_cast<char>(v) : '.');
-                }
-                ImGui::TextUnformatted(ascii.c_str());
-            }
-        }
-        clipper.End();
-    }
-    ImGui::EndChild();
-    ImGui::End();
-}
-
-void DebuggerApp::DrawIoPorts() {
-    ImGui::SetNextWindowPos(ImVec2(1290, 120), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(310, 868), ImGuiCond_FirstUseEver);
-    ImGui::Begin("I/O Ports");
-    if (ImGui::BeginTable("io", 3,
-                          ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY |
-                          ImGuiTableFlags_SizingFixedFit)) {
-        ImGui::TableSetupColumn("Port");
-        ImGui::TableSetupColumn("Hex");
-        ImGui::TableSetupColumn("Dec");
-        ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableHeadersRow();
-
-        ImGuiListClipper clipper;
-        clipper.Begin(256);
-        while (clipper.Step()) {
-            for (int p = clipper.DisplayStart; p < clipper.DisplayEnd; ++p) {
-                const uint8_t v = cpu_.ReadPort(static_cast<uint8_t>(p));
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0); ImGui::Text("%02X", p);
-                ImGui::TableSetColumnIndex(1); ImGui::Text("%02X", v);
-                ImGui::TableSetColumnIndex(2); ImGui::Text("%u", v);
-            }
-        }
-        clipper.End();
-        ImGui::EndTable();
-    }
-    ImGui::End();
-}
-
-void DebuggerApp::DrawUi() {
-    DrawMenuBar();
-    DrawControlBar();
-    DrawRegisters();
-    DrawDisassembly();
-    DrawMemory();
-    DrawIoPorts();
-}
-
-// ===========================================================================
-// Run loop
-// ===========================================================================
 
 int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path) {
     if (!shot_path.empty()) {
@@ -503,9 +209,7 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    // In smoke/shot mode use the built-in default layout (no persisted .ini),
-    // so automated screenshots are deterministic.
-    if (smoke) ImGui::GetIO().IniFilename = nullptr;
+    if (smoke) ImGui::GetIO().IniFilename = nullptr;  // deterministic screenshots
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window_, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
@@ -513,14 +217,15 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
     int frame = 0;
     while (!glfwWindowShouldClose(window_)) {
         glfwPollEvents();
-
         ExecuteCommands();
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        DrawUi();
+        DrawMenuBar();
+        UiContext ctx = MakeContext();
+        for (auto& panel : panels_) panel->Draw(ctx);
 
         ImGui::Render();
         int w, h;
@@ -546,7 +251,6 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
         }
 
         glfwSwapBuffers(window_);
-
         if (smoke && ++frame >= smoke_frames) break;
     }
 

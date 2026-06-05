@@ -23,6 +23,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace z80::dbg {
 
@@ -40,6 +41,7 @@ struct Instruction {
     std::string mnemonic;              ///< Operation, e.g. "LD", "ADD", "BIT".
     std::string operands;              ///< Operands, e.g. "A, (IX+0x05)" ("" if none).
     std::string text;                  ///< Rendered line: mnemonic [+ ' ' + operands].
+    std::vector<std::string> symbols_used;  ///< Symbol names substituted into operands.
 };
 
 class Disassembler {

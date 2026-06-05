@@ -29,11 +29,13 @@ namespace z80::dbg {
 
 /// @brief Kind of symbol, used for display and (later) coloring.
 enum class SymbolType {
-    Label,        ///< Generic named address.
-    Function,     ///< Subroutine entry point.
-    JumpTarget,   ///< Branch/loop target.
-    Variable,     ///< Named data byte/word.
-    DataRegion,   ///< Named span of `size` bytes.
+    Label,         ///< Generic named address.
+    Function,      ///< Subroutine entry point.
+    JumpTarget,    ///< Branch/loop target.
+    Variable,      ///< Named data byte/word (generic).
+    DataRegion,    ///< Named span of `size` bytes.
+    ByteVariable,  ///< Named 8-bit data location.
+    WordVariable,  ///< Named 16-bit data location.
 };
 
 /// @brief Convert a SymbolType to/from its JSON string form.

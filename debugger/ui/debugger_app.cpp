@@ -82,19 +82,20 @@ bool DebuggerApp::LoadSymbolFile(const std::string& path) {
 }
 
 void DebuggerApp::LoadDemo() {
-    // GCD by repeated subtraction (result in HL); inputs preset below.
+    // GCD by repeated subtraction; result stored to RESULT (0x9000) then HALT.
     const std::vector<uint8_t> program = {
-        0x7A,             // LD A, D
-        0xB3,             // OR E
-        0x28, 0x0B,       // JR Z, 0x000F
-        0xB7,             // OR A
-        0xED, 0x52,       // SBC HL, DE
-        0x30, 0x02,       // JR NC, 0x000B
-        0x19,             // ADD HL, DE
-        0xEB,             // EX DE, HL
-        0x18, 0xF3,       // JR 0x0000
-        0x18, 0xF1,       // JR 0x0000
-        0x76,             // HALT
+        0x7A,             // 0x0000 LD A, D
+        0xB3,             // 0x0001 OR E
+        0x28, 0x0B,       // 0x0002 JR Z, 0x000F   -> DONE
+        0xB7,             // 0x0004 OR A
+        0xED, 0x52,       // 0x0005 SBC HL, DE
+        0x30, 0x02,       // 0x0007 JR NC, 0x000B  -> NO_SWAP
+        0x19,             // 0x0009 ADD HL, DE
+        0xEB,             // 0x000A EX DE, HL
+        0x18, 0xF3,       // 0x000B JR 0x0000      -> GCD_LOOP
+        0x18, 0xF1,       // 0x000D JR 0x0000
+        0x22, 0x00, 0x90, // 0x000F LD (0x9000), HL -> RESULT  (DONE)
+        0x76,             // 0x0012 HALT
     };
     cpu_.Reset();
     cpu_.LoadProgram(program, 0x0000);
@@ -102,8 +103,10 @@ void DebuggerApp::LoadDemo() {
     cpu_.DE() = 462;
     session_.ClearDirty();   // program load isn't a "change" to highlight
 
-    symbols_.DefineLabel(0x0000, "GCD_LOOP", SymbolType::Function, "GCD by subtraction");
-    symbols_.DefineLabel(0x000F, "DONE", SymbolType::Label, "result in HL");
+    symbols_.DefineLabel(0x0000, "GCD_LOOP", SymbolType::Function,   "GCD by subtraction");
+    symbols_.DefineLabel(0x000B, "NO_SWAP",  SymbolType::JumpTarget, "HL >= DE: loop without swap");
+    symbols_.DefineLabel(0x000F, "DONE",     SymbolType::Label,      "store result and halt");
+    symbols_.DefineLabel(0x9000, "RESULT",   SymbolType::WordVariable, "GCD result (16-bit)");
     status_ = "Loaded built-in GCD demo (HL=1071, DE=462)";
 }
 

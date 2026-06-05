@@ -271,21 +271,25 @@ std::string json_escape(std::string_view in) {
 
 std::string ToString(SymbolType type) {
     switch (type) {
-        case SymbolType::Function:   return "FUNCTION";
-        case SymbolType::JumpTarget: return "JUMP_TARGET";
-        case SymbolType::Variable:   return "VARIABLE";
-        case SymbolType::DataRegion: return "DATA_REGION";
-        case SymbolType::Label:      return "LABEL";
+        case SymbolType::Function:     return "FUNCTION";
+        case SymbolType::JumpTarget:   return "JUMP_TARGET";
+        case SymbolType::Variable:     return "VARIABLE";
+        case SymbolType::DataRegion:   return "DATA_REGION";
+        case SymbolType::ByteVariable: return "BYTE_VARIABLE";
+        case SymbolType::WordVariable: return "WORD_VARIABLE";
+        case SymbolType::Label:        return "LABEL";
     }
     return "LABEL";
 }
 
 std::optional<SymbolType> SymbolTypeFromString(std::string_view text) {
-    if (text == "FUNCTION")    return SymbolType::Function;
-    if (text == "JUMP_TARGET") return SymbolType::JumpTarget;
-    if (text == "VARIABLE")    return SymbolType::Variable;
-    if (text == "DATA_REGION") return SymbolType::DataRegion;
-    if (text == "LABEL")       return SymbolType::Label;
+    if (text == "FUNCTION")      return SymbolType::Function;
+    if (text == "JUMP_TARGET")   return SymbolType::JumpTarget;
+    if (text == "VARIABLE")      return SymbolType::Variable;
+    if (text == "DATA_REGION")   return SymbolType::DataRegion;
+    if (text == "BYTE_VARIABLE") return SymbolType::ByteVariable;
+    if (text == "WORD_VARIABLE") return SymbolType::WordVariable;
+    if (text == "LABEL")         return SymbolType::Label;
     return std::nullopt;
 }
 

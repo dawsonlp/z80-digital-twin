@@ -43,6 +43,8 @@ set(CORE_SOURCES
 
 set(CORE_HEADERS
     src/z80_cpu.h
+    src/memory/fast_memory.h
+    src/memory/debug_memory.h
 )
 
 # =============================================================================
@@ -70,6 +72,10 @@ target_compile_features(z80_cpu PUBLIC cxx_std_23)
 
 add_executable(cpu_test tests/cpu_test.cpp)
 target_link_libraries(cpu_test PRIVATE z80_cpu)
+
+# DebugMemory plug verification (write hook + plug parity)
+add_executable(debug_memory_test tests/debug_memory_test.cpp)
+target_link_libraries(debug_memory_test PRIVATE z80_cpu)
 
 # Performance benchmark
 add_executable(performance_benchmark tests/performance_benchmark.cpp)

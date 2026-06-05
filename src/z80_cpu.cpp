@@ -4,6 +4,7 @@
 //
 
 #include "z80_cpu.h"
+#include "memory/debug_memory.h"
 #include <algorithm>
 
 namespace z80 {
@@ -12,14 +13,17 @@ namespace z80 {
 // Construction/Destruction
 // =============================================================================
 
-CPU::CPU() {
+template <class Memory>
+CPUImpl<Memory>::CPUImpl() {
     Reset();
     InitializeInstructionTables();
 }
 
-CPU::~CPU() = default;
+template <class Memory>
+CPUImpl<Memory>::~CPUImpl() = default;
 
-void CPU::Reset() {
+template <class Memory>
+void CPUImpl<Memory>::Reset() {
     // Initialize CPU state
     t_cycle = 0;
     _PC = 0;
@@ -61,13 +65,15 @@ void CPU::Reset() {
 // Core Execution
 // =============================================================================
 
-void CPU::RunUntilCycle(uint64_t target_cycle) {
+template <class Memory>
+void CPUImpl<Memory>::RunUntilCycle(uint64_t target_cycle) {
     while (t_cycle < target_cycle && !_halted) {
         Step();
     }
 }
 
-void CPU::Step() {
+template <class Memory>
+void CPUImpl<Memory>::Step() {
     // Fetch instruction opcode
     uint8_t opcode = memory[PC()++];
     
@@ -183,7 +189,8 @@ void CPU::Step() {
 // Memory and I/O Access
 // =============================================================================
 
-void CPU::LoadProgram(const std::vector<uint8_t>& program, uint16_t start_address) {
+template <class Memory>
+void CPUImpl<Memory>::LoadProgram(const std::vector<uint8_t>& program, uint16_t start_address) {
     for (size_t i = 0; i < program.size() && (start_address + i) < Constants::MEMORY_SIZE; ++i) {
         memory[start_address + i] = program[i];
     }
@@ -193,371 +200,373 @@ void CPU::LoadProgram(const std::vector<uint8_t>& program, uint16_t start_addres
 // Instruction Table Initialization
 // =============================================================================
 
-void CPU::InitializeInstructionTables() {
+template <class Memory>
+void CPUImpl<Memory>::InitializeInstructionTables() {
     // Initialize all tables to NOP
-    basic_opcodes.fill(&CPU::NOP);
-    ED_opcodes.fill(&CPU::ED_NOP);
+    basic_opcodes.fill(&CPUImpl::NOP);
+    ED_opcodes.fill(&CPUImpl::ED_NOP);
     
     // Set up the implemented opcodes
-    basic_opcodes[0x00] = &CPU::NOP;
-    basic_opcodes[0x01] = &CPU::LD_BC_nn;
-    basic_opcodes[0x02] = &CPU::LD_mBC_A;
-    basic_opcodes[0x03] = &CPU::INC_BC;
-    basic_opcodes[0x04] = &CPU::INC_B;
-    basic_opcodes[0x05] = &CPU::DEC_B;
-    basic_opcodes[0x06] = &CPU::LD_B_n;
-    basic_opcodes[0x07] = &CPU::RLCA;
-    basic_opcodes[0x08] = &CPU::EX_AF_AF;
-    basic_opcodes[0x09] = &CPU::ADD_HL_BC;
-    basic_opcodes[0x0A] = &CPU::LD_A_mBC;
-    basic_opcodes[0x0B] = &CPU::DEC_BC;
-    basic_opcodes[0x0C] = &CPU::INC_C;
-    basic_opcodes[0x0D] = &CPU::DEC_C;
-    basic_opcodes[0x0E] = &CPU::LD_C_n;
-    basic_opcodes[0x0F] = &CPU::RRCA;
-    basic_opcodes[0x10] = &CPU::DJNZ;
-    basic_opcodes[0x11] = &CPU::LD_DE_nn;
-    basic_opcodes[0x12] = &CPU::LD_mDE_A;
-    basic_opcodes[0x13] = &CPU::INC_DE;
-    basic_opcodes[0x14] = &CPU::INC_D;
-    basic_opcodes[0x15] = &CPU::DEC_D;
-    basic_opcodes[0x16] = &CPU::LD_D_n;
-    basic_opcodes[0x17] = &CPU::RLA;
-    basic_opcodes[0x18] = &CPU::JR;
-    basic_opcodes[0x19] = &CPU::ADD_HL_DE;
-    basic_opcodes[0x1A] = &CPU::LD_A_mDE;
-    basic_opcodes[0x1B] = &CPU::DEC_DE;
-    basic_opcodes[0x1C] = &CPU::INC_E;
-    basic_opcodes[0x1D] = &CPU::DEC_E;
-    basic_opcodes[0x1E] = &CPU::LD_E_n;
-    basic_opcodes[0x1F] = &CPU::RRA;
-    basic_opcodes[0x20] = &CPU::JR_NZ;
-    basic_opcodes[0x21] = &CPU::LD_HL_nn;
-    basic_opcodes[0x22] = &CPU::LD_mnn_HL;
-    basic_opcodes[0x23] = &CPU::INC_HL;
-    basic_opcodes[0x24] = &CPU::INC_H;
-    basic_opcodes[0x25] = &CPU::DEC_H;
-    basic_opcodes[0x26] = &CPU::LD_H_n;
-    basic_opcodes[0x27] = &CPU::DAA;
-    basic_opcodes[0x28] = &CPU::JR_Z;
-    basic_opcodes[0x29] = &CPU::ADD_HL_HL;
-    basic_opcodes[0x2A] = &CPU::LD_HL_mnn;
-    basic_opcodes[0x2B] = &CPU::DEC_HL;
-    basic_opcodes[0x2C] = &CPU::INC_L;
-    basic_opcodes[0x2D] = &CPU::DEC_L;
-    basic_opcodes[0x2E] = &CPU::LD_L_n;
-    basic_opcodes[0x2F] = &CPU::CPL;
-    basic_opcodes[0x30] = &CPU::JR_NC;
-    basic_opcodes[0x31] = &CPU::LD_SP_nn;
-    basic_opcodes[0x32] = &CPU::LD_mnn_A;
-    basic_opcodes[0x33] = &CPU::INC_SP;
-    basic_opcodes[0x34] = &CPU::INC_mHL;
-    basic_opcodes[0x35] = &CPU::DEC_mHL;
-    basic_opcodes[0x36] = &CPU::LD_mHL_n;
-    basic_opcodes[0x37] = &CPU::SCF;
-    basic_opcodes[0x38] = &CPU::JR_C;
-    basic_opcodes[0x39] = &CPU::ADD_HL_SP;
-    basic_opcodes[0x3A] = &CPU::LD_A_mnn;
-    basic_opcodes[0x3B] = &CPU::DEC_SP;
-    basic_opcodes[0x3C] = &CPU::INC_A;
-    basic_opcodes[0x3D] = &CPU::DEC_A;
-    basic_opcodes[0x3E] = &CPU::LD_A_n;
-    basic_opcodes[0x3F] = &CPU::CCF;
-    basic_opcodes[0x40] = &CPU::LD_B_B;
-    basic_opcodes[0x41] = &CPU::LD_B_C;
-    basic_opcodes[0x42] = &CPU::LD_B_D;
-    basic_opcodes[0x43] = &CPU::LD_B_E;
-    basic_opcodes[0x44] = &CPU::LD_B_H;
-    basic_opcodes[0x45] = &CPU::LD_B_L;
-    basic_opcodes[0x46] = &CPU::LD_B_mHL;
-    basic_opcodes[0x47] = &CPU::LD_B_A;
-    basic_opcodes[0x48] = &CPU::LD_C_B;
-    basic_opcodes[0x49] = &CPU::LD_C_C;
-    basic_opcodes[0x4A] = &CPU::LD_C_D;
-    basic_opcodes[0x4B] = &CPU::LD_C_E;
-    basic_opcodes[0x4C] = &CPU::LD_C_H;
-    basic_opcodes[0x4D] = &CPU::LD_C_L;
-    basic_opcodes[0x4E] = &CPU::LD_C_mHL;
-    basic_opcodes[0x4F] = &CPU::LD_C_A;
-    basic_opcodes[0x50] = &CPU::LD_D_B;
-    basic_opcodes[0x51] = &CPU::LD_D_C;
-    basic_opcodes[0x52] = &CPU::LD_D_D;
-    basic_opcodes[0x53] = &CPU::LD_D_E;
-    basic_opcodes[0x54] = &CPU::LD_D_H;
-    basic_opcodes[0x55] = &CPU::LD_D_L;
-    basic_opcodes[0x56] = &CPU::LD_D_mHL;
-    basic_opcodes[0x57] = &CPU::LD_D_A;
-    basic_opcodes[0x58] = &CPU::LD_E_B;
-    basic_opcodes[0x59] = &CPU::LD_E_C;
-    basic_opcodes[0x5A] = &CPU::LD_E_D;
-    basic_opcodes[0x5B] = &CPU::LD_E_E;
-    basic_opcodes[0x5C] = &CPU::LD_E_H;
-    basic_opcodes[0x5D] = &CPU::LD_E_L;
-    basic_opcodes[0x5E] = &CPU::LD_E_mHL;
-    basic_opcodes[0x5F] = &CPU::LD_E_A;
-    basic_opcodes[0x60] = &CPU::LD_H_B;
-    basic_opcodes[0x61] = &CPU::LD_H_C;
-    basic_opcodes[0x62] = &CPU::LD_H_D;
-    basic_opcodes[0x63] = &CPU::LD_H_E;
-    basic_opcodes[0x64] = &CPU::LD_H_H;
-    basic_opcodes[0x65] = &CPU::LD_H_L;
-    basic_opcodes[0x66] = &CPU::LD_H_mHL;
-    basic_opcodes[0x67] = &CPU::LD_H_A;
-    basic_opcodes[0x68] = &CPU::LD_L_B;
-    basic_opcodes[0x69] = &CPU::LD_L_C;
-    basic_opcodes[0x6A] = &CPU::LD_L_D;
-    basic_opcodes[0x6B] = &CPU::LD_L_E;
-    basic_opcodes[0x6C] = &CPU::LD_L_H;
-    basic_opcodes[0x6D] = &CPU::LD_L_L;
-    basic_opcodes[0x6E] = &CPU::LD_L_mHL;
-    basic_opcodes[0x6F] = &CPU::LD_L_A;
-    basic_opcodes[0x70] = &CPU::LD_mHL_B;
-    basic_opcodes[0x71] = &CPU::LD_mHL_C;
-    basic_opcodes[0x72] = &CPU::LD_mHL_D;
-    basic_opcodes[0x73] = &CPU::LD_mHL_E;
-    basic_opcodes[0x74] = &CPU::LD_mHL_H;
-    basic_opcodes[0x75] = &CPU::LD_mHL_L;
-    basic_opcodes[0x76] = &CPU::HALT;
-    basic_opcodes[0x77] = &CPU::LD_mHL_A;
-    basic_opcodes[0x78] = &CPU::LD_A_B;
-    basic_opcodes[0x79] = &CPU::LD_A_C;
-    basic_opcodes[0x7A] = &CPU::LD_A_D;
-    basic_opcodes[0x7B] = &CPU::LD_A_E;
-    basic_opcodes[0x7C] = &CPU::LD_A_H;
-    basic_opcodes[0x7D] = &CPU::LD_A_L;
-    basic_opcodes[0x7E] = &CPU::LD_A_mHL;
-    basic_opcodes[0x7F] = &CPU::LD_A_A;
-    basic_opcodes[0x80] = &CPU::ADD_A_B;
-    basic_opcodes[0x81] = &CPU::ADD_A_C;
-    basic_opcodes[0x82] = &CPU::ADD_A_D;
-    basic_opcodes[0x83] = &CPU::ADD_A_E;
-    basic_opcodes[0x84] = &CPU::ADD_A_H;
-    basic_opcodes[0x85] = &CPU::ADD_A_L;
-    basic_opcodes[0x86] = &CPU::ADD_A_mHL;
-    basic_opcodes[0x87] = &CPU::ADD_A_A;
-    basic_opcodes[0x88] = &CPU::ADC_A_B;
-    basic_opcodes[0x89] = &CPU::ADC_A_C;
-    basic_opcodes[0x8A] = &CPU::ADC_A_D;
-    basic_opcodes[0x8B] = &CPU::ADC_A_E;
-    basic_opcodes[0x8C] = &CPU::ADC_A_H;
-    basic_opcodes[0x8D] = &CPU::ADC_A_L;
-    basic_opcodes[0x8E] = &CPU::ADC_A_mHL;
-    basic_opcodes[0x8F] = &CPU::ADC_A_A;
-    basic_opcodes[0x90] = &CPU::SUB_B;
-    basic_opcodes[0x91] = &CPU::SUB_C;
-    basic_opcodes[0x92] = &CPU::SUB_D;
-    basic_opcodes[0x93] = &CPU::SUB_E;
-    basic_opcodes[0x94] = &CPU::SUB_H;
-    basic_opcodes[0x95] = &CPU::SUB_L;
-    basic_opcodes[0x96] = &CPU::SUB_mHL;
-    basic_opcodes[0x97] = &CPU::SUB_A;
-    basic_opcodes[0x98] = &CPU::SBC_A_B;
-    basic_opcodes[0x99] = &CPU::SBC_A_C;
-    basic_opcodes[0x9A] = &CPU::SBC_A_D;
-    basic_opcodes[0x9B] = &CPU::SBC_A_E;
-    basic_opcodes[0x9C] = &CPU::SBC_A_H;
-    basic_opcodes[0x9D] = &CPU::SBC_A_L;
-    basic_opcodes[0x9E] = &CPU::SBC_A_mHL;
-    basic_opcodes[0x9F] = &CPU::SBC_A_A;
-    basic_opcodes[0xA0] = &CPU::AND_B;
-    basic_opcodes[0xA1] = &CPU::AND_C;
-    basic_opcodes[0xA2] = &CPU::AND_D;
-    basic_opcodes[0xA3] = &CPU::AND_E;
-    basic_opcodes[0xA4] = &CPU::AND_H;
-    basic_opcodes[0xA5] = &CPU::AND_L;
-    basic_opcodes[0xA6] = &CPU::AND_mHL;
-    basic_opcodes[0xA7] = &CPU::AND_A;
-    basic_opcodes[0xA8] = &CPU::XOR_B;
-    basic_opcodes[0xA9] = &CPU::XOR_C;
-    basic_opcodes[0xAA] = &CPU::XOR_D;
-    basic_opcodes[0xAB] = &CPU::XOR_E;
-    basic_opcodes[0xAC] = &CPU::XOR_H;
-    basic_opcodes[0xAD] = &CPU::XOR_L;
-    basic_opcodes[0xAE] = &CPU::XOR_mHL;
-    basic_opcodes[0xAF] = &CPU::XOR_A;
-    basic_opcodes[0xB0] = &CPU::OR_B;
-    basic_opcodes[0xB1] = &CPU::OR_C;
-    basic_opcodes[0xB2] = &CPU::OR_D;
-    basic_opcodes[0xB3] = &CPU::OR_E;
-    basic_opcodes[0xB4] = &CPU::OR_H;
-    basic_opcodes[0xB5] = &CPU::OR_L;
-    basic_opcodes[0xB6] = &CPU::OR_mHL;
-    basic_opcodes[0xB7] = &CPU::OR_A;
-    basic_opcodes[0xB8] = &CPU::CP_B;
-    basic_opcodes[0xB9] = &CPU::CP_C;
-    basic_opcodes[0xBA] = &CPU::CP_D;
-    basic_opcodes[0xBB] = &CPU::CP_E;
-    basic_opcodes[0xBC] = &CPU::CP_H;
-    basic_opcodes[0xBD] = &CPU::CP_L;
-    basic_opcodes[0xBE] = &CPU::CP_mHL;
-    basic_opcodes[0xBF] = &CPU::CP_A;
-    basic_opcodes[0xC0] = &CPU::RET_NZ;
-    basic_opcodes[0xC1] = &CPU::POP_BC;
-    basic_opcodes[0xC2] = &CPU::JP_NZ_nn;
-    basic_opcodes[0xC3] = &CPU::JP_nn;
-    basic_opcodes[0xC4] = &CPU::CALL_NZ_nn;
-    basic_opcodes[0xC5] = &CPU::PUSH_BC;
-    basic_opcodes[0xC6] = &CPU::ADD_A_n;
-    basic_opcodes[0xC7] = &CPU::RST_00;
-    basic_opcodes[0xC8] = &CPU::RET_Z;
-    basic_opcodes[0xC9] = &CPU::RET;
-    basic_opcodes[0xCA] = &CPU::JP_Z_nn;
-    basic_opcodes[0xCB] = &CPU::PREFIX_CB;
-    basic_opcodes[0xCC] = &CPU::CALL_Z_nn;
-    basic_opcodes[0xCD] = &CPU::CALL_nn;
-    basic_opcodes[0xCE] = &CPU::ADC_A_n;
-    basic_opcodes[0xCF] = &CPU::RST_08;
-    basic_opcodes[0xD0] = &CPU::RET_NC;
-    basic_opcodes[0xD1] = &CPU::POP_DE;
-    basic_opcodes[0xD2] = &CPU::JP_NC_nn;
-    basic_opcodes[0xD3] = &CPU::OUT_n_A;
-    basic_opcodes[0xD4] = &CPU::CALL_NC_nn;
-    basic_opcodes[0xD5] = &CPU::PUSH_DE;
-    basic_opcodes[0xD6] = &CPU::SUB_n;
-    basic_opcodes[0xD7] = &CPU::RST_10;
-    basic_opcodes[0xD8] = &CPU::RET_C;
-    basic_opcodes[0xD9] = &CPU::EXX;
-    basic_opcodes[0xDA] = &CPU::JP_C_nn;
-    basic_opcodes[0xDB] = &CPU::IN_A_n;
-    basic_opcodes[0xDC] = &CPU::CALL_C_nn;
-    basic_opcodes[0xDD] = &CPU::PREFIX_DD;
-    basic_opcodes[0xDE] = &CPU::SBC_A_n;
-    basic_opcodes[0xDF] = &CPU::RST_18;
-    basic_opcodes[0xE0] = &CPU::RET_PO;
-    basic_opcodes[0xE1] = &CPU::POP_HL;
-    basic_opcodes[0xE2] = &CPU::JP_PO_nn;
-    basic_opcodes[0xE3] = &CPU::EX_mSP_HL;
-    basic_opcodes[0xE4] = &CPU::CALL_PO_nn;
-    basic_opcodes[0xE5] = &CPU::PUSH_HL;
-    basic_opcodes[0xE6] = &CPU::AND_n;
-    basic_opcodes[0xE7] = &CPU::RST_20;
-    basic_opcodes[0xE8] = &CPU::RET_PE;
-    basic_opcodes[0xE9] = &CPU::JP_HL;
-    basic_opcodes[0xEA] = &CPU::JP_PE_nn;
-    basic_opcodes[0xEB] = &CPU::EX_DE_HL;
-    basic_opcodes[0xEC] = &CPU::CALL_PE_nn;
-    basic_opcodes[0xED] = &CPU::PREFIX_ED;
-    basic_opcodes[0xEE] = &CPU::XOR_n;
-    basic_opcodes[0xEF] = &CPU::RST_28;
-    basic_opcodes[0xF0] = &CPU::RET_P;
-    basic_opcodes[0xF1] = &CPU::POP_AF;
-    basic_opcodes[0xF2] = &CPU::JP_P_nn;
-    basic_opcodes[0xF3] = &CPU::DI;
-    basic_opcodes[0xF4] = &CPU::CALL_P_nn;
-    basic_opcodes[0xF5] = &CPU::PUSH_AF;
-    basic_opcodes[0xF6] = &CPU::OR_n;
-    basic_opcodes[0xF7] = &CPU::RST_30;
-    basic_opcodes[0xF8] = &CPU::RET_M;
-    basic_opcodes[0xF9] = &CPU::LD_SP_HL;
-    basic_opcodes[0xFA] = &CPU::JP_M_nn;
-    basic_opcodes[0xFB] = &CPU::EI;
-    basic_opcodes[0xFC] = &CPU::CALL_M_nn;
-    basic_opcodes[0xFD] = &CPU::PREFIX_FD;
-    basic_opcodes[0xFE] = &CPU::CP_n;
-    basic_opcodes[0xFF] = &CPU::RST_38;
+    basic_opcodes[0x00] = &CPUImpl::NOP;
+    basic_opcodes[0x01] = &CPUImpl::LD_BC_nn;
+    basic_opcodes[0x02] = &CPUImpl::LD_mBC_A;
+    basic_opcodes[0x03] = &CPUImpl::INC_BC;
+    basic_opcodes[0x04] = &CPUImpl::INC_B;
+    basic_opcodes[0x05] = &CPUImpl::DEC_B;
+    basic_opcodes[0x06] = &CPUImpl::LD_B_n;
+    basic_opcodes[0x07] = &CPUImpl::RLCA;
+    basic_opcodes[0x08] = &CPUImpl::EX_AF_AF;
+    basic_opcodes[0x09] = &CPUImpl::ADD_HL_BC;
+    basic_opcodes[0x0A] = &CPUImpl::LD_A_mBC;
+    basic_opcodes[0x0B] = &CPUImpl::DEC_BC;
+    basic_opcodes[0x0C] = &CPUImpl::INC_C;
+    basic_opcodes[0x0D] = &CPUImpl::DEC_C;
+    basic_opcodes[0x0E] = &CPUImpl::LD_C_n;
+    basic_opcodes[0x0F] = &CPUImpl::RRCA;
+    basic_opcodes[0x10] = &CPUImpl::DJNZ;
+    basic_opcodes[0x11] = &CPUImpl::LD_DE_nn;
+    basic_opcodes[0x12] = &CPUImpl::LD_mDE_A;
+    basic_opcodes[0x13] = &CPUImpl::INC_DE;
+    basic_opcodes[0x14] = &CPUImpl::INC_D;
+    basic_opcodes[0x15] = &CPUImpl::DEC_D;
+    basic_opcodes[0x16] = &CPUImpl::LD_D_n;
+    basic_opcodes[0x17] = &CPUImpl::RLA;
+    basic_opcodes[0x18] = &CPUImpl::JR;
+    basic_opcodes[0x19] = &CPUImpl::ADD_HL_DE;
+    basic_opcodes[0x1A] = &CPUImpl::LD_A_mDE;
+    basic_opcodes[0x1B] = &CPUImpl::DEC_DE;
+    basic_opcodes[0x1C] = &CPUImpl::INC_E;
+    basic_opcodes[0x1D] = &CPUImpl::DEC_E;
+    basic_opcodes[0x1E] = &CPUImpl::LD_E_n;
+    basic_opcodes[0x1F] = &CPUImpl::RRA;
+    basic_opcodes[0x20] = &CPUImpl::JR_NZ;
+    basic_opcodes[0x21] = &CPUImpl::LD_HL_nn;
+    basic_opcodes[0x22] = &CPUImpl::LD_mnn_HL;
+    basic_opcodes[0x23] = &CPUImpl::INC_HL;
+    basic_opcodes[0x24] = &CPUImpl::INC_H;
+    basic_opcodes[0x25] = &CPUImpl::DEC_H;
+    basic_opcodes[0x26] = &CPUImpl::LD_H_n;
+    basic_opcodes[0x27] = &CPUImpl::DAA;
+    basic_opcodes[0x28] = &CPUImpl::JR_Z;
+    basic_opcodes[0x29] = &CPUImpl::ADD_HL_HL;
+    basic_opcodes[0x2A] = &CPUImpl::LD_HL_mnn;
+    basic_opcodes[0x2B] = &CPUImpl::DEC_HL;
+    basic_opcodes[0x2C] = &CPUImpl::INC_L;
+    basic_opcodes[0x2D] = &CPUImpl::DEC_L;
+    basic_opcodes[0x2E] = &CPUImpl::LD_L_n;
+    basic_opcodes[0x2F] = &CPUImpl::CPL;
+    basic_opcodes[0x30] = &CPUImpl::JR_NC;
+    basic_opcodes[0x31] = &CPUImpl::LD_SP_nn;
+    basic_opcodes[0x32] = &CPUImpl::LD_mnn_A;
+    basic_opcodes[0x33] = &CPUImpl::INC_SP;
+    basic_opcodes[0x34] = &CPUImpl::INC_mHL;
+    basic_opcodes[0x35] = &CPUImpl::DEC_mHL;
+    basic_opcodes[0x36] = &CPUImpl::LD_mHL_n;
+    basic_opcodes[0x37] = &CPUImpl::SCF;
+    basic_opcodes[0x38] = &CPUImpl::JR_C;
+    basic_opcodes[0x39] = &CPUImpl::ADD_HL_SP;
+    basic_opcodes[0x3A] = &CPUImpl::LD_A_mnn;
+    basic_opcodes[0x3B] = &CPUImpl::DEC_SP;
+    basic_opcodes[0x3C] = &CPUImpl::INC_A;
+    basic_opcodes[0x3D] = &CPUImpl::DEC_A;
+    basic_opcodes[0x3E] = &CPUImpl::LD_A_n;
+    basic_opcodes[0x3F] = &CPUImpl::CCF;
+    basic_opcodes[0x40] = &CPUImpl::LD_B_B;
+    basic_opcodes[0x41] = &CPUImpl::LD_B_C;
+    basic_opcodes[0x42] = &CPUImpl::LD_B_D;
+    basic_opcodes[0x43] = &CPUImpl::LD_B_E;
+    basic_opcodes[0x44] = &CPUImpl::LD_B_H;
+    basic_opcodes[0x45] = &CPUImpl::LD_B_L;
+    basic_opcodes[0x46] = &CPUImpl::LD_B_mHL;
+    basic_opcodes[0x47] = &CPUImpl::LD_B_A;
+    basic_opcodes[0x48] = &CPUImpl::LD_C_B;
+    basic_opcodes[0x49] = &CPUImpl::LD_C_C;
+    basic_opcodes[0x4A] = &CPUImpl::LD_C_D;
+    basic_opcodes[0x4B] = &CPUImpl::LD_C_E;
+    basic_opcodes[0x4C] = &CPUImpl::LD_C_H;
+    basic_opcodes[0x4D] = &CPUImpl::LD_C_L;
+    basic_opcodes[0x4E] = &CPUImpl::LD_C_mHL;
+    basic_opcodes[0x4F] = &CPUImpl::LD_C_A;
+    basic_opcodes[0x50] = &CPUImpl::LD_D_B;
+    basic_opcodes[0x51] = &CPUImpl::LD_D_C;
+    basic_opcodes[0x52] = &CPUImpl::LD_D_D;
+    basic_opcodes[0x53] = &CPUImpl::LD_D_E;
+    basic_opcodes[0x54] = &CPUImpl::LD_D_H;
+    basic_opcodes[0x55] = &CPUImpl::LD_D_L;
+    basic_opcodes[0x56] = &CPUImpl::LD_D_mHL;
+    basic_opcodes[0x57] = &CPUImpl::LD_D_A;
+    basic_opcodes[0x58] = &CPUImpl::LD_E_B;
+    basic_opcodes[0x59] = &CPUImpl::LD_E_C;
+    basic_opcodes[0x5A] = &CPUImpl::LD_E_D;
+    basic_opcodes[0x5B] = &CPUImpl::LD_E_E;
+    basic_opcodes[0x5C] = &CPUImpl::LD_E_H;
+    basic_opcodes[0x5D] = &CPUImpl::LD_E_L;
+    basic_opcodes[0x5E] = &CPUImpl::LD_E_mHL;
+    basic_opcodes[0x5F] = &CPUImpl::LD_E_A;
+    basic_opcodes[0x60] = &CPUImpl::LD_H_B;
+    basic_opcodes[0x61] = &CPUImpl::LD_H_C;
+    basic_opcodes[0x62] = &CPUImpl::LD_H_D;
+    basic_opcodes[0x63] = &CPUImpl::LD_H_E;
+    basic_opcodes[0x64] = &CPUImpl::LD_H_H;
+    basic_opcodes[0x65] = &CPUImpl::LD_H_L;
+    basic_opcodes[0x66] = &CPUImpl::LD_H_mHL;
+    basic_opcodes[0x67] = &CPUImpl::LD_H_A;
+    basic_opcodes[0x68] = &CPUImpl::LD_L_B;
+    basic_opcodes[0x69] = &CPUImpl::LD_L_C;
+    basic_opcodes[0x6A] = &CPUImpl::LD_L_D;
+    basic_opcodes[0x6B] = &CPUImpl::LD_L_E;
+    basic_opcodes[0x6C] = &CPUImpl::LD_L_H;
+    basic_opcodes[0x6D] = &CPUImpl::LD_L_L;
+    basic_opcodes[0x6E] = &CPUImpl::LD_L_mHL;
+    basic_opcodes[0x6F] = &CPUImpl::LD_L_A;
+    basic_opcodes[0x70] = &CPUImpl::LD_mHL_B;
+    basic_opcodes[0x71] = &CPUImpl::LD_mHL_C;
+    basic_opcodes[0x72] = &CPUImpl::LD_mHL_D;
+    basic_opcodes[0x73] = &CPUImpl::LD_mHL_E;
+    basic_opcodes[0x74] = &CPUImpl::LD_mHL_H;
+    basic_opcodes[0x75] = &CPUImpl::LD_mHL_L;
+    basic_opcodes[0x76] = &CPUImpl::HALT;
+    basic_opcodes[0x77] = &CPUImpl::LD_mHL_A;
+    basic_opcodes[0x78] = &CPUImpl::LD_A_B;
+    basic_opcodes[0x79] = &CPUImpl::LD_A_C;
+    basic_opcodes[0x7A] = &CPUImpl::LD_A_D;
+    basic_opcodes[0x7B] = &CPUImpl::LD_A_E;
+    basic_opcodes[0x7C] = &CPUImpl::LD_A_H;
+    basic_opcodes[0x7D] = &CPUImpl::LD_A_L;
+    basic_opcodes[0x7E] = &CPUImpl::LD_A_mHL;
+    basic_opcodes[0x7F] = &CPUImpl::LD_A_A;
+    basic_opcodes[0x80] = &CPUImpl::ADD_A_B;
+    basic_opcodes[0x81] = &CPUImpl::ADD_A_C;
+    basic_opcodes[0x82] = &CPUImpl::ADD_A_D;
+    basic_opcodes[0x83] = &CPUImpl::ADD_A_E;
+    basic_opcodes[0x84] = &CPUImpl::ADD_A_H;
+    basic_opcodes[0x85] = &CPUImpl::ADD_A_L;
+    basic_opcodes[0x86] = &CPUImpl::ADD_A_mHL;
+    basic_opcodes[0x87] = &CPUImpl::ADD_A_A;
+    basic_opcodes[0x88] = &CPUImpl::ADC_A_B;
+    basic_opcodes[0x89] = &CPUImpl::ADC_A_C;
+    basic_opcodes[0x8A] = &CPUImpl::ADC_A_D;
+    basic_opcodes[0x8B] = &CPUImpl::ADC_A_E;
+    basic_opcodes[0x8C] = &CPUImpl::ADC_A_H;
+    basic_opcodes[0x8D] = &CPUImpl::ADC_A_L;
+    basic_opcodes[0x8E] = &CPUImpl::ADC_A_mHL;
+    basic_opcodes[0x8F] = &CPUImpl::ADC_A_A;
+    basic_opcodes[0x90] = &CPUImpl::SUB_B;
+    basic_opcodes[0x91] = &CPUImpl::SUB_C;
+    basic_opcodes[0x92] = &CPUImpl::SUB_D;
+    basic_opcodes[0x93] = &CPUImpl::SUB_E;
+    basic_opcodes[0x94] = &CPUImpl::SUB_H;
+    basic_opcodes[0x95] = &CPUImpl::SUB_L;
+    basic_opcodes[0x96] = &CPUImpl::SUB_mHL;
+    basic_opcodes[0x97] = &CPUImpl::SUB_A;
+    basic_opcodes[0x98] = &CPUImpl::SBC_A_B;
+    basic_opcodes[0x99] = &CPUImpl::SBC_A_C;
+    basic_opcodes[0x9A] = &CPUImpl::SBC_A_D;
+    basic_opcodes[0x9B] = &CPUImpl::SBC_A_E;
+    basic_opcodes[0x9C] = &CPUImpl::SBC_A_H;
+    basic_opcodes[0x9D] = &CPUImpl::SBC_A_L;
+    basic_opcodes[0x9E] = &CPUImpl::SBC_A_mHL;
+    basic_opcodes[0x9F] = &CPUImpl::SBC_A_A;
+    basic_opcodes[0xA0] = &CPUImpl::AND_B;
+    basic_opcodes[0xA1] = &CPUImpl::AND_C;
+    basic_opcodes[0xA2] = &CPUImpl::AND_D;
+    basic_opcodes[0xA3] = &CPUImpl::AND_E;
+    basic_opcodes[0xA4] = &CPUImpl::AND_H;
+    basic_opcodes[0xA5] = &CPUImpl::AND_L;
+    basic_opcodes[0xA6] = &CPUImpl::AND_mHL;
+    basic_opcodes[0xA7] = &CPUImpl::AND_A;
+    basic_opcodes[0xA8] = &CPUImpl::XOR_B;
+    basic_opcodes[0xA9] = &CPUImpl::XOR_C;
+    basic_opcodes[0xAA] = &CPUImpl::XOR_D;
+    basic_opcodes[0xAB] = &CPUImpl::XOR_E;
+    basic_opcodes[0xAC] = &CPUImpl::XOR_H;
+    basic_opcodes[0xAD] = &CPUImpl::XOR_L;
+    basic_opcodes[0xAE] = &CPUImpl::XOR_mHL;
+    basic_opcodes[0xAF] = &CPUImpl::XOR_A;
+    basic_opcodes[0xB0] = &CPUImpl::OR_B;
+    basic_opcodes[0xB1] = &CPUImpl::OR_C;
+    basic_opcodes[0xB2] = &CPUImpl::OR_D;
+    basic_opcodes[0xB3] = &CPUImpl::OR_E;
+    basic_opcodes[0xB4] = &CPUImpl::OR_H;
+    basic_opcodes[0xB5] = &CPUImpl::OR_L;
+    basic_opcodes[0xB6] = &CPUImpl::OR_mHL;
+    basic_opcodes[0xB7] = &CPUImpl::OR_A;
+    basic_opcodes[0xB8] = &CPUImpl::CP_B;
+    basic_opcodes[0xB9] = &CPUImpl::CP_C;
+    basic_opcodes[0xBA] = &CPUImpl::CP_D;
+    basic_opcodes[0xBB] = &CPUImpl::CP_E;
+    basic_opcodes[0xBC] = &CPUImpl::CP_H;
+    basic_opcodes[0xBD] = &CPUImpl::CP_L;
+    basic_opcodes[0xBE] = &CPUImpl::CP_mHL;
+    basic_opcodes[0xBF] = &CPUImpl::CP_A;
+    basic_opcodes[0xC0] = &CPUImpl::RET_NZ;
+    basic_opcodes[0xC1] = &CPUImpl::POP_BC;
+    basic_opcodes[0xC2] = &CPUImpl::JP_NZ_nn;
+    basic_opcodes[0xC3] = &CPUImpl::JP_nn;
+    basic_opcodes[0xC4] = &CPUImpl::CALL_NZ_nn;
+    basic_opcodes[0xC5] = &CPUImpl::PUSH_BC;
+    basic_opcodes[0xC6] = &CPUImpl::ADD_A_n;
+    basic_opcodes[0xC7] = &CPUImpl::RST_00;
+    basic_opcodes[0xC8] = &CPUImpl::RET_Z;
+    basic_opcodes[0xC9] = &CPUImpl::RET;
+    basic_opcodes[0xCA] = &CPUImpl::JP_Z_nn;
+    basic_opcodes[0xCB] = &CPUImpl::PREFIX_CB;
+    basic_opcodes[0xCC] = &CPUImpl::CALL_Z_nn;
+    basic_opcodes[0xCD] = &CPUImpl::CALL_nn;
+    basic_opcodes[0xCE] = &CPUImpl::ADC_A_n;
+    basic_opcodes[0xCF] = &CPUImpl::RST_08;
+    basic_opcodes[0xD0] = &CPUImpl::RET_NC;
+    basic_opcodes[0xD1] = &CPUImpl::POP_DE;
+    basic_opcodes[0xD2] = &CPUImpl::JP_NC_nn;
+    basic_opcodes[0xD3] = &CPUImpl::OUT_n_A;
+    basic_opcodes[0xD4] = &CPUImpl::CALL_NC_nn;
+    basic_opcodes[0xD5] = &CPUImpl::PUSH_DE;
+    basic_opcodes[0xD6] = &CPUImpl::SUB_n;
+    basic_opcodes[0xD7] = &CPUImpl::RST_10;
+    basic_opcodes[0xD8] = &CPUImpl::RET_C;
+    basic_opcodes[0xD9] = &CPUImpl::EXX;
+    basic_opcodes[0xDA] = &CPUImpl::JP_C_nn;
+    basic_opcodes[0xDB] = &CPUImpl::IN_A_n;
+    basic_opcodes[0xDC] = &CPUImpl::CALL_C_nn;
+    basic_opcodes[0xDD] = &CPUImpl::PREFIX_DD;
+    basic_opcodes[0xDE] = &CPUImpl::SBC_A_n;
+    basic_opcodes[0xDF] = &CPUImpl::RST_18;
+    basic_opcodes[0xE0] = &CPUImpl::RET_PO;
+    basic_opcodes[0xE1] = &CPUImpl::POP_HL;
+    basic_opcodes[0xE2] = &CPUImpl::JP_PO_nn;
+    basic_opcodes[0xE3] = &CPUImpl::EX_mSP_HL;
+    basic_opcodes[0xE4] = &CPUImpl::CALL_PO_nn;
+    basic_opcodes[0xE5] = &CPUImpl::PUSH_HL;
+    basic_opcodes[0xE6] = &CPUImpl::AND_n;
+    basic_opcodes[0xE7] = &CPUImpl::RST_20;
+    basic_opcodes[0xE8] = &CPUImpl::RET_PE;
+    basic_opcodes[0xE9] = &CPUImpl::JP_HL;
+    basic_opcodes[0xEA] = &CPUImpl::JP_PE_nn;
+    basic_opcodes[0xEB] = &CPUImpl::EX_DE_HL;
+    basic_opcodes[0xEC] = &CPUImpl::CALL_PE_nn;
+    basic_opcodes[0xED] = &CPUImpl::PREFIX_ED;
+    basic_opcodes[0xEE] = &CPUImpl::XOR_n;
+    basic_opcodes[0xEF] = &CPUImpl::RST_28;
+    basic_opcodes[0xF0] = &CPUImpl::RET_P;
+    basic_opcodes[0xF1] = &CPUImpl::POP_AF;
+    basic_opcodes[0xF2] = &CPUImpl::JP_P_nn;
+    basic_opcodes[0xF3] = &CPUImpl::DI;
+    basic_opcodes[0xF4] = &CPUImpl::CALL_P_nn;
+    basic_opcodes[0xF5] = &CPUImpl::PUSH_AF;
+    basic_opcodes[0xF6] = &CPUImpl::OR_n;
+    basic_opcodes[0xF7] = &CPUImpl::RST_30;
+    basic_opcodes[0xF8] = &CPUImpl::RET_M;
+    basic_opcodes[0xF9] = &CPUImpl::LD_SP_HL;
+    basic_opcodes[0xFA] = &CPUImpl::JP_M_nn;
+    basic_opcodes[0xFB] = &CPUImpl::EI;
+    basic_opcodes[0xFC] = &CPUImpl::CALL_M_nn;
+    basic_opcodes[0xFD] = &CPUImpl::PREFIX_FD;
+    basic_opcodes[0xFE] = &CPUImpl::CP_n;
+    basic_opcodes[0xFF] = &CPUImpl::RST_38;
     
     // Initialize ED instruction table - most entries default to ED_NOP
-    ED_opcodes.fill(&CPU::ED_NOP);
+    ED_opcodes.fill(&CPUImpl::ED_NOP);
     
     // Map implemented ED instructions
     
     // 16-bit arithmetic operations
-    ED_opcodes[0x42] = &CPU::SBC_HL_BC;  // ED 42 - SBC HL, BC
-    ED_opcodes[0x4A] = &CPU::ADC_HL_BC;  // ED 4A - ADC HL, BC
-    ED_opcodes[0x52] = &CPU::SBC_HL_DE;  // ED 52 - SBC HL, DE
-    ED_opcodes[0x5A] = &CPU::ADC_HL_DE;  // ED 5A - ADC HL, DE
-    ED_opcodes[0x62] = &CPU::SBC_HL_HL;  // ED 62 - SBC HL, HL
-    ED_opcodes[0x6A] = &CPU::ADC_HL_HL;  // ED 6A - ADC HL, HL
-    ED_opcodes[0x72] = &CPU::SBC_HL_SP;  // ED 72 - SBC HL, SP
-    ED_opcodes[0x7A] = &CPU::ADC_HL_SP;  // ED 7A - ADC HL, SP
+    ED_opcodes[0x42] = &CPUImpl::SBC_HL_BC;  // ED 42 - SBC HL, BC
+    ED_opcodes[0x4A] = &CPUImpl::ADC_HL_BC;  // ED 4A - ADC HL, BC
+    ED_opcodes[0x52] = &CPUImpl::SBC_HL_DE;  // ED 52 - SBC HL, DE
+    ED_opcodes[0x5A] = &CPUImpl::ADC_HL_DE;  // ED 5A - ADC HL, DE
+    ED_opcodes[0x62] = &CPUImpl::SBC_HL_HL;  // ED 62 - SBC HL, HL
+    ED_opcodes[0x6A] = &CPUImpl::ADC_HL_HL;  // ED 6A - ADC HL, HL
+    ED_opcodes[0x72] = &CPUImpl::SBC_HL_SP;  // ED 72 - SBC HL, SP
+    ED_opcodes[0x7A] = &CPUImpl::ADC_HL_SP;  // ED 7A - ADC HL, SP
     
     // 16-bit load/store operations
-    ED_opcodes[0x43] = &CPU::LD_mnn_BC;  // ED 43 - LD (nn), BC
-    ED_opcodes[0x4B] = &CPU::LD_BC_mnn;  // ED 4B - LD BC, (nn)
-    ED_opcodes[0x53] = &CPU::LD_mnn_DE;  // ED 53 - LD (nn), DE
-    ED_opcodes[0x5B] = &CPU::LD_DE_mnn;  // ED 5B - LD DE, (nn)
-    ED_opcodes[0x63] = &CPU::LD_mnn_HL_ED;  // ED 63 - LD (nn), HL (ED version)
-    ED_opcodes[0x6B] = &CPU::LD_HL_mnn_ED;  // ED 6B - LD HL, (nn) (ED version)
-    ED_opcodes[0x73] = &CPU::LD_mnn_SP;  // ED 73 - LD (nn), SP
-    ED_opcodes[0x7B] = &CPU::LD_SP_mnn;  // ED 7B - LD SP, (nn)
+    ED_opcodes[0x43] = &CPUImpl::LD_mnn_BC;  // ED 43 - LD (nn), BC
+    ED_opcodes[0x4B] = &CPUImpl::LD_BC_mnn;  // ED 4B - LD BC, (nn)
+    ED_opcodes[0x53] = &CPUImpl::LD_mnn_DE;  // ED 53 - LD (nn), DE
+    ED_opcodes[0x5B] = &CPUImpl::LD_DE_mnn;  // ED 5B - LD DE, (nn)
+    ED_opcodes[0x63] = &CPUImpl::LD_mnn_HL_ED;  // ED 63 - LD (nn), HL (ED version)
+    ED_opcodes[0x6B] = &CPUImpl::LD_HL_mnn_ED;  // ED 6B - LD HL, (nn) (ED version)
+    ED_opcodes[0x73] = &CPUImpl::LD_mnn_SP;  // ED 73 - LD (nn), SP
+    ED_opcodes[0x7B] = &CPUImpl::LD_SP_mnn;  // ED 7B - LD SP, (nn)
     
     // Special operations and register transfers
-    ED_opcodes[0x44] = &CPU::NEG;        // ED 44 - NEG (negate A)
-    ED_opcodes[0x4C] = &CPU::NEG;        // ED 4C - NEG (alternate, undocumented)
-    ED_opcodes[0x54] = &CPU::NEG;        // ED 54 - NEG (alternate, undocumented)
-    ED_opcodes[0x5C] = &CPU::NEG;        // ED 5C - NEG (alternate, undocumented)
-    ED_opcodes[0x64] = &CPU::NEG;        // ED 64 - NEG (alternate, undocumented)
-    ED_opcodes[0x6C] = &CPU::NEG;        // ED 6C - NEG (alternate, undocumented)
-    ED_opcodes[0x74] = &CPU::NEG;        // ED 74 - NEG (alternate, undocumented)
-    ED_opcodes[0x7C] = &CPU::NEG;        // ED 7C - NEG (alternate, undocumented)
+    ED_opcodes[0x44] = &CPUImpl::NEG;        // ED 44 - NEG (negate A)
+    ED_opcodes[0x4C] = &CPUImpl::NEG;        // ED 4C - NEG (alternate, undocumented)
+    ED_opcodes[0x54] = &CPUImpl::NEG;        // ED 54 - NEG (alternate, undocumented)
+    ED_opcodes[0x5C] = &CPUImpl::NEG;        // ED 5C - NEG (alternate, undocumented)
+    ED_opcodes[0x64] = &CPUImpl::NEG;        // ED 64 - NEG (alternate, undocumented)
+    ED_opcodes[0x6C] = &CPUImpl::NEG;        // ED 6C - NEG (alternate, undocumented)
+    ED_opcodes[0x74] = &CPUImpl::NEG;        // ED 74 - NEG (alternate, undocumented)
+    ED_opcodes[0x7C] = &CPUImpl::NEG;        // ED 7C - NEG (alternate, undocumented)
     
-    ED_opcodes[0x45] = &CPU::RETN;       // ED 45 - RETN (return from NMI)
-    ED_opcodes[0x55] = &CPU::RETN;       // ED 55 - RETN (alternate, undocumented)
-    ED_opcodes[0x5D] = &CPU::RETN;       // ED 5D - RETN (alternate, undocumented)
-    ED_opcodes[0x65] = &CPU::RETN;       // ED 65 - RETN (alternate, undocumented)
-    ED_opcodes[0x6D] = &CPU::RETN;       // ED 6D - RETN (alternate, undocumented)
-    ED_opcodes[0x75] = &CPU::RETN;       // ED 75 - RETN (alternate, undocumented)
-    ED_opcodes[0x7D] = &CPU::RETN;       // ED 7D - RETN (alternate, undocumented)
+    ED_opcodes[0x45] = &CPUImpl::RETN;       // ED 45 - RETN (return from NMI)
+    ED_opcodes[0x55] = &CPUImpl::RETN;       // ED 55 - RETN (alternate, undocumented)
+    ED_opcodes[0x5D] = &CPUImpl::RETN;       // ED 5D - RETN (alternate, undocumented)
+    ED_opcodes[0x65] = &CPUImpl::RETN;       // ED 65 - RETN (alternate, undocumented)
+    ED_opcodes[0x6D] = &CPUImpl::RETN;       // ED 6D - RETN (alternate, undocumented)
+    ED_opcodes[0x75] = &CPUImpl::RETN;       // ED 75 - RETN (alternate, undocumented)
+    ED_opcodes[0x7D] = &CPUImpl::RETN;       // ED 7D - RETN (alternate, undocumented)
     
-    ED_opcodes[0x76] = &CPU::SLL_mHL;    // ED 76 - SLL (HL) (shift left logical, undocumented)
+    ED_opcodes[0x76] = &CPUImpl::SLL_mHL;    // ED 76 - SLL (HL) (shift left logical, undocumented)
     
-    ED_opcodes[0x46] = &CPU::IM_0;       // ED 46 - IM 0 (interrupt mode 0)
-    ED_opcodes[0x4E] = &CPU::IM_0;       // ED 4E - IM 0 (alternate, undocumented)
-    ED_opcodes[0x66] = &CPU::IM_0;       // ED 66 - IM 0 (alternate, undocumented)
-    ED_opcodes[0x6E] = &CPU::IM_0;       // ED 6E - IM 0 (alternate, undocumented)
+    ED_opcodes[0x46] = &CPUImpl::IM_0;       // ED 46 - IM 0 (interrupt mode 0)
+    ED_opcodes[0x4E] = &CPUImpl::IM_0;       // ED 4E - IM 0 (alternate, undocumented)
+    ED_opcodes[0x66] = &CPUImpl::IM_0;       // ED 66 - IM 0 (alternate, undocumented)
+    ED_opcodes[0x6E] = &CPUImpl::IM_0;       // ED 6E - IM 0 (alternate, undocumented)
     
-    ED_opcodes[0x47] = &CPU::LD_I_A;     // ED 47 - LD I, A
-    ED_opcodes[0x4D] = &CPU::RETI;       // ED 4D - RETI (return from interrupt)
-    ED_opcodes[0x4F] = &CPU::LD_R_A;     // ED 4F - LD R, A
-    ED_opcodes[0x56] = &CPU::IM_1;       // ED 56 - IM 1 (interrupt mode 1)
-    ED_opcodes[0x57] = &CPU::LD_A_I;     // ED 57 - LD A, I
-    ED_opcodes[0x5E] = &CPU::IM_2;       // ED 5E - IM 2 (interrupt mode 2)
-    ED_opcodes[0x5F] = &CPU::LD_A_R;     // ED 5F - LD A, R
-    ED_opcodes[0x67] = &CPU::RRD;        // ED 67 - RRD (rotate right decimal)
-    ED_opcodes[0x6F] = &CPU::RLD;        // ED 6F - RLD (rotate left decimal)
+    ED_opcodes[0x47] = &CPUImpl::LD_I_A;     // ED 47 - LD I, A
+    ED_opcodes[0x4D] = &CPUImpl::RETI;       // ED 4D - RETI (return from interrupt)
+    ED_opcodes[0x4F] = &CPUImpl::LD_R_A;     // ED 4F - LD R, A
+    ED_opcodes[0x56] = &CPUImpl::IM_1;       // ED 56 - IM 1 (interrupt mode 1)
+    ED_opcodes[0x57] = &CPUImpl::LD_A_I;     // ED 57 - LD A, I
+    ED_opcodes[0x5E] = &CPUImpl::IM_2;       // ED 5E - IM 2 (interrupt mode 2)
+    ED_opcodes[0x5F] = &CPUImpl::LD_A_R;     // ED 5F - LD A, R
+    ED_opcodes[0x67] = &CPUImpl::RRD;        // ED 67 - RRD (rotate right decimal)
+    ED_opcodes[0x6F] = &CPUImpl::RLD;        // ED 6F - RLD (rotate left decimal)
     
     // Individual I/O operations using C register for port
-    ED_opcodes[0x40] = &CPU::IN_B_C;     // ED 40 - IN B, (C)
-    ED_opcodes[0x41] = &CPU::OUT_C_B;    // ED 41 - OUT (C), B
-    ED_opcodes[0x48] = &CPU::IN_C_C;     // ED 48 - IN C, (C)
-    ED_opcodes[0x49] = &CPU::OUT_C_C;    // ED 49 - OUT (C), C
-    ED_opcodes[0x50] = &CPU::IN_D_C;     // ED 50 - IN D, (C)
-    ED_opcodes[0x51] = &CPU::OUT_C_D;    // ED 51 - OUT (C), D
-    ED_opcodes[0x58] = &CPU::IN_E_C;     // ED 58 - IN E, (C)
-    ED_opcodes[0x59] = &CPU::OUT_C_E;    // ED 59 - OUT (C), E
-    ED_opcodes[0x60] = &CPU::IN_H_C;     // ED 60 - IN H, (C)
-    ED_opcodes[0x61] = &CPU::OUT_C_H;    // ED 61 - OUT (C), H
-    ED_opcodes[0x68] = &CPU::IN_L_C;     // ED 68 - IN L, (C)
-    ED_opcodes[0x69] = &CPU::OUT_C_L;    // ED 69 - OUT (C), L
-    ED_opcodes[0x70] = &CPU::IN_F_C;     // ED 70 - IN F, (C) (undocumented - sets flags only)
-    ED_opcodes[0x71] = &CPU::OUT_C_0;    // ED 71 - OUT (C), 0 (undocumented)
-    ED_opcodes[0x78] = &CPU::IN_A_C;     // ED 78 - IN A, (C)
-    ED_opcodes[0x79] = &CPU::OUT_C_A;    // ED 79 - OUT (C), A
+    ED_opcodes[0x40] = &CPUImpl::IN_B_C;     // ED 40 - IN B, (C)
+    ED_opcodes[0x41] = &CPUImpl::OUT_C_B;    // ED 41 - OUT (C), B
+    ED_opcodes[0x48] = &CPUImpl::IN_C_C;     // ED 48 - IN C, (C)
+    ED_opcodes[0x49] = &CPUImpl::OUT_C_C;    // ED 49 - OUT (C), C
+    ED_opcodes[0x50] = &CPUImpl::IN_D_C;     // ED 50 - IN D, (C)
+    ED_opcodes[0x51] = &CPUImpl::OUT_C_D;    // ED 51 - OUT (C), D
+    ED_opcodes[0x58] = &CPUImpl::IN_E_C;     // ED 58 - IN E, (C)
+    ED_opcodes[0x59] = &CPUImpl::OUT_C_E;    // ED 59 - OUT (C), E
+    ED_opcodes[0x60] = &CPUImpl::IN_H_C;     // ED 60 - IN H, (C)
+    ED_opcodes[0x61] = &CPUImpl::OUT_C_H;    // ED 61 - OUT (C), H
+    ED_opcodes[0x68] = &CPUImpl::IN_L_C;     // ED 68 - IN L, (C)
+    ED_opcodes[0x69] = &CPUImpl::OUT_C_L;    // ED 69 - OUT (C), L
+    ED_opcodes[0x70] = &CPUImpl::IN_F_C;     // ED 70 - IN F, (C) (undocumented - sets flags only)
+    ED_opcodes[0x71] = &CPUImpl::OUT_C_0;    // ED 71 - OUT (C), 0 (undocumented)
+    ED_opcodes[0x78] = &CPUImpl::IN_A_C;     // ED 78 - IN A, (C)
+    ED_opcodes[0x79] = &CPUImpl::OUT_C_A;    // ED 79 - OUT (C), A
     
     // Block operations
-    ED_opcodes[0xA0] = &CPU::LDI;        // ED A0 - LDI (load and increment)
-    ED_opcodes[0xA1] = &CPU::CPI;        // ED A1 - CPI (compare and increment)
-    ED_opcodes[0xA2] = &CPU::INI;        // ED A2 - INI (input and increment)
-    ED_opcodes[0xA3] = &CPU::OUTI;       // ED A3 - OUTI (output and increment)
-    ED_opcodes[0xA8] = &CPU::LDD;        // ED A8 - LDD (load and decrement)
-    ED_opcodes[0xA9] = &CPU::CPD;        // ED A9 - CPD (compare and decrement)
-    ED_opcodes[0xAA] = &CPU::IND;        // ED AA - IND (input and decrement)
-    ED_opcodes[0xAB] = &CPU::OUTD;       // ED AB - OUTD (output and decrement)
-    ED_opcodes[0xB0] = &CPU::LDIR;       // ED B0 - LDIR (load, increment, repeat)
-    ED_opcodes[0xB1] = &CPU::CPIR;       // ED B1 - CPIR (compare, increment, repeat)
-    ED_opcodes[0xB2] = &CPU::INIR;       // ED B2 - INIR (input, increment, repeat)
-    ED_opcodes[0xB3] = &CPU::OTIR;       // ED B3 - OTIR (output, increment, repeat)
-    ED_opcodes[0xB8] = &CPU::LDDR;       // ED B8 - LDDR (load, decrement, repeat)
-    ED_opcodes[0xB9] = &CPU::CPDR;       // ED B9 - CPDR (compare, decrement, repeat)
-    ED_opcodes[0xBA] = &CPU::INDR;       // ED BA - INDR (input, decrement, repeat)
-    ED_opcodes[0xBB] = &CPU::OTDR;       // ED BB - OTDR (output, decrement, repeat)
+    ED_opcodes[0xA0] = &CPUImpl::LDI;        // ED A0 - LDI (load and increment)
+    ED_opcodes[0xA1] = &CPUImpl::CPI;        // ED A1 - CPI (compare and increment)
+    ED_opcodes[0xA2] = &CPUImpl::INI;        // ED A2 - INI (input and increment)
+    ED_opcodes[0xA3] = &CPUImpl::OUTI;       // ED A3 - OUTI (output and increment)
+    ED_opcodes[0xA8] = &CPUImpl::LDD;        // ED A8 - LDD (load and decrement)
+    ED_opcodes[0xA9] = &CPUImpl::CPD;        // ED A9 - CPD (compare and decrement)
+    ED_opcodes[0xAA] = &CPUImpl::IND;        // ED AA - IND (input and decrement)
+    ED_opcodes[0xAB] = &CPUImpl::OUTD;       // ED AB - OUTD (output and decrement)
+    ED_opcodes[0xB0] = &CPUImpl::LDIR;       // ED B0 - LDIR (load, increment, repeat)
+    ED_opcodes[0xB1] = &CPUImpl::CPIR;       // ED B1 - CPIR (compare, increment, repeat)
+    ED_opcodes[0xB2] = &CPUImpl::INIR;       // ED B2 - INIR (input, increment, repeat)
+    ED_opcodes[0xB3] = &CPUImpl::OTIR;       // ED B3 - OTIR (output, increment, repeat)
+    ED_opcodes[0xB8] = &CPUImpl::LDDR;       // ED B8 - LDDR (load, decrement, repeat)
+    ED_opcodes[0xB9] = &CPUImpl::CPDR;       // ED B9 - CPDR (compare, decrement, repeat)
+    ED_opcodes[0xBA] = &CPUImpl::INDR;       // ED BA - INDR (input, decrement, repeat)
+    ED_opcodes[0xBB] = &CPUImpl::OTDR;       // ED BB - OTDR (output, decrement, repeat)
 }
 
 // =============================================================================
 // Helper Functions
 // =============================================================================
 
-void CPU::SetCarryFlag(bool value) {
+template <class Memory>
+void CPUImpl<Memory>::SetCarryFlag(bool value) {
     if (value) {
         F() |= Constants::Flags::CARRY;
     } else {
@@ -565,7 +574,8 @@ void CPU::SetCarryFlag(bool value) {
     }
 }
 
-bool CPU::GetCarryFlag() const {
+template <class Memory>
+bool CPUImpl<Memory>::GetCarryFlag() const {
     return (_AF.r8.lo & Constants::Flags::CARRY) != 0;
 }
 
@@ -573,29 +583,34 @@ bool CPU::GetCarryFlag() const {
 // Basic Instructions (0x00-0x3F)
 // =============================================================================
 
-void CPU::NOP() {
+template <class Memory>
+void CPUImpl<Memory>::NOP() {
     t_cycle += 4;
 }
 
-void CPU::LD_BC_nn() {
+template <class Memory>
+void CPUImpl<Memory>::LD_BC_nn() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     BC() = WZ();
     PC() += 2;
     t_cycle += 10;
 }
 
-void CPU::LD_mBC_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mBC_A() {
     WZ() = BC();
     memory[WZ()] = A();
     t_cycle += 7;
 }
 
-void CPU::INC_BC() {
+template <class Memory>
+void CPUImpl<Memory>::INC_BC() {
     BC()++;
     t_cycle += 6;
 }
 
-void CPU::INC_B() {
+template <class Memory>
+void CPUImpl<Memory>::INC_B() {
     uint8_t old_b = B();
     B()++;
     F() &= 0x01; // Preserve carry
@@ -606,7 +621,8 @@ void CPU::INC_B() {
     t_cycle += 4;
 }
 
-void CPU::DEC_B() {
+template <class Memory>
+void CPUImpl<Memory>::DEC_B() {
     uint8_t old_b = B();
     B()--;
     F() &= 0x01; // Preserve carry
@@ -618,26 +634,30 @@ void CPU::DEC_B() {
     t_cycle += 4;
 }
 
-void CPU::LD_B_n() {
+template <class Memory>
+void CPUImpl<Memory>::LD_B_n() {
     B() = memory[PC()++];
     t_cycle += 7;
 }
 
-void CPU::RLCA() {
+template <class Memory>
+void CPUImpl<Memory>::RLCA() {
     uint8_t old_bit7 = (A() & 0x80) ? 1 : 0;
     A() = (A() << 1) | old_bit7;
     F() = (F() & 0xEC) | old_bit7;
     t_cycle += 4;
 }
 
-void CPU::EX_AF_AF() {
+template <class Memory>
+void CPUImpl<Memory>::EX_AF_AF() {
     uint16_t temp = AF();
     AF() = _AF1.r16;
     _AF1.r16 = temp;
     t_cycle += 4;
 }
 
-void CPU::ADD_HL_BC() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_HL_BC() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
     uint32_t result = hl_reg + BC();
     F() &= 0xC4; // Preserve S, Z, P/V
@@ -649,18 +669,21 @@ void CPU::ADD_HL_BC() {
     t_cycle += (current_state == CPUState::NORMAL) ? 11 : 15;
 }
 
-void CPU::LD_A_mBC() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_mBC() {
     WZ() = BC();
     A() = memory[WZ()];
     t_cycle += 7;
 }
 
-void CPU::DEC_BC() {
+template <class Memory>
+void CPUImpl<Memory>::DEC_BC() {
     BC()--;
     t_cycle += 6;
 }
 
-void CPU::INC_C() {
+template <class Memory>
+void CPUImpl<Memory>::INC_C() {
     uint8_t old_c = C();
     C()++;
     F() &= 0x01; // Preserve carry
@@ -671,7 +694,8 @@ void CPU::INC_C() {
     t_cycle += 4;
 }
 
-void CPU::DEC_C() {
+template <class Memory>
+void CPUImpl<Memory>::DEC_C() {
     uint8_t old_c = C();
     C()--;
     F() &= 0x01; // Preserve carry
@@ -683,19 +707,22 @@ void CPU::DEC_C() {
     t_cycle += 4;
 }
 
-void CPU::LD_C_n() {
+template <class Memory>
+void CPUImpl<Memory>::LD_C_n() {
     C() = memory[PC()++];
     t_cycle += 7;
 }
 
-void CPU::RRCA() {
+template <class Memory>
+void CPUImpl<Memory>::RRCA() {
     uint8_t old_bit0 = A() & 0x01;
     A() = (A() >> 1) | (old_bit0 << 7);
     F() = (F() & 0xEC) | old_bit0;
     t_cycle += 4;
 }
 
-void CPU::DJNZ() {
+template <class Memory>
+void CPUImpl<Memory>::DJNZ() {
     int8_t displacement = memory[PC()++];
     B()--;
     if (B() != 0) {
@@ -707,25 +734,29 @@ void CPU::DJNZ() {
     }
 }
 
-void CPU::LD_DE_nn() {
+template <class Memory>
+void CPUImpl<Memory>::LD_DE_nn() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     DE() = WZ();
     PC() += 2;
     t_cycle += 10;
 }
 
-void CPU::LD_mDE_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mDE_A() {
     WZ() = DE();
     memory[WZ()] = A();
     t_cycle += 7;
 }
 
-void CPU::INC_DE() {
+template <class Memory>
+void CPUImpl<Memory>::INC_DE() {
     DE()++;
     t_cycle += 6;
 }
 
-void CPU::INC_D() {
+template <class Memory>
+void CPUImpl<Memory>::INC_D() {
     uint8_t old_d = D();
     D()++;
     F() &= 0x01; // Preserve carry
@@ -736,7 +767,8 @@ void CPU::INC_D() {
     t_cycle += 4;
 }
 
-void CPU::DEC_D() {
+template <class Memory>
+void CPUImpl<Memory>::DEC_D() {
     uint8_t old_d = D();
     D()--;
     F() &= 0x01; // Preserve carry
@@ -748,12 +780,14 @@ void CPU::DEC_D() {
     t_cycle += 4;
 }
 
-void CPU::LD_D_n() {
+template <class Memory>
+void CPUImpl<Memory>::LD_D_n() {
     D() = memory[PC()++];
     t_cycle += 7;
 }
 
-void CPU::RLA() {
+template <class Memory>
+void CPUImpl<Memory>::RLA() {
     uint8_t old_carry = F() & 0x01;
     uint8_t new_carry = (A() & 0x80) ? 1 : 0;
     A() = (A() << 1) | old_carry;
@@ -761,14 +795,16 @@ void CPU::RLA() {
     t_cycle += 4;
 }
 
-void CPU::JR() {
+template <class Memory>
+void CPUImpl<Memory>::JR() {
     int8_t displacement = memory[PC()++];
     WZ() = PC() + displacement;
     PC() = WZ();
     t_cycle += 12;
 }
 
-void CPU::ADD_HL_DE() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_HL_DE() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
     uint32_t result = hl_reg + DE();
     F() &= 0xC4; // Preserve S, Z, P/V
@@ -780,18 +816,21 @@ void CPU::ADD_HL_DE() {
     t_cycle += (current_state == CPUState::NORMAL) ? 11 : 15;
 }
 
-void CPU::LD_A_mDE() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_mDE() {
     WZ() = DE();
     A() = memory[WZ()];
     t_cycle += 7;
 }
 
-void CPU::DEC_DE() {
+template <class Memory>
+void CPUImpl<Memory>::DEC_DE() {
     DE()--;
     t_cycle += 6;
 }
 
-void CPU::INC_E() {
+template <class Memory>
+void CPUImpl<Memory>::INC_E() {
     uint8_t old_e = E();
     E()++;
     F() &= 0x01; // Preserve carry
@@ -802,7 +841,8 @@ void CPU::INC_E() {
     t_cycle += 4;
 }
 
-void CPU::DEC_E() {
+template <class Memory>
+void CPUImpl<Memory>::DEC_E() {
     uint8_t old_e = E();
     E()--;
     F() &= 0x01; // Preserve carry
@@ -814,12 +854,14 @@ void CPU::DEC_E() {
     t_cycle += 4;
 }
 
-void CPU::LD_E_n() {
+template <class Memory>
+void CPUImpl<Memory>::LD_E_n() {
     E() = memory[PC()++];
     t_cycle += 7;
 }
 
-void CPU::RRA() {
+template <class Memory>
+void CPUImpl<Memory>::RRA() {
     uint8_t old_carry = F() & 0x01;
     uint8_t new_carry = A() & 0x01;
     A() = (A() >> 1) | (old_carry << 7);
@@ -827,7 +869,8 @@ void CPU::RRA() {
     t_cycle += 4;
 }
 
-void CPU::JR_NZ() {
+template <class Memory>
+void CPUImpl<Memory>::JR_NZ() {
     int8_t displacement = memory[PC()++];
     if (!(F() & 0x40)) { // Zero flag not set
         WZ() = PC() + displacement;
@@ -838,14 +881,16 @@ void CPU::JR_NZ() {
     }
 }
 
-void CPU::LD_HL_nn() {
+template <class Memory>
+void CPUImpl<Memory>::LD_HL_nn() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     GetEffectiveHL_Register() = WZ();
     PC() += 2;
     t_cycle += 10; // Base instruction timing - prefix adds its own 4 cycles
 }
 
-void CPU::LD_mnn_HL() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mnn_HL() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     PC() += 2;
     uint16_t& hl_reg = GetEffectiveHL_Register();
@@ -854,12 +899,14 @@ void CPU::LD_mnn_HL() {
     t_cycle += 16;
 }
 
-void CPU::INC_HL() {
+template <class Memory>
+void CPUImpl<Memory>::INC_HL() {
     GetEffectiveHL_Register()++;
     t_cycle += GetRegisterOpCycles();
 }
 
-void CPU::INC_H() {
+template <class Memory>
+void CPUImpl<Memory>::INC_H() {
     uint8_t& h_reg = GetEffectiveH();
     uint8_t old_h = h_reg;
     h_reg++;
@@ -871,7 +918,8 @@ void CPU::INC_H() {
     t_cycle += 4;
 }
 
-void CPU::DEC_H() {
+template <class Memory>
+void CPUImpl<Memory>::DEC_H() {
     uint8_t& h_reg = GetEffectiveH();
     uint8_t old_h = h_reg;
     h_reg--;
@@ -884,12 +932,14 @@ void CPU::DEC_H() {
     t_cycle += 4;
 }
 
-void CPU::LD_H_n() {
+template <class Memory>
+void CPUImpl<Memory>::LD_H_n() {
     GetEffectiveH() = memory[PC()++];
     t_cycle += 7;
 }
 
-void CPU::DAA() {
+template <class Memory>
+void CPUImpl<Memory>::DAA() {
     uint8_t correction = 0;
     bool carry = F() & 0x01;
     
@@ -917,7 +967,8 @@ void CPU::DAA() {
     t_cycle += 4;
 }
 
-void CPU::JR_Z() {
+template <class Memory>
+void CPUImpl<Memory>::JR_Z() {
     int8_t displacement = memory[PC()++];
     if (F() & 0x40) { // Zero flag set
         WZ() = PC() + displacement;
@@ -928,7 +979,8 @@ void CPU::JR_Z() {
     }
 }
 
-void CPU::ADD_HL_HL() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_HL_HL() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
     uint32_t result = hl_reg + hl_reg;
     F() &= 0xC4; // Preserve S, Z, P/V
@@ -940,7 +992,8 @@ void CPU::ADD_HL_HL() {
     t_cycle += (current_state == CPUState::NORMAL) ? 11 : 15;
 }
 
-void CPU::LD_HL_mnn() {
+template <class Memory>
+void CPUImpl<Memory>::LD_HL_mnn() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     PC() += 2;
     uint16_t& hl_reg = GetEffectiveHL_Register();
@@ -948,12 +1001,14 @@ void CPU::LD_HL_mnn() {
     t_cycle += 16;
 }
 
-void CPU::DEC_HL() {
+template <class Memory>
+void CPUImpl<Memory>::DEC_HL() {
     GetEffectiveHL_Register()--;
     t_cycle += GetRegisterOpCycles();
 }
 
-void CPU::INC_L() {
+template <class Memory>
+void CPUImpl<Memory>::INC_L() {
     uint8_t& l_reg = GetEffectiveL();
     uint8_t old_l = l_reg;
     l_reg++;
@@ -965,7 +1020,8 @@ void CPU::INC_L() {
     t_cycle += 4;
 }
 
-void CPU::DEC_L() {
+template <class Memory>
+void CPUImpl<Memory>::DEC_L() {
     uint8_t& l_reg = GetEffectiveL();
     uint8_t old_l = l_reg;
     l_reg--;
@@ -978,18 +1034,21 @@ void CPU::DEC_L() {
     t_cycle += 4;
 }
 
-void CPU::LD_L_n() {
+template <class Memory>
+void CPUImpl<Memory>::LD_L_n() {
     GetEffectiveL() = memory[PC()++];
     t_cycle += 7;
 }
 
-void CPU::CPL() {
+template <class Memory>
+void CPUImpl<Memory>::CPL() {
     A() = ~A();
     F() |= 0x12; // Set N and H flags
     t_cycle += 4;
 }
 
-void CPU::JR_NC() {
+template <class Memory>
+void CPUImpl<Memory>::JR_NC() {
     int8_t displacement = memory[PC()++];
     if (!(F() & 0x01)) { // Carry flag not set
         WZ() = PC() + displacement;
@@ -1000,26 +1059,30 @@ void CPU::JR_NC() {
     }
 }
 
-void CPU::LD_SP_nn() {
+template <class Memory>
+void CPUImpl<Memory>::LD_SP_nn() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     SP() = WZ();
     PC() += 2;
     t_cycle += 10;
 }
 
-void CPU::LD_mnn_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mnn_A() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     PC() += 2;
     memory[WZ()] = A();
     t_cycle += 13;
 }
 
-void CPU::INC_SP() {
+template <class Memory>
+void CPUImpl<Memory>::INC_SP() {
     SP()++;
     t_cycle += 6;
 }
 
-void CPU::INC_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::INC_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
     uint8_t old_value = value;
@@ -1033,7 +1096,8 @@ void CPU::INC_mHL() {
     t_cycle += 11;
 }
 
-void CPU::DEC_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::DEC_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
     uint8_t old_value = value;
@@ -1048,19 +1112,22 @@ void CPU::DEC_mHL() {
     t_cycle += 11;
 }
 
-void CPU::LD_mHL_n() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mHL_n() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = memory[PC()++];
     t_cycle += GetMemoryAccessCycles() + 3; // Base 7 cycles + 3 for immediate byte
 }
 
-void CPU::SCF() {
+template <class Memory>
+void CPUImpl<Memory>::SCF() {
     F() |= 0x01; // Set carry
     F() &= 0xED; // Clear N and H
     t_cycle += 4;
 }
 
-void CPU::JR_C() {
+template <class Memory>
+void CPUImpl<Memory>::JR_C() {
     int8_t displacement = memory[PC()++];
     if (F() & 0x01) { // Carry flag set
         WZ() = PC() + displacement;
@@ -1071,7 +1138,8 @@ void CPU::JR_C() {
     }
 }
 
-void CPU::ADD_HL_SP() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_HL_SP() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
     uint32_t result = hl_reg + SP();
     F() &= 0xC4; // Preserve S, Z, P/V
@@ -1083,19 +1151,22 @@ void CPU::ADD_HL_SP() {
     t_cycle += (current_state == CPUState::NORMAL) ? 11 : 15;
 }
 
-void CPU::LD_A_mnn() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_mnn() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     PC() += 2;
     A() = memory[WZ()];
     t_cycle += 13;
 }
 
-void CPU::DEC_SP() {
+template <class Memory>
+void CPUImpl<Memory>::DEC_SP() {
     SP()--;
     t_cycle += 6;
 }
 
-void CPU::INC_A() {
+template <class Memory>
+void CPUImpl<Memory>::INC_A() {
     uint8_t old_a = A();
     A()++;
     F() &= 0x01; // Preserve carry
@@ -1106,7 +1177,8 @@ void CPU::INC_A() {
     t_cycle += 4;
 }
 
-void CPU::DEC_A() {
+template <class Memory>
+void CPUImpl<Memory>::DEC_A() {
     uint8_t old_a = A();
     A()--;
     F() &= 0x01; // Preserve carry
@@ -1118,54 +1190,64 @@ void CPU::DEC_A() {
     t_cycle += 4;
 }
 
-void CPU::LD_A_n() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_n() {
     A() = memory[PC()++];
     t_cycle += 7;
 }
 
-void CPU::CCF() {
+template <class Memory>
+void CPUImpl<Memory>::CCF() {
     F() ^= 0x01; // Flip carry
     F() &= 0xED; // Clear N and H
     t_cycle += 4;
 }
 
-void CPU::LD_B_B() {
+template <class Memory>
+void CPUImpl<Memory>::LD_B_B() {
     // B = B (NOP equivalent)
     t_cycle += 4;
 }
 
-void CPU::LD_B_C() {
+template <class Memory>
+void CPUImpl<Memory>::LD_B_C() {
     B() = C();
     t_cycle += 4;
 }
 
-void CPU::LD_B_D() {
+template <class Memory>
+void CPUImpl<Memory>::LD_B_D() {
     B() = D();
     t_cycle += 4;
 }
 
-void CPU::LD_B_E() {
+template <class Memory>
+void CPUImpl<Memory>::LD_B_E() {
     B() = E();
     t_cycle += 4;
 }
 
-void CPU::LD_B_H() {
+template <class Memory>
+void CPUImpl<Memory>::LD_B_H() {
     B() = GetEffectiveH();
     t_cycle += 4;
 }
 
-void CPU::LD_B_L() {
+template <class Memory>
+void CPUImpl<Memory>::LD_B_L() {
     B() = GetEffectiveL();
     t_cycle += 4;
 }
 
-void CPU::LD_B_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::LD_B_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     B() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_B_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_B_A() {
     B() = A();
     t_cycle += 4;
 }
@@ -1174,296 +1256,352 @@ void CPU::LD_B_A() {
 // Load Instructions (0x48-0x7F) - Remaining register-to-register transfers
 // =============================================================================
 
-void CPU::LD_C_B() {
+template <class Memory>
+void CPUImpl<Memory>::LD_C_B() {
     C() = B();
     t_cycle += 4;
 }
 
-void CPU::LD_C_C() {
+template <class Memory>
+void CPUImpl<Memory>::LD_C_C() {
     // C = C (NOP equivalent)
     t_cycle += 4;
 }
 
-void CPU::LD_C_D() {
+template <class Memory>
+void CPUImpl<Memory>::LD_C_D() {
     C() = D();
     t_cycle += 4;
 }
 
-void CPU::LD_C_E() {
+template <class Memory>
+void CPUImpl<Memory>::LD_C_E() {
     C() = E();
     t_cycle += 4;
 }
 
-void CPU::LD_C_H() {
+template <class Memory>
+void CPUImpl<Memory>::LD_C_H() {
     C() = GetEffectiveH();
     t_cycle += 4;
 }
 
-void CPU::LD_C_L() {
+template <class Memory>
+void CPUImpl<Memory>::LD_C_L() {
     C() = GetEffectiveL();
     t_cycle += 4;
 }
 
-void CPU::LD_C_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::LD_C_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     C() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_C_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_C_A() {
     C() = A();
     t_cycle += 4;
 }
 
-void CPU::LD_D_B() {
+template <class Memory>
+void CPUImpl<Memory>::LD_D_B() {
     D() = B();
     t_cycle += 4;
 }
 
-void CPU::LD_D_C() {
+template <class Memory>
+void CPUImpl<Memory>::LD_D_C() {
     D() = C();
     t_cycle += 4;
 }
 
-void CPU::LD_D_D() {
+template <class Memory>
+void CPUImpl<Memory>::LD_D_D() {
     // D = D (NOP equivalent)
     t_cycle += 4;
 }
 
-void CPU::LD_D_E() {
+template <class Memory>
+void CPUImpl<Memory>::LD_D_E() {
     D() = E();
     t_cycle += 4;
 }
 
-void CPU::LD_D_H() {
+template <class Memory>
+void CPUImpl<Memory>::LD_D_H() {
     D() = GetEffectiveH();
     t_cycle += 4;
 }
 
-void CPU::LD_D_L() {
+template <class Memory>
+void CPUImpl<Memory>::LD_D_L() {
     D() = GetEffectiveL();
     t_cycle += 4;
 }
 
-void CPU::LD_D_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::LD_D_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     D() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_D_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_D_A() {
     D() = A();
     t_cycle += 4;
 }
 
-void CPU::LD_E_B() {
+template <class Memory>
+void CPUImpl<Memory>::LD_E_B() {
     E() = B();
     t_cycle += 4;
 }
 
-void CPU::LD_E_C() {
+template <class Memory>
+void CPUImpl<Memory>::LD_E_C() {
     E() = C();
     t_cycle += 4;
 }
 
-void CPU::LD_E_D() {
+template <class Memory>
+void CPUImpl<Memory>::LD_E_D() {
     E() = D();
     t_cycle += 4;
 }
 
-void CPU::LD_E_E() {
+template <class Memory>
+void CPUImpl<Memory>::LD_E_E() {
     // E = E (NOP equivalent)
     t_cycle += 4;
 }
 
-void CPU::LD_E_H() {
+template <class Memory>
+void CPUImpl<Memory>::LD_E_H() {
     E() = GetEffectiveH();
     t_cycle += 4;
 }
 
-void CPU::LD_E_L() {
+template <class Memory>
+void CPUImpl<Memory>::LD_E_L() {
     E() = GetEffectiveL();
     t_cycle += 4;
 }
 
-void CPU::LD_E_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::LD_E_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     E() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_E_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_E_A() {
     E() = A();
     t_cycle += 4;
 }
 
-void CPU::LD_H_B() {
+template <class Memory>
+void CPUImpl<Memory>::LD_H_B() {
     GetEffectiveH() = B();
     t_cycle += 4;
 }
 
-void CPU::LD_H_C() {
+template <class Memory>
+void CPUImpl<Memory>::LD_H_C() {
     GetEffectiveH() = C();
     t_cycle += 4;
 }
 
-void CPU::LD_H_D() {
+template <class Memory>
+void CPUImpl<Memory>::LD_H_D() {
     GetEffectiveH() = D();
     t_cycle += 4;
 }
 
-void CPU::LD_H_E() {
+template <class Memory>
+void CPUImpl<Memory>::LD_H_E() {
     GetEffectiveH() = E();
     t_cycle += 4;
 }
 
-void CPU::LD_H_H() {
+template <class Memory>
+void CPUImpl<Memory>::LD_H_H() {
     // H = H (NOP equivalent)
     t_cycle += 4;
 }
 
-void CPU::LD_H_L() {
+template <class Memory>
+void CPUImpl<Memory>::LD_H_L() {
     GetEffectiveH() = GetEffectiveL();
     t_cycle += 4;
 }
 
-void CPU::LD_H_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::LD_H_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     H() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_H_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_H_A() {
     GetEffectiveH() = A();
     t_cycle += 4;
 }
 
-void CPU::LD_L_B() {
+template <class Memory>
+void CPUImpl<Memory>::LD_L_B() {
     GetEffectiveL() = B();
     t_cycle += 4;
 }
 
-void CPU::LD_L_C() {
+template <class Memory>
+void CPUImpl<Memory>::LD_L_C() {
     GetEffectiveL() = C();
     t_cycle += 4;
 }
 
-void CPU::LD_L_D() {
+template <class Memory>
+void CPUImpl<Memory>::LD_L_D() {
     GetEffectiveL() = D();
     t_cycle += 4;
 }
 
-void CPU::LD_L_E() {
+template <class Memory>
+void CPUImpl<Memory>::LD_L_E() {
     GetEffectiveL() = E();
     t_cycle += 4;
 }
 
-void CPU::LD_L_H() {
+template <class Memory>
+void CPUImpl<Memory>::LD_L_H() {
     GetEffectiveL() = GetEffectiveH();
     t_cycle += 4;
 }
 
-void CPU::LD_L_L() {
+template <class Memory>
+void CPUImpl<Memory>::LD_L_L() {
     // L = L (NOP equivalent)
     t_cycle += 4;
 }
 
-void CPU::LD_L_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::LD_L_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     L() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_L_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_L_A() {
     GetEffectiveL() = A();
     t_cycle += 4;
 }
 
-void CPU::LD_mHL_B() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mHL_B() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = B();
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_mHL_C() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mHL_C() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = C();
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_mHL_D() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mHL_D() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = D();
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_mHL_E() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mHL_E() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = E();
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_mHL_H() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mHL_H() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = H();
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_mHL_L() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mHL_L() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = L();
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::HALT() {
+template <class Memory>
+void CPUImpl<Memory>::HALT() {
     // HALT instruction - processor stops until interrupt
     _halted = true;
     t_cycle += 4;  // HALT instruction takes 4 cycles
 }
 
-void CPU::LD_mHL_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mHL_A() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = A();
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_A_B() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_B() {
     A() = B();
     t_cycle += 4;
 }
 
-void CPU::LD_A_C() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_C() {
     A() = C();
     t_cycle += 4;
 }
 
-void CPU::LD_A_D() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_D() {
     A() = D();
     t_cycle += 4;
 }
 
-void CPU::LD_A_E() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_E() {
     A() = E();
     t_cycle += 4;
 }
 
-void CPU::LD_A_H() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_H() {
     A() = GetEffectiveH();
     t_cycle += 4;
 }
 
-void CPU::LD_A_L() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_L() {
     A() = GetEffectiveL();
     t_cycle += 4;
 }
 
-void CPU::LD_A_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     A() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::LD_A_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_A() {
     // A = A (NOP equivalent)
     t_cycle += 4;
 }
@@ -1472,7 +1610,8 @@ void CPU::LD_A_A() {
 // Flag Helper Functions
 // =============================================================================
 
-void CPU::SetFlags_ADD(uint8_t result, uint8_t operand1, uint8_t operand2) {
+template <class Memory>
+void CPUImpl<Memory>::SetFlags_ADD(uint8_t result, uint8_t operand1, uint8_t operand2) {
     F() = 0; // Clear all flags
     
     // Sign flag (bit 7)
@@ -1493,7 +1632,8 @@ void CPU::SetFlags_ADD(uint8_t result, uint8_t operand1, uint8_t operand2) {
     // N flag is cleared for addition
 }
 
-void CPU::SetFlags_SUB(uint8_t result, uint8_t operand1, uint8_t operand2) {
+template <class Memory>
+void CPUImpl<Memory>::SetFlags_SUB(uint8_t result, uint8_t operand1, uint8_t operand2) {
     F() = Constants::Flags::SUBTRACT; // Set N flag for subtraction
     
     // Sign flag (bit 7)
@@ -1512,7 +1652,8 @@ void CPU::SetFlags_SUB(uint8_t result, uint8_t operand1, uint8_t operand2) {
     if (operand1 < operand2) F() |= Constants::Flags::CARRY;
 }
 
-void CPU::SetFlags_LOGIC(uint8_t result) {
+template <class Memory>
+void CPUImpl<Memory>::SetFlags_LOGIC(uint8_t result) {
     F() = 0; // Clear all flags
     
     // Sign flag (bit 7)
@@ -1531,7 +1672,8 @@ void CPU::SetFlags_LOGIC(uint8_t result) {
     // N flag is cleared for logical operations
 }
 
-uint8_t CPU::CalculateParity(uint8_t value) {
+template <class Memory>
+uint8_t CPUImpl<Memory>::CalculateParity(uint8_t value) {
     uint8_t parity = 0;
     for (int i = 0; i < 8; ++i) {
         if (value & (1 << i)) parity++;
@@ -1543,35 +1685,40 @@ uint8_t CPU::CalculateParity(uint8_t value) {
 // Arithmetic and Logic Instructions (0x80-0xBF)
 // =============================================================================
 
-void CPU::ADD_A_B() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_A_B() {
     uint8_t old_a = A();
     A() += B();
     SetFlags_ADD(A(), old_a, B());
     t_cycle += 4;
 }
 
-void CPU::ADD_A_C() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_A_C() {
     uint8_t old_a = A();
     A() += C();
     SetFlags_ADD(A(), old_a, C());
     t_cycle += 4;
 }
 
-void CPU::ADD_A_D() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_A_D() {
     uint8_t old_a = A();
     A() += D();
     SetFlags_ADD(A(), old_a, D());
     t_cycle += 4;
 }
 
-void CPU::ADD_A_E() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_A_E() {
     uint8_t old_a = A();
     A() += E();
     SetFlags_ADD(A(), old_a, E());
     t_cycle += 4;
 }
 
-void CPU::ADD_A_H() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_A_H() {
     uint8_t old_a = A();
     uint8_t h_val = GetEffectiveH();
     A() += h_val;
@@ -1579,7 +1726,8 @@ void CPU::ADD_A_H() {
     t_cycle += 4;
 }
 
-void CPU::ADD_A_L() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_A_L() {
     uint8_t old_a = A();
     uint8_t l_val = GetEffectiveL();
     A() += l_val;
@@ -1587,7 +1735,8 @@ void CPU::ADD_A_L() {
     t_cycle += 4;
 }
 
-void CPU::ADD_A_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_A_mHL() {
     uint8_t old_a = A();
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
@@ -1596,14 +1745,16 @@ void CPU::ADD_A_mHL() {
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::ADD_A_A() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_A_A() {
     uint8_t old_a = A();
     A() += A();
     SetFlags_ADD(A(), old_a, old_a);
     t_cycle += 4;
 }
 
-void CPU::ADC_A_B() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_A_B() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(B()) + carry;
@@ -1619,7 +1770,8 @@ void CPU::ADC_A_B() {
     t_cycle += 4;
 }
 
-void CPU::ADC_A_C() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_A_C() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(C()) + carry;
@@ -1635,7 +1787,8 @@ void CPU::ADC_A_C() {
     t_cycle += 4;
 }
 
-void CPU::ADC_A_D() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_A_D() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(D()) + carry;
@@ -1651,7 +1804,8 @@ void CPU::ADC_A_D() {
     t_cycle += 4;
 }
 
-void CPU::ADC_A_E() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_A_E() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(E()) + carry;
@@ -1667,7 +1821,8 @@ void CPU::ADC_A_E() {
     t_cycle += 4;
 }
 
-void CPU::ADC_A_H() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_A_H() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint8_t h_val = GetEffectiveH();
@@ -1684,7 +1839,8 @@ void CPU::ADC_A_H() {
     t_cycle += 4;
 }
 
-void CPU::ADC_A_L() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_A_L() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint8_t l_val = GetEffectiveL();
@@ -1701,7 +1857,8 @@ void CPU::ADC_A_L() {
     t_cycle += 4;
 }
 
-void CPU::ADC_A_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_A_mHL() {
     uint8_t old_a = A();
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
@@ -1719,7 +1876,8 @@ void CPU::ADC_A_mHL() {
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::ADC_A_A() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_A_A() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(A()) + carry;
@@ -1735,35 +1893,40 @@ void CPU::ADC_A_A() {
     t_cycle += 4;
 }
 
-void CPU::SUB_B() {
+template <class Memory>
+void CPUImpl<Memory>::SUB_B() {
     uint8_t old_a = A();
     A() -= B();
     SetFlags_SUB(A(), old_a, B());
     t_cycle += 4;
 }
 
-void CPU::SUB_C() {
+template <class Memory>
+void CPUImpl<Memory>::SUB_C() {
     uint8_t old_a = A();
     A() -= C();
     SetFlags_SUB(A(), old_a, C());
     t_cycle += 4;
 }
 
-void CPU::SUB_D() {
+template <class Memory>
+void CPUImpl<Memory>::SUB_D() {
     uint8_t old_a = A();
     A() -= D();
     SetFlags_SUB(A(), old_a, D());
     t_cycle += 4;
 }
 
-void CPU::SUB_E() {
+template <class Memory>
+void CPUImpl<Memory>::SUB_E() {
     uint8_t old_a = A();
     A() -= E();
     SetFlags_SUB(A(), old_a, E());
     t_cycle += 4;
 }
 
-void CPU::SUB_H() {
+template <class Memory>
+void CPUImpl<Memory>::SUB_H() {
     uint8_t old_a = A();
     uint8_t h_val = GetEffectiveH();
     A() -= h_val;
@@ -1771,7 +1934,8 @@ void CPU::SUB_H() {
     t_cycle += 4;
 }
 
-void CPU::SUB_L() {
+template <class Memory>
+void CPUImpl<Memory>::SUB_L() {
     uint8_t old_a = A();
     uint8_t l_val = GetEffectiveL();
     A() -= l_val;
@@ -1779,7 +1943,8 @@ void CPU::SUB_L() {
     t_cycle += 4;
 }
 
-void CPU::SUB_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::SUB_mHL() {
     uint8_t old_a = A();
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
@@ -1788,14 +1953,16 @@ void CPU::SUB_mHL() {
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::SUB_A() {
+template <class Memory>
+void CPUImpl<Memory>::SUB_A() {
     uint8_t old_a = A();
     A() -= A(); // Result is always 0
     SetFlags_SUB(A(), old_a, old_a);
     t_cycle += 4;
 }
 
-void CPU::SBC_A_B() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_A_B() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(B()) - carry;
@@ -1811,7 +1978,8 @@ void CPU::SBC_A_B() {
     t_cycle += 4;
 }
 
-void CPU::SBC_A_C() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_A_C() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(C()) - carry;
@@ -1827,7 +1995,8 @@ void CPU::SBC_A_C() {
     t_cycle += 4;
 }
 
-void CPU::SBC_A_D() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_A_D() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(D()) - carry;
@@ -1843,7 +2012,8 @@ void CPU::SBC_A_D() {
     t_cycle += 4;
 }
 
-void CPU::SBC_A_E() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_A_E() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(E()) - carry;
@@ -1859,7 +2029,8 @@ void CPU::SBC_A_E() {
     t_cycle += 4;
 }
 
-void CPU::SBC_A_H() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_A_H() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint8_t h_val = GetEffectiveH();
@@ -1876,7 +2047,8 @@ void CPU::SBC_A_H() {
     t_cycle += 4;
 }
 
-void CPU::SBC_A_L() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_A_L() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint8_t l_val = GetEffectiveL();
@@ -1893,7 +2065,8 @@ void CPU::SBC_A_L() {
     t_cycle += 4;
 }
 
-void CPU::SBC_A_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_A_mHL() {
     uint8_t old_a = A();
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
@@ -1911,7 +2084,8 @@ void CPU::SBC_A_mHL() {
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::SBC_A_A() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_A_A() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(A()) - carry;
@@ -1927,192 +2101,223 @@ void CPU::SBC_A_A() {
     t_cycle += 4;
 }
 
-void CPU::AND_B() {
+template <class Memory>
+void CPUImpl<Memory>::AND_B() {
     A() &= B();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::AND_C() {
+template <class Memory>
+void CPUImpl<Memory>::AND_C() {
     A() &= C();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::AND_D() {
+template <class Memory>
+void CPUImpl<Memory>::AND_D() {
     A() &= D();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::AND_E() {
+template <class Memory>
+void CPUImpl<Memory>::AND_E() {
     A() &= E();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::AND_H() {
+template <class Memory>
+void CPUImpl<Memory>::AND_H() {
     A() &= GetEffectiveH();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::AND_L() {
+template <class Memory>
+void CPUImpl<Memory>::AND_L() {
     A() &= GetEffectiveL();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::AND_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::AND_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     A() &= memory[address];
     SetFlags_LOGIC(A());
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::AND_A() {
+template <class Memory>
+void CPUImpl<Memory>::AND_A() {
     A() &= A();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::XOR_B() {
+template <class Memory>
+void CPUImpl<Memory>::XOR_B() {
     A() ^= B();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::XOR_C() {
+template <class Memory>
+void CPUImpl<Memory>::XOR_C() {
     A() ^= C();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::XOR_D() {
+template <class Memory>
+void CPUImpl<Memory>::XOR_D() {
     A() ^= D();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::XOR_E() {
+template <class Memory>
+void CPUImpl<Memory>::XOR_E() {
     A() ^= E();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::XOR_H() {
+template <class Memory>
+void CPUImpl<Memory>::XOR_H() {
     A() ^= GetEffectiveH();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::XOR_L() {
+template <class Memory>
+void CPUImpl<Memory>::XOR_L() {
     A() ^= GetEffectiveL();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::XOR_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::XOR_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     A() ^= memory[address];
     SetFlags_LOGIC(A());
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::XOR_A() {
+template <class Memory>
+void CPUImpl<Memory>::XOR_A() {
     A() ^= A(); // Result is always 0
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::OR_B() {
+template <class Memory>
+void CPUImpl<Memory>::OR_B() {
     A() |= B();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::OR_C() {
+template <class Memory>
+void CPUImpl<Memory>::OR_C() {
     A() |= C();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::OR_D() {
+template <class Memory>
+void CPUImpl<Memory>::OR_D() {
     A() |= D();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::OR_E() {
+template <class Memory>
+void CPUImpl<Memory>::OR_E() {
     A() |= E();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::OR_H() {
+template <class Memory>
+void CPUImpl<Memory>::OR_H() {
     A() |= GetEffectiveH();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::OR_L() {
+template <class Memory>
+void CPUImpl<Memory>::OR_L() {
     A() |= GetEffectiveL();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::OR_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::OR_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     A() |= memory[address];
     SetFlags_LOGIC(A());
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::OR_A() {
+template <class Memory>
+void CPUImpl<Memory>::OR_A() {
     A() |= A();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-void CPU::CP_B() {
+template <class Memory>
+void CPUImpl<Memory>::CP_B() {
     uint8_t result = A() - B();
     SetFlags_SUB(result, A(), B());
     t_cycle += 4;
 }
 
-void CPU::CP_C() {
+template <class Memory>
+void CPUImpl<Memory>::CP_C() {
     uint8_t result = A() - C();
     SetFlags_SUB(result, A(), C());
     t_cycle += 4;
 }
 
-void CPU::CP_D() {
+template <class Memory>
+void CPUImpl<Memory>::CP_D() {
     uint8_t result = A() - D();
     SetFlags_SUB(result, A(), D());
     t_cycle += 4;
 }
 
-void CPU::CP_E() {
+template <class Memory>
+void CPUImpl<Memory>::CP_E() {
     uint8_t result = A() - E();
     SetFlags_SUB(result, A(), E());
     t_cycle += 4;
 }
 
-void CPU::CP_H() {
+template <class Memory>
+void CPUImpl<Memory>::CP_H() {
     uint8_t h_val = GetEffectiveH();
     uint8_t result = A() - h_val;
     SetFlags_SUB(result, A(), h_val);
     t_cycle += 4;
 }
 
-void CPU::CP_L() {
+template <class Memory>
+void CPUImpl<Memory>::CP_L() {
     uint8_t l_val = GetEffectiveL();
     uint8_t result = A() - l_val;
     SetFlags_SUB(result, A(), l_val);
     t_cycle += 4;
 }
 
-void CPU::CP_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::CP_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
     uint8_t result = A() - value;
@@ -2120,7 +2325,8 @@ void CPU::CP_mHL() {
     t_cycle += GetMemoryAccessCycles();
 }
 
-void CPU::CP_A() {
+template <class Memory>
+void CPUImpl<Memory>::CP_A() {
     uint8_t result = A() - A();
     SetFlags_SUB(result, A(), A());
     t_cycle += 4;
@@ -2130,19 +2336,22 @@ void CPU::CP_A() {
 // Stack and Condition Helper Functions
 // =============================================================================
 
-void CPU::PushWord(uint16_t value) {
+template <class Memory>
+void CPUImpl<Memory>::PushWord(uint16_t value) {
     SP() -= 2;
     memory[SP()] = value & 0xFF;        // Low byte
     memory[SP() + 1] = (value >> 8);    // High byte
 }
 
-uint16_t CPU::PopWord() {
+template <class Memory>
+uint16_t CPUImpl<Memory>::PopWord() {
     uint16_t value = memory[SP()] | (memory[SP() + 1] << 8);
     SP() += 2;
     return value;
 }
 
-bool CPU::CheckCondition(uint8_t condition) {
+template <class Memory>
+bool CPUImpl<Memory>::CheckCondition(uint8_t condition) {
     switch (condition) {
         case 0: return !(F() & Constants::Flags::ZERO);     // NZ - not zero
         case 1: return (F() & Constants::Flags::ZERO);      // Z - zero
@@ -2160,7 +2369,8 @@ bool CPU::CheckCondition(uint8_t condition) {
 // State-Aware IX/IY Helper Functions
 // =============================================================================
 
-uint16_t CPU::GetEffectiveHL_Memory() {
+template <class Memory>
+uint16_t CPUImpl<Memory>::GetEffectiveHL_Memory() {
     switch (current_state) {
         case CPUState::NORMAL:
             return HL();
@@ -2181,7 +2391,8 @@ uint16_t CPU::GetEffectiveHL_Memory() {
     }
 }
 
-uint16_t& CPU::GetEffectiveHL_Register() {
+template <class Memory>
+uint16_t& CPUImpl<Memory>::GetEffectiveHL_Register() {
     switch (current_state) {
         case CPUState::DD_PREFIX:
             return IX();
@@ -2192,7 +2403,8 @@ uint16_t& CPU::GetEffectiveHL_Register() {
     }
 }
 
-uint8_t& CPU::GetEffectiveH() {
+template <class Memory>
+uint8_t& CPUImpl<Memory>::GetEffectiveH() {
     switch (current_state) {
         case CPUState::DD_PREFIX:
             return _IX.r8.hi; // IXH
@@ -2203,7 +2415,8 @@ uint8_t& CPU::GetEffectiveH() {
     }
 }
 
-uint8_t& CPU::GetEffectiveL() {
+template <class Memory>
+uint8_t& CPUImpl<Memory>::GetEffectiveL() {
     switch (current_state) {
         case CPUState::DD_PREFIX:
             return _IX.r8.lo; // IXL
@@ -2214,17 +2427,20 @@ uint8_t& CPU::GetEffectiveL() {
     }
 }
 
-uint8_t CPU::GetMemoryAccessCycles() {
+template <class Memory>
+uint8_t CPUImpl<Memory>::GetMemoryAccessCycles() {
     // Memory operations: HL=7 cycles, IX/IY=19 cycles (+12 for displacement calculation)
     return (current_state == CPUState::NORMAL) ? 7 : 19;
 }
 
-uint8_t CPU::GetRegisterOpCycles() {
+template <class Memory>
+uint8_t CPUImpl<Memory>::GetRegisterOpCycles() {
     // Register operations: HL=6 cycles, IX/IY=6 cycles (prefix adds its own 4 cycles)
     return 6;
 }
 
-uint8_t CPU::GetArithmeticMemCycles() {
+template <class Memory>
+uint8_t CPUImpl<Memory>::GetArithmeticMemCycles() {
     // Arithmetic with memory: HL=7 cycles, IX/IY=19 cycles (+12 for displacement)
     return (current_state == CPUState::NORMAL) ? 7 : 19;
 }
@@ -2233,7 +2449,8 @@ uint8_t CPU::GetArithmeticMemCycles() {
 // Control Flow, Stack, and I/O Instructions (0xC0-0xFF)
 // =============================================================================
 
-void CPU::RET_NZ() {
+template <class Memory>
+void CPUImpl<Memory>::RET_NZ() {
     if (CheckCondition(0)) { // NZ
         PC() = PopWord();
         t_cycle += 11;
@@ -2242,12 +2459,14 @@ void CPU::RET_NZ() {
     }
 }
 
-void CPU::POP_BC() {
+template <class Memory>
+void CPUImpl<Memory>::POP_BC() {
     BC() = PopWord();
     t_cycle += 10;
 }
 
-void CPU::JP_NZ_nn() {
+template <class Memory>
+void CPUImpl<Memory>::JP_NZ_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(0)) { // NZ
@@ -2256,13 +2475,15 @@ void CPU::JP_NZ_nn() {
     t_cycle += 10;
 }
 
-void CPU::JP_nn() {
+template <class Memory>
+void CPUImpl<Memory>::JP_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() = address;
     t_cycle += 10;
 }
 
-void CPU::CALL_NZ_nn() {
+template <class Memory>
+void CPUImpl<Memory>::CALL_NZ_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(0)) { // NZ
@@ -2274,12 +2495,14 @@ void CPU::CALL_NZ_nn() {
     }
 }
 
-void CPU::PUSH_BC() {
+template <class Memory>
+void CPUImpl<Memory>::PUSH_BC() {
     PushWord(BC());
     t_cycle += 11;
 }
 
-void CPU::ADD_A_n() {
+template <class Memory>
+void CPUImpl<Memory>::ADD_A_n() {
     uint8_t value = memory[PC()++];
     uint8_t old_a = A();
     A() += value;
@@ -2287,13 +2510,15 @@ void CPU::ADD_A_n() {
     t_cycle += 7;
 }
 
-void CPU::RST_00() {
+template <class Memory>
+void CPUImpl<Memory>::RST_00() {
     PushWord(PC());
     PC() = 0x00;
     t_cycle += 11;
 }
 
-void CPU::RET_Z() {
+template <class Memory>
+void CPUImpl<Memory>::RET_Z() {
     if (CheckCondition(1)) { // Z
         PC() = PopWord();
         t_cycle += 11;
@@ -2302,12 +2527,14 @@ void CPU::RET_Z() {
     }
 }
 
-void CPU::RET() {
+template <class Memory>
+void CPUImpl<Memory>::RET() {
     PC() = PopWord();
     t_cycle += 10;
 }
 
-void CPU::JP_Z_nn() {
+template <class Memory>
+void CPUImpl<Memory>::JP_Z_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(1)) { // Z
@@ -2316,13 +2543,15 @@ void CPU::JP_Z_nn() {
     t_cycle += 10;
 }
 
-void CPU::PREFIX_CB() {
+template <class Memory>
+void CPUImpl<Memory>::PREFIX_CB() {
     // This should never be called - CB prefix is handled in Step()
     // If we reach here, it means the state machine has a bug
     t_cycle += 4;
 }
 
-void CPU::CALL_Z_nn() {
+template <class Memory>
+void CPUImpl<Memory>::CALL_Z_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(1)) { // Z
@@ -2334,7 +2563,8 @@ void CPU::CALL_Z_nn() {
     }
 }
 
-void CPU::CALL_nn() {
+template <class Memory>
+void CPUImpl<Memory>::CALL_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     PushWord(PC());
@@ -2342,7 +2572,8 @@ void CPU::CALL_nn() {
     t_cycle += 17;
 }
 
-void CPU::ADC_A_n() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_A_n() {
     uint8_t value = memory[PC()++];
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -2359,13 +2590,15 @@ void CPU::ADC_A_n() {
     t_cycle += 7;
 }
 
-void CPU::RST_08() {
+template <class Memory>
+void CPUImpl<Memory>::RST_08() {
     PushWord(PC());
     PC() = 0x08;
     t_cycle += 11;
 }
 
-void CPU::RET_NC() {
+template <class Memory>
+void CPUImpl<Memory>::RET_NC() {
     if (CheckCondition(2)) { // NC
         PC() = PopWord();
         t_cycle += 11;
@@ -2374,12 +2607,14 @@ void CPU::RET_NC() {
     }
 }
 
-void CPU::POP_DE() {
+template <class Memory>
+void CPUImpl<Memory>::POP_DE() {
     DE() = PopWord();
     t_cycle += 10;
 }
 
-void CPU::JP_NC_nn() {
+template <class Memory>
+void CPUImpl<Memory>::JP_NC_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(2)) { // NC
@@ -2388,13 +2623,15 @@ void CPU::JP_NC_nn() {
     t_cycle += 10;
 }
 
-void CPU::OUT_n_A() {
+template <class Memory>
+void CPUImpl<Memory>::OUT_n_A() {
     uint8_t port = memory[PC()++];
     WritePort(port, A());
     t_cycle += 11;
 }
 
-void CPU::CALL_NC_nn() {
+template <class Memory>
+void CPUImpl<Memory>::CALL_NC_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(2)) { // NC
@@ -2406,12 +2643,14 @@ void CPU::CALL_NC_nn() {
     }
 }
 
-void CPU::PUSH_DE() {
+template <class Memory>
+void CPUImpl<Memory>::PUSH_DE() {
     PushWord(DE());
     t_cycle += 11;
 }
 
-void CPU::SUB_n() {
+template <class Memory>
+void CPUImpl<Memory>::SUB_n() {
     uint8_t value = memory[PC()++];
     uint8_t old_a = A();
     A() -= value;
@@ -2419,13 +2658,15 @@ void CPU::SUB_n() {
     t_cycle += 7;
 }
 
-void CPU::RST_10() {
+template <class Memory>
+void CPUImpl<Memory>::RST_10() {
     PushWord(PC());
     PC() = 0x10;
     t_cycle += 11;
 }
 
-void CPU::RET_C() {
+template <class Memory>
+void CPUImpl<Memory>::RET_C() {
     if (CheckCondition(3)) { // C
         PC() = PopWord();
         t_cycle += 11;
@@ -2434,7 +2675,8 @@ void CPU::RET_C() {
     }
 }
 
-void CPU::EXX() {
+template <class Memory>
+void CPUImpl<Memory>::EXX() {
     // Exchange BC, DE, HL with BC', DE', HL'
     uint16_t temp;
     temp = BC(); BC() = _BC1.r16; _BC1.r16 = temp;
@@ -2443,7 +2685,8 @@ void CPU::EXX() {
     t_cycle += 4;
 }
 
-void CPU::JP_C_nn() {
+template <class Memory>
+void CPUImpl<Memory>::JP_C_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(3)) { // C
@@ -2452,13 +2695,15 @@ void CPU::JP_C_nn() {
     t_cycle += 10;
 }
 
-void CPU::IN_A_n() {
+template <class Memory>
+void CPUImpl<Memory>::IN_A_n() {
     uint8_t port = memory[PC()++];
     A() = ReadPort(port);
     t_cycle += 11;
 }
 
-void CPU::CALL_C_nn() {
+template <class Memory>
+void CPUImpl<Memory>::CALL_C_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(3)) { // C
@@ -2470,12 +2715,14 @@ void CPU::CALL_C_nn() {
     }
 }
 
-void CPU::PREFIX_DD() {
+template <class Memory>
+void CPUImpl<Memory>::PREFIX_DD() {
     // DD prefix handling is implemented in the main Step() state machine
     t_cycle += 4;
 }
 
-void CPU::SBC_A_n() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_A_n() {
     uint8_t value = memory[PC()++];
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -2492,13 +2739,15 @@ void CPU::SBC_A_n() {
     t_cycle += 7;
 }
 
-void CPU::RST_18() {
+template <class Memory>
+void CPUImpl<Memory>::RST_18() {
     PushWord(PC());
     PC() = 0x18;
     t_cycle += 11;
 }
 
-void CPU::RET_PO() {
+template <class Memory>
+void CPUImpl<Memory>::RET_PO() {
     if (CheckCondition(4)) { // PO
         PC() = PopWord();
         t_cycle += 11;
@@ -2507,12 +2756,14 @@ void CPU::RET_PO() {
     }
 }
 
-void CPU::POP_HL() {
+template <class Memory>
+void CPUImpl<Memory>::POP_HL() {
     GetEffectiveHL_Register() = PopWord();
     t_cycle += 10;
 }
 
-void CPU::JP_PO_nn() {
+template <class Memory>
+void CPUImpl<Memory>::JP_PO_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(4)) { // PO
@@ -2521,7 +2772,8 @@ void CPU::JP_PO_nn() {
     t_cycle += 10;
 }
 
-void CPU::EX_mSP_HL() {
+template <class Memory>
+void CPUImpl<Memory>::EX_mSP_HL() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
     uint16_t temp = memory[SP()] | (memory[SP() + 1] << 8);
     memory[SP()] = hl_reg & 0xFF;        // Low byte
@@ -2530,7 +2782,8 @@ void CPU::EX_mSP_HL() {
     t_cycle += 19;
 }
 
-void CPU::CALL_PO_nn() {
+template <class Memory>
+void CPUImpl<Memory>::CALL_PO_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(4)) { // PO
@@ -2542,25 +2795,29 @@ void CPU::CALL_PO_nn() {
     }
 }
 
-void CPU::PUSH_HL() {
+template <class Memory>
+void CPUImpl<Memory>::PUSH_HL() {
     PushWord(GetEffectiveHL_Register());
     t_cycle += 11;
 }
 
-void CPU::AND_n() {
+template <class Memory>
+void CPUImpl<Memory>::AND_n() {
     uint8_t value = memory[PC()++];
     A() &= value;
     SetFlags_LOGIC(A());
     t_cycle += 7;
 }
 
-void CPU::RST_20() {
+template <class Memory>
+void CPUImpl<Memory>::RST_20() {
     PushWord(PC());
     PC() = 0x20;
     t_cycle += 11;
 }
 
-void CPU::RET_PE() {
+template <class Memory>
+void CPUImpl<Memory>::RET_PE() {
     if (CheckCondition(5)) { // PE
         PC() = PopWord();
         t_cycle += 11;
@@ -2569,12 +2826,14 @@ void CPU::RET_PE() {
     }
 }
 
-void CPU::JP_HL() {
+template <class Memory>
+void CPUImpl<Memory>::JP_HL() {
     PC() = GetEffectiveHL_Register();
     t_cycle += 4;
 }
 
-void CPU::JP_PE_nn() {
+template <class Memory>
+void CPUImpl<Memory>::JP_PE_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(5)) { // PE
@@ -2583,7 +2842,8 @@ void CPU::JP_PE_nn() {
     t_cycle += 10;
 }
 
-void CPU::EX_DE_HL() {
+template <class Memory>
+void CPUImpl<Memory>::EX_DE_HL() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
     uint16_t temp = DE();
     DE() = hl_reg;
@@ -2591,7 +2851,8 @@ void CPU::EX_DE_HL() {
     t_cycle += 4;
 }
 
-void CPU::CALL_PE_nn() {
+template <class Memory>
+void CPUImpl<Memory>::CALL_PE_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(5)) { // PE
@@ -2603,25 +2864,29 @@ void CPU::CALL_PE_nn() {
     }
 }
 
-void CPU::PREFIX_ED() {
+template <class Memory>
+void CPUImpl<Memory>::PREFIX_ED() {
     // ED prefix handling is implemented in the main Step() state machine
     t_cycle += 4;
 }
 
-void CPU::XOR_n() {
+template <class Memory>
+void CPUImpl<Memory>::XOR_n() {
     uint8_t value = memory[PC()++];
     A() ^= value;
     SetFlags_LOGIC(A());
     t_cycle += 7;
 }
 
-void CPU::RST_28() {
+template <class Memory>
+void CPUImpl<Memory>::RST_28() {
     PushWord(PC());
     PC() = 0x28;
     t_cycle += 11;
 }
 
-void CPU::RET_P() {
+template <class Memory>
+void CPUImpl<Memory>::RET_P() {
     if (CheckCondition(6)) { // P
         PC() = PopWord();
         t_cycle += 11;
@@ -2630,12 +2895,14 @@ void CPU::RET_P() {
     }
 }
 
-void CPU::POP_AF() {
+template <class Memory>
+void CPUImpl<Memory>::POP_AF() {
     AF() = PopWord();
     t_cycle += 10;
 }
 
-void CPU::JP_P_nn() {
+template <class Memory>
+void CPUImpl<Memory>::JP_P_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(6)) { // P
@@ -2644,13 +2911,15 @@ void CPU::JP_P_nn() {
     t_cycle += 10;
 }
 
-void CPU::DI() {
+template <class Memory>
+void CPUImpl<Memory>::DI() {
     IFF1() = false;
     IFF2() = false;
     t_cycle += 4;
 }
 
-void CPU::CALL_P_nn() {
+template <class Memory>
+void CPUImpl<Memory>::CALL_P_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(6)) { // P
@@ -2662,25 +2931,29 @@ void CPU::CALL_P_nn() {
     }
 }
 
-void CPU::PUSH_AF() {
+template <class Memory>
+void CPUImpl<Memory>::PUSH_AF() {
     PushWord(AF());
     t_cycle += 11;
 }
 
-void CPU::OR_n() {
+template <class Memory>
+void CPUImpl<Memory>::OR_n() {
     uint8_t value = memory[PC()++];
     A() |= value;
     SetFlags_LOGIC(A());
     t_cycle += 7;
 }
 
-void CPU::RST_30() {
+template <class Memory>
+void CPUImpl<Memory>::RST_30() {
     PushWord(PC());
     PC() = 0x30;
     t_cycle += 11;
 }
 
-void CPU::RET_M() {
+template <class Memory>
+void CPUImpl<Memory>::RET_M() {
     if (CheckCondition(7)) { // M
         PC() = PopWord();
         t_cycle += 11;
@@ -2689,12 +2962,14 @@ void CPU::RET_M() {
     }
 }
 
-void CPU::LD_SP_HL() {
+template <class Memory>
+void CPUImpl<Memory>::LD_SP_HL() {
     SP() = GetEffectiveHL_Register();
     t_cycle += 6;
 }
 
-void CPU::JP_M_nn() {
+template <class Memory>
+void CPUImpl<Memory>::JP_M_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(7)) { // M
@@ -2703,13 +2978,15 @@ void CPU::JP_M_nn() {
     t_cycle += 10;
 }
 
-void CPU::EI() {
+template <class Memory>
+void CPUImpl<Memory>::EI() {
     IFF1() = true;
     IFF2() = true;
     t_cycle += 4;
 }
 
-void CPU::CALL_M_nn() {
+template <class Memory>
+void CPUImpl<Memory>::CALL_M_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(7)) { // M
@@ -2721,19 +2998,22 @@ void CPU::CALL_M_nn() {
     }
 }
 
-void CPU::PREFIX_FD() {
+template <class Memory>
+void CPUImpl<Memory>::PREFIX_FD() {
     // FD prefix handling is implemented in the main Step() state machine
     t_cycle += 4;
 }
 
-void CPU::CP_n() {
+template <class Memory>
+void CPUImpl<Memory>::CP_n() {
     uint8_t value = memory[PC()++];
     uint8_t result = A() - value;
     SetFlags_SUB(result, A(), value);
     t_cycle += 7;
 }
 
-void CPU::RST_38() {
+template <class Memory>
+void CPUImpl<Memory>::RST_38() {
     PushWord(PC());
     PC() = 0x38;
     t_cycle += 11;
@@ -2743,7 +3023,8 @@ void CPU::RST_38() {
 // CB Instruction Implementation - Compact Decoder
 // =============================================================================
 
-void CPU::ExecuteCBInstruction(uint8_t opcode) {
+template <class Memory>
+void CPUImpl<Memory>::ExecuteCBInstruction(uint8_t opcode) {
     // Decode CB instruction structure: OOORRRRR
     // OOO = Operation (bits 7-6-5 or 7-6 for bit operations)
     // RRR = Register/Memory target (bits 2-1-0)
@@ -2879,7 +3160,8 @@ void CPU::ExecuteCBInstruction(uint8_t opcode) {
     }
 }
 
-uint8_t& CPU::GetCBRegister(uint8_t reg_code) {
+template <class Memory>
+uint8_t& CPUImpl<Memory>::GetCBRegister(uint8_t reg_code) {
     switch (reg_code) {
         case 0: return B();
         case 1: return C();
@@ -2904,7 +3186,8 @@ uint8_t& CPU::GetCBRegister(uint8_t reg_code) {
     }
 }
 
-uint8_t CPU::GetCBMemory(uint8_t reg_code) {
+template <class Memory>
+uint8_t CPUImpl<Memory>::GetCBMemory(uint8_t reg_code) {
     if (reg_code == 6) {
         uint16_t address = GetEffectiveHL_Memory();
         return memory[address];
@@ -2912,7 +3195,8 @@ uint8_t CPU::GetCBMemory(uint8_t reg_code) {
     return 0; // Should never happen
 }
 
-void CPU::SetCBMemory(uint8_t reg_code, uint8_t value) {
+template <class Memory>
+void CPUImpl<Memory>::SetCBMemory(uint8_t reg_code, uint8_t value) {
     if (reg_code == 6) {
         uint16_t address = GetEffectiveHL_Memory();
         memory[address] = value;
@@ -2923,7 +3207,8 @@ void CPU::SetCBMemory(uint8_t reg_code, uint8_t value) {
 // CB Instruction Helper Functions
 // =============================================================================
 
-uint8_t CPU::RotateLeftCircular(uint8_t value) {
+template <class Memory>
+uint8_t CPUImpl<Memory>::RotateLeftCircular(uint8_t value) {
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = (value << 1) | bit7;
     
@@ -2936,7 +3221,8 @@ uint8_t CPU::RotateLeftCircular(uint8_t value) {
     return result;
 }
 
-uint8_t CPU::RotateRightCircular(uint8_t value) {
+template <class Memory>
+uint8_t CPUImpl<Memory>::RotateRightCircular(uint8_t value) {
     uint8_t bit0 = value & 0x01;
     uint8_t result = (value >> 1) | (bit0 << 7);
     
@@ -2949,7 +3235,8 @@ uint8_t CPU::RotateRightCircular(uint8_t value) {
     return result;
 }
 
-uint8_t CPU::RotateLeft(uint8_t value) {
+template <class Memory>
+uint8_t CPUImpl<Memory>::RotateLeft(uint8_t value) {
     uint8_t old_carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = (value << 1) | old_carry;
@@ -2963,7 +3250,8 @@ uint8_t CPU::RotateLeft(uint8_t value) {
     return result;
 }
 
-uint8_t CPU::RotateRight(uint8_t value) {
+template <class Memory>
+uint8_t CPUImpl<Memory>::RotateRight(uint8_t value) {
     uint8_t old_carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint8_t bit0 = value & 0x01;
     uint8_t result = (value >> 1) | (old_carry << 7);
@@ -2977,7 +3265,8 @@ uint8_t CPU::RotateRight(uint8_t value) {
     return result;
 }
 
-uint8_t CPU::ShiftLeftArithmetic(uint8_t value) {
+template <class Memory>
+uint8_t CPUImpl<Memory>::ShiftLeftArithmetic(uint8_t value) {
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = value << 1;
     
@@ -2990,7 +3279,8 @@ uint8_t CPU::ShiftLeftArithmetic(uint8_t value) {
     return result;
 }
 
-uint8_t CPU::ShiftRightArithmetic(uint8_t value) {
+template <class Memory>
+uint8_t CPUImpl<Memory>::ShiftRightArithmetic(uint8_t value) {
     uint8_t bit0 = value & 0x01;
     uint8_t bit7 = value & 0x80; // Preserve sign bit
     uint8_t result = (value >> 1) | bit7;
@@ -3004,7 +3294,8 @@ uint8_t CPU::ShiftRightArithmetic(uint8_t value) {
     return result;
 }
 
-uint8_t CPU::ShiftLeftLogical(uint8_t value) {
+template <class Memory>
+uint8_t CPUImpl<Memory>::ShiftLeftLogical(uint8_t value) {
     // Undocumented instruction - same as SLA but sets bit 0
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = (value << 1) | 0x01;
@@ -3018,7 +3309,8 @@ uint8_t CPU::ShiftLeftLogical(uint8_t value) {
     return result;
 }
 
-uint8_t CPU::ShiftRightLogical(uint8_t value) {
+template <class Memory>
+uint8_t CPUImpl<Memory>::ShiftRightLogical(uint8_t value) {
     uint8_t bit0 = value & 0x01;
     uint8_t result = value >> 1; // Logical shift - bit 7 becomes 0
     
@@ -3031,7 +3323,8 @@ uint8_t CPU::ShiftRightLogical(uint8_t value) {
     return result;
 }
 
-void CPU::TestBit(uint8_t value, uint8_t bit) {
+template <class Memory>
+void CPUImpl<Memory>::TestBit(uint8_t value, uint8_t bit) {
     uint8_t bit_mask = 1 << bit;
     bool bit_set = (value & bit_mask) != 0;
     
@@ -3043,12 +3336,14 @@ void CPU::TestBit(uint8_t value, uint8_t bit) {
     if (!bit_set) F() |= Constants::Flags::PARITY; // P/V flag = Z flag for BIT
 }
 
-uint8_t CPU::ResetBit(uint8_t value, uint8_t bit) {
+template <class Memory>
+uint8_t CPUImpl<Memory>::ResetBit(uint8_t value, uint8_t bit) {
     uint8_t bit_mask = ~(1 << bit);
     return value & bit_mask;
 }
 
-uint8_t CPU::SetBit(uint8_t value, uint8_t bit) {
+template <class Memory>
+uint8_t CPUImpl<Memory>::SetBit(uint8_t value, uint8_t bit) {
     uint8_t bit_mask = 1 << bit;
     return value | bit_mask;
 }
@@ -3057,12 +3352,14 @@ uint8_t CPU::SetBit(uint8_t value, uint8_t bit) {
 // ED Instruction Implementations
 // =============================================================================
 
-void CPU::ED_NOP() {
+template <class Memory>
+void CPUImpl<Memory>::ED_NOP() {
     // Default handler for undefined ED instructions
     t_cycle += 8; // Most ED instructions take 8 cycles minimum
 }
 
-void CPU::SBC_HL_DE() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_HL_DE() {
     // ED 52 - Subtract DE from HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3080,7 +3377,8 @@ void CPU::SBC_HL_DE() {
     t_cycle += 15;
 }
 
-void CPU::ADC_HL_DE() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_HL_DE() {
     // ED 5A - Add DE to HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3102,7 +3400,8 @@ void CPU::ADC_HL_DE() {
 // Additional 16-bit Arithmetic ED Instructions
 // =============================================================================
 
-void CPU::SBC_HL_BC() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_HL_BC() {
     // ED 42 - Subtract BC from HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3120,7 +3419,8 @@ void CPU::SBC_HL_BC() {
     t_cycle += 15;
 }
 
-void CPU::ADC_HL_BC() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_HL_BC() {
     // ED 4A - Add BC to HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3138,7 +3438,8 @@ void CPU::ADC_HL_BC() {
     t_cycle += 15;
 }
 
-void CPU::SBC_HL_HL() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_HL_HL() {
     // ED 62 - Subtract HL from HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3156,7 +3457,8 @@ void CPU::SBC_HL_HL() {
     t_cycle += 15;
 }
 
-void CPU::ADC_HL_HL() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_HL_HL() {
     // ED 6A - Add HL to HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3174,7 +3476,8 @@ void CPU::ADC_HL_HL() {
     t_cycle += 15;
 }
 
-void CPU::SBC_HL_SP() {
+template <class Memory>
+void CPUImpl<Memory>::SBC_HL_SP() {
     // ED 72 - Subtract SP from HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3192,7 +3495,8 @@ void CPU::SBC_HL_SP() {
     t_cycle += 15;
 }
 
-void CPU::ADC_HL_SP() {
+template <class Memory>
+void CPUImpl<Memory>::ADC_HL_SP() {
     // ED 7A - Add SP to HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3214,7 +3518,8 @@ void CPU::ADC_HL_SP() {
 // 16-bit Load/Store ED Instructions
 // =============================================================================
 
-void CPU::LD_mnn_BC() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mnn_BC() {
     // ED 43 - Load BC to memory at 16-bit address
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3223,7 +3528,8 @@ void CPU::LD_mnn_BC() {
     t_cycle += 20;
 }
 
-void CPU::LD_BC_mnn() {
+template <class Memory>
+void CPUImpl<Memory>::LD_BC_mnn() {
     // ED 4B - Load memory at 16-bit address to BC
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3231,7 +3537,8 @@ void CPU::LD_BC_mnn() {
     t_cycle += 20;
 }
 
-void CPU::LD_mnn_DE() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mnn_DE() {
     // ED 53 - Load DE to memory at 16-bit address
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3240,7 +3547,8 @@ void CPU::LD_mnn_DE() {
     t_cycle += 20;
 }
 
-void CPU::LD_DE_mnn() {
+template <class Memory>
+void CPUImpl<Memory>::LD_DE_mnn() {
     // ED 5B - Load memory at 16-bit address to DE
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3248,7 +3556,8 @@ void CPU::LD_DE_mnn() {
     t_cycle += 20;
 }
 
-void CPU::LD_mnn_HL_ED() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mnn_HL_ED() {
     // ED 63 - Load HL to memory at 16-bit address (ED version)
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3257,7 +3566,8 @@ void CPU::LD_mnn_HL_ED() {
     t_cycle += 20;
 }
 
-void CPU::LD_HL_mnn_ED() {
+template <class Memory>
+void CPUImpl<Memory>::LD_HL_mnn_ED() {
     // ED 6B - Load memory at 16-bit address to HL (ED version)
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3265,7 +3575,8 @@ void CPU::LD_HL_mnn_ED() {
     t_cycle += 20;
 }
 
-void CPU::LD_mnn_SP() {
+template <class Memory>
+void CPUImpl<Memory>::LD_mnn_SP() {
     // ED 73 - Load SP to memory at 16-bit address
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3274,7 +3585,8 @@ void CPU::LD_mnn_SP() {
     t_cycle += 20;
 }
 
-void CPU::LD_SP_mnn() {
+template <class Memory>
+void CPUImpl<Memory>::LD_SP_mnn() {
     // ED 7B - Load memory at 16-bit address to SP
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3286,7 +3598,8 @@ void CPU::LD_SP_mnn() {
 // Special Operations and Register Transfer ED Instructions
 // =============================================================================
 
-void CPU::NEG() {
+template <class Memory>
+void CPUImpl<Memory>::NEG() {
     // ED 44 - Negate A (2's complement)
     uint8_t old_a = A();
     A() = (~A()) + 1;  // 2's complement negation
@@ -3302,45 +3615,52 @@ void CPU::NEG() {
     t_cycle += 8;
 }
 
-void CPU::RETN() {
+template <class Memory>
+void CPUImpl<Memory>::RETN() {
     // ED 45 - Return from non-maskable interrupt
     PC() = PopWord();
     IFF1() = IFF2(); // Restore interrupt state
     t_cycle += 14;
 }
 
-void CPU::IM_0() {
+template <class Memory>
+void CPUImpl<Memory>::IM_0() {
     // ED 46 - Set interrupt mode 0
     _interrupt_mode = 0;
     t_cycle += 8;
 }
 
-void CPU::LD_I_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_I_A() {
     // ED 47 - Load A to I register
     I() = A();
     t_cycle += 9;
 }
 
-void CPU::RETI() {
+template <class Memory>
+void CPUImpl<Memory>::RETI() {
     // ED 4D - Return from interrupt
     PC() = PopWord();
     IFF1() = IFF2(); // Restore interrupt state
     t_cycle += 14;
 }
 
-void CPU::LD_R_A() {
+template <class Memory>
+void CPUImpl<Memory>::LD_R_A() {
     // ED 4F - Load A to R register
     R() = A();
     t_cycle += 9;
 }
 
-void CPU::IM_1() {
+template <class Memory>
+void CPUImpl<Memory>::IM_1() {
     // ED 56 - Set interrupt mode 1
     _interrupt_mode = 1;
     t_cycle += 8;
 }
 
-void CPU::LD_A_I() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_I() {
     // ED 57 - Load I register to A
     A() = I();
     
@@ -3353,13 +3673,15 @@ void CPU::LD_A_I() {
     t_cycle += 9;
 }
 
-void CPU::IM_2() {
+template <class Memory>
+void CPUImpl<Memory>::IM_2() {
     // ED 5E - Set interrupt mode 2
     _interrupt_mode = 2;
     t_cycle += 8;
 }
 
-void CPU::LD_A_R() {
+template <class Memory>
+void CPUImpl<Memory>::LD_A_R() {
     // ED 5F - Load R register to A
     A() = R();
     
@@ -3372,7 +3694,8 @@ void CPU::LD_A_R() {
     t_cycle += 9;
 }
 
-void CPU::RRD() {
+template <class Memory>
+void CPUImpl<Memory>::RRD() {
     // ED 67 - Rotate right decimal (4-bit)
     uint8_t mem_val = memory[HL()];
     uint8_t a_low = A() & 0x0F;
@@ -3392,7 +3715,8 @@ void CPU::RRD() {
     t_cycle += 18;
 }
 
-void CPU::RLD() {
+template <class Memory>
+void CPUImpl<Memory>::RLD() {
     // ED 6F - Rotate left decimal (4-bit)
     uint8_t mem_val = memory[HL()];
     uint8_t a_low = A() & 0x0F;
@@ -3416,7 +3740,8 @@ void CPU::RLD() {
 // Block Operation ED Instructions
 // =============================================================================
 
-void CPU::LDI() {
+template <class Memory>
+void CPUImpl<Memory>::LDI() {
     // ED A0 - Load and increment
     memory[DE()] = memory[HL()];
     HL()++;
@@ -3430,7 +3755,8 @@ void CPU::LDI() {
     t_cycle += 16;
 }
 
-void CPU::CPI() {
+template <class Memory>
+void CPUImpl<Memory>::CPI() {
     // ED A1 - Compare and increment
     uint8_t result = A() - memory[HL()];
     HL()++;
@@ -3447,7 +3773,8 @@ void CPU::CPI() {
     t_cycle += 16;
 }
 
-void CPU::INI() {
+template <class Memory>
+void CPUImpl<Memory>::INI() {
     // ED A2 - Input and increment
     memory[HL()] = ReadPort(C());
     HL()++;
@@ -3461,7 +3788,8 @@ void CPU::INI() {
     t_cycle += 16;
 }
 
-void CPU::OUTI() {
+template <class Memory>
+void CPUImpl<Memory>::OUTI() {
     // ED A3 - Output and increment
     WritePort(C(), memory[HL()]);
     HL()++;
@@ -3475,7 +3803,8 @@ void CPU::OUTI() {
     t_cycle += 16;
 }
 
-void CPU::LDD() {
+template <class Memory>
+void CPUImpl<Memory>::LDD() {
     // ED A8 - Load and decrement
     memory[DE()] = memory[HL()];
     HL()--;
@@ -3489,7 +3818,8 @@ void CPU::LDD() {
     t_cycle += 16;
 }
 
-void CPU::CPD() {
+template <class Memory>
+void CPUImpl<Memory>::CPD() {
     // ED A9 - Compare and decrement
     uint8_t result = A() - memory[HL()];
     HL()--;
@@ -3506,7 +3836,8 @@ void CPU::CPD() {
     t_cycle += 16;
 }
 
-void CPU::IND() {
+template <class Memory>
+void CPUImpl<Memory>::IND() {
     // ED AA - Input and decrement
     memory[HL()] = ReadPort(C());
     HL()--;
@@ -3520,7 +3851,8 @@ void CPU::IND() {
     t_cycle += 16;
 }
 
-void CPU::OUTD() {
+template <class Memory>
+void CPUImpl<Memory>::OUTD() {
     // ED AB - Output and decrement
     WritePort(C(), memory[HL()]);
     HL()--;
@@ -3534,7 +3866,8 @@ void CPU::OUTD() {
     t_cycle += 16;
 }
 
-void CPU::LDIR() {
+template <class Memory>
+void CPUImpl<Memory>::LDIR() {
     // ED B0 - Load, increment and repeat
     do {
         memory[DE()] = memory[HL()];
@@ -3552,7 +3885,8 @@ void CPU::LDIR() {
     // P/V is reset (BC = 0)
 }
 
-void CPU::CPIR() {
+template <class Memory>
+void CPUImpl<Memory>::CPIR() {
     // ED B1 - Compare, increment and repeat
     uint8_t result;
     do {
@@ -3573,7 +3907,8 @@ void CPU::CPIR() {
     if (BC() != 0) F() |= Constants::Flags::PARITY; // P/V = (BC != 0)
 }
 
-void CPU::INIR() {
+template <class Memory>
+void CPUImpl<Memory>::INIR() {
     // ED B2 - Input, increment and repeat
     do {
         memory[HL()] = ReadPort(C());
@@ -3589,7 +3924,8 @@ void CPU::INIR() {
     F() = Constants::Flags::SUBTRACT | Constants::Flags::ZERO; // N=1, Z=1 (B=0)
 }
 
-void CPU::OTIR() {
+template <class Memory>
+void CPUImpl<Memory>::OTIR() {
     // ED B3 - Output, increment and repeat
     do {
         WritePort(C(), memory[HL()]);
@@ -3605,7 +3941,8 @@ void CPU::OTIR() {
     F() = Constants::Flags::SUBTRACT | Constants::Flags::ZERO; // N=1, Z=1 (B=0)
 }
 
-void CPU::LDDR() {
+template <class Memory>
+void CPUImpl<Memory>::LDDR() {
     // ED B8 - Load, decrement and repeat
     do {
         memory[DE()] = memory[HL()];
@@ -3623,7 +3960,8 @@ void CPU::LDDR() {
     // P/V is reset (BC = 0)
 }
 
-void CPU::CPDR() {
+template <class Memory>
+void CPUImpl<Memory>::CPDR() {
     // ED B9 - Compare, decrement and repeat
     uint8_t result;
     do {
@@ -3644,7 +3982,8 @@ void CPU::CPDR() {
     if (BC() != 0) F() |= Constants::Flags::PARITY; // P/V = (BC != 0)
 }
 
-void CPU::INDR() {
+template <class Memory>
+void CPUImpl<Memory>::INDR() {
     // ED BA - Input, decrement and repeat
     do {
         memory[HL()] = ReadPort(C());
@@ -3660,7 +3999,8 @@ void CPU::INDR() {
     F() = Constants::Flags::SUBTRACT | Constants::Flags::ZERO; // N=1, Z=1 (B=0)
 }
 
-void CPU::OTDR() {
+template <class Memory>
+void CPUImpl<Memory>::OTDR() {
     // ED BB - Output, decrement and repeat
     do {
         WritePort(C(), memory[HL()]);
@@ -3680,7 +4020,8 @@ void CPU::OTDR() {
 // Individual I/O ED Instructions
 // =============================================================================
 
-void CPU::IN_B_C() {
+template <class Memory>
+void CPUImpl<Memory>::IN_B_C() {
     // ED 40 - Input from port C to B
     B() = ReadPort(C());
     
@@ -3693,13 +4034,15 @@ void CPU::IN_B_C() {
     t_cycle += 12;
 }
 
-void CPU::OUT_C_B() {
+template <class Memory>
+void CPUImpl<Memory>::OUT_C_B() {
     // ED 41 - Output B to port C
     WritePort(C(), B());
     t_cycle += 12;
 }
 
-void CPU::IN_C_C() {
+template <class Memory>
+void CPUImpl<Memory>::IN_C_C() {
     // ED 48 - Input from port C to C
     C() = ReadPort(C());
     
@@ -3712,13 +4055,15 @@ void CPU::IN_C_C() {
     t_cycle += 12;
 }
 
-void CPU::OUT_C_C() {
+template <class Memory>
+void CPUImpl<Memory>::OUT_C_C() {
     // ED 49 - Output C to port C
     WritePort(C(), C());
     t_cycle += 12;
 }
 
-void CPU::IN_D_C() {
+template <class Memory>
+void CPUImpl<Memory>::IN_D_C() {
     // ED 50 - Input from port C to D
     D() = ReadPort(C());
     
@@ -3731,13 +4076,15 @@ void CPU::IN_D_C() {
     t_cycle += 12;
 }
 
-void CPU::OUT_C_D() {
+template <class Memory>
+void CPUImpl<Memory>::OUT_C_D() {
     // ED 51 - Output D to port C
     WritePort(C(), D());
     t_cycle += 12;
 }
 
-void CPU::IN_E_C() {
+template <class Memory>
+void CPUImpl<Memory>::IN_E_C() {
     // ED 58 - Input from port C to E
     E() = ReadPort(C());
     
@@ -3750,13 +4097,15 @@ void CPU::IN_E_C() {
     t_cycle += 12;
 }
 
-void CPU::OUT_C_E() {
+template <class Memory>
+void CPUImpl<Memory>::OUT_C_E() {
     // ED 59 - Output E to port C
     WritePort(C(), E());
     t_cycle += 12;
 }
 
-void CPU::IN_H_C() {
+template <class Memory>
+void CPUImpl<Memory>::IN_H_C() {
     // ED 60 - Input from port C to H
     H() = ReadPort(C());
     
@@ -3769,13 +4118,15 @@ void CPU::IN_H_C() {
     t_cycle += 12;
 }
 
-void CPU::OUT_C_H() {
+template <class Memory>
+void CPUImpl<Memory>::OUT_C_H() {
     // ED 61 - Output H to port C
     WritePort(C(), H());
     t_cycle += 12;
 }
 
-void CPU::IN_L_C() {
+template <class Memory>
+void CPUImpl<Memory>::IN_L_C() {
     // ED 68 - Input from port C to L
     L() = ReadPort(C());
     
@@ -3788,13 +4139,15 @@ void CPU::IN_L_C() {
     t_cycle += 12;
 }
 
-void CPU::OUT_C_L() {
+template <class Memory>
+void CPUImpl<Memory>::OUT_C_L() {
     // ED 69 - Output L to port C
     WritePort(C(), L());
     t_cycle += 12;
 }
 
-void CPU::IN_F_C() {
+template <class Memory>
+void CPUImpl<Memory>::IN_F_C() {
     // ED 70 - Input from port C (undocumented - sets flags only, doesn't store value)
     uint8_t value = ReadPort(C());
     
@@ -3807,13 +4160,15 @@ void CPU::IN_F_C() {
     t_cycle += 12;
 }
 
-void CPU::OUT_C_0() {
+template <class Memory>
+void CPUImpl<Memory>::OUT_C_0() {
     // ED 71 - Output 0 to port C (undocumented)
     WritePort(C(), 0);
     t_cycle += 12;
 }
 
-void CPU::IN_A_C() {
+template <class Memory>
+void CPUImpl<Memory>::IN_A_C() {
     // ED 78 - Input from port C to A
     A() = ReadPort(C());
     
@@ -3826,7 +4181,8 @@ void CPU::IN_A_C() {
     t_cycle += 12;
 }
 
-void CPU::OUT_C_A() {
+template <class Memory>
+void CPUImpl<Memory>::OUT_C_A() {
     // ED 79 - Output A to port C
     WritePort(C(), A());
     t_cycle += 12;
@@ -3836,7 +4192,8 @@ void CPU::OUT_C_A() {
 // Undocumented ED Instructions
 // =============================================================================
 
-void CPU::SLL_mHL() {
+template <class Memory>
+void CPUImpl<Memory>::SLL_mHL() {
     // ED 76 - Shift Left Logical (HL) - undocumented instruction
     // This is like SLA but always sets bit 0 to 1
     uint8_t value = memory[HL()];
@@ -3855,5 +4212,15 @@ void CPU::SLL_mHL() {
     
     t_cycle += 15;
 }
+
+// =============================================================================
+// Explicit Template Instantiations
+// =============================================================================
+// Emit the full CPU for each supported memory plug so translation units that
+// only see the declarations in z80_cpu.h link against these definitions.
+//  - CPUImpl<FastMemory>  : production / benchmark (aliased as z80::CPU)
+//  - CPUImpl<DebugMemory> : debugger build with write-hook instrumentation
+template class CPUImpl<FastMemory>;
+template class CPUImpl<DebugMemory>;
 
 } // namespace z80

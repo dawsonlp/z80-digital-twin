@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <vector>
 
 int main(int argc, char** argv) {
     using namespace z80::dbg;
@@ -25,6 +26,7 @@ int main(int argc, char** argv) {
     uint16_t org = 0x0000;
     bool smoke = false;
     std::string shot_path;
+    std::vector<uint16_t> breakpoints;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -36,6 +38,8 @@ int main(int argc, char** argv) {
             symbol_path = argv[++i];
         } else if (arg == "--org" && i + 1 < argc) {
             org = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 0));
+        } else if (arg == "--bp" && i + 1 < argc) {
+            breakpoints.push_back(static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 16)));
         } else if (!arg.empty() && arg[0] != '-') {
             program_path = arg;
         } else {
@@ -51,6 +55,9 @@ int main(int argc, char** argv) {
     }
     if (!symbol_path.empty()) {
         app.LoadSymbolFile(symbol_path);
+    }
+    for (uint16_t bp : breakpoints) {
+        app.AddBreakpoint(bp);
     }
 
     return app.Run(smoke, 5, shot_path);

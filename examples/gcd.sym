@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "program": "gcd",
+  "symbols": [
+    {
+      "address": "0x0000",
+      "name": "GCD_LOOP",
+      "type": "FUNCTION",
+      "description": "GCD by repeated subtraction; inputs in HL and DE, result in HL"
+    },
+    {
+      "address": "0x000B",
+      "name": "NO_SWAP",
+      "type": "JUMP_TARGET",
+      "description": "HL >= DE: skip restore/swap and loop again"
+    },
+    {
+      "address": "0x000F",
+      "name": "DONE",
+      "type": "LABEL",
+      "description": "HALT - GCD result is in HL"
+    }
+  ]
+}

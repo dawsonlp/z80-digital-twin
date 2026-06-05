@@ -120,6 +120,10 @@ void DebuggerApp::LoadDemo() {
     last_status_ = "Loaded built-in GCD demo (HL=1071, DE=462)";
 }
 
+void DebuggerApp::AddBreakpoint(uint16_t address) {
+    session_.AddBreakpoint(address);
+}
+
 // ===========================================================================
 // Command handling
 // ===========================================================================
@@ -234,19 +238,33 @@ void DebuggerApp::DrawRegisters() {
         ImGui::SameLine();
     };
 
-    if (ImGui::BeginTable("regs", 4,
-                          ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit)) {
-        auto cell = [](const char* label, unsigned value) {
+    // Registers are editable when paused/halted; read-only while free-running
+    // (so edits don't fight the executing program frame-to-frame).
+    const bool running = session_.State() == RunState::Running;
+    if (running) ImGui::TextDisabled("(pause to edit registers)");
+
+    if (ImGui::BeginTable("regs", 4, ImGuiTableFlags_SizingFixedFit)) {
+        auto cell = [&](const char* label, uint16_t* reg) {
             ImGui::TableNextColumn();
-            ImGui::Text("%-3s %04X", label, value & 0xFFFF);
+            ImGui::TextUnformatted(label);
+            ImGui::SameLine();
+            ImGui::PushID(reg);
+            if (running) {
+                ImGui::Text("%04X", *reg);
+            } else {
+                ImGui::SetNextItemWidth(48);
+                ImGui::InputScalar("##r", ImGuiDataType_U16, reg, nullptr, nullptr,
+                                   "%04X", ImGuiInputTextFlags_CharsHexadecimal);
+            }
+            ImGui::PopID();
         };
-        cell("AF", cpu_.AF());  cell("AF'", cpu_.AltAF());
-        cell("BC", cpu_.BC());  cell("BC'", cpu_.AltBC());
-        cell("DE", cpu_.DE());  cell("DE'", cpu_.AltDE());
-        cell("HL", cpu_.HL());  cell("HL'", cpu_.AltHL());
-        cell("IX", cpu_.IX());  cell("IY",  cpu_.IY());
-        cell("PC", cpu_.PC());  cell("SP",  cpu_.SP());
-        cell("IR", cpu_.IR());  cell("WZ",  cpu_.WZ());
+        cell("AF ", &cpu_.AF());  cell("AF'", &cpu_.AltAF());
+        cell("BC ", &cpu_.BC());  cell("BC'", &cpu_.AltBC());
+        cell("DE ", &cpu_.DE());  cell("DE'", &cpu_.AltDE());
+        cell("HL ", &cpu_.HL());  cell("HL'", &cpu_.AltHL());
+        cell("IX ", &cpu_.IX());  cell("IY ", &cpu_.IY());
+        cell("PC ", &cpu_.PC());  cell("SP ", &cpu_.SP());
+        cell("IR ", &cpu_.IR());  cell("WZ ", &cpu_.WZ());
         ImGui::EndTable();
     }
 
@@ -301,13 +319,17 @@ void DebuggerApp::DrawDisassembly() {
             }
             ImGui::PushID(addr);
 
-            // BP gutter
+            // BP gutter: a red "@" marks a breakpoint. Clicking adds one;
+            // clicking it again removes it (a true add/remove toggle).
             ImGui::TableSetColumnIndex(0);
             const bool has_bp = session_.HasBreakpoint(addr);
-            if (ImGui::Selectable(has_bp ? "●" : " ", false,
-                                  ImGuiSelectableFlags_None)) {
-                session_.ToggleBreakpoint(addr);
+            if (has_bp)
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+            if (ImGui::Selectable(has_bp ? "@" : " ", false, 0, ImVec2(12, 0))) {
+                if (has_bp) session_.RemoveBreakpoint(addr);
+                else        session_.AddBreakpoint(addr);
             }
+            if (has_bp) ImGui::PopStyleColor();
 
             // Address
             ImGui::TableSetColumnIndex(1);

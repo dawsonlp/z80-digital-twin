@@ -43,6 +43,8 @@ set(CORE_SOURCES
 
 set(CORE_HEADERS
     src/z80_cpu.h
+    src/memory/fast_memory.h
+    src/memory/debug_memory.h
 )
 
 # =============================================================================
@@ -59,6 +61,25 @@ target_include_directories(z80_cpu PUBLIC src)
 target_compile_features(z80_cpu PUBLIC cxx_std_23)
 
 # =============================================================================
+# Debugger Core Library (no UI dependencies)
+# =============================================================================
+
+# Execution core: owns the debug loop, stepping, breakpoints, watchpoints.
+# UI-free and unit-testable. Disassembler/symbols will join this library next.
+add_library(z80_debugger_core STATIC
+    debugger/exec/debug_session.cpp
+    debugger/exec/debug_session.h
+    debugger/disasm/disassembler.cpp
+    debugger/disasm/disassembler.h
+    debugger/symbols/symbol_table.cpp
+    debugger/symbols/symbol_table.h
+)
+
+target_include_directories(z80_debugger_core PUBLIC debugger/exec debugger/disasm debugger/symbols)
+target_link_libraries(z80_debugger_core PUBLIC z80_cpu)
+target_compile_features(z80_debugger_core PUBLIC cxx_std_23)
+
+# =============================================================================
 # Main Executable
 # =============================================================================
 # Executable Targets (Commented out - files not yet created)
@@ -70,6 +91,22 @@ target_compile_features(z80_cpu PUBLIC cxx_std_23)
 
 add_executable(cpu_test tests/cpu_test.cpp)
 target_link_libraries(cpu_test PRIVATE z80_cpu)
+
+# DebugMemory plug verification (write hook + plug parity)
+add_executable(debug_memory_test tests/debug_memory_test.cpp)
+target_link_libraries(debug_memory_test PRIVATE z80_cpu)
+
+# Debugger execution core (stepping, breakpoints, watchpoints)
+add_executable(debug_session_test tests/debug_session_test.cpp)
+target_link_libraries(debug_session_test PRIVATE z80_debugger_core)
+
+# Disassembler (all prefixes, length + mnemonic + operands, symbol resolution)
+add_executable(disassembler_test tests/disassembler_test.cpp)
+target_link_libraries(disassembler_test PRIVATE z80_debugger_core)
+
+# Symbol table (JSON .sym load/save, resolver, forgiving parse)
+add_executable(symbol_table_test tests/symbol_table_test.cpp)
+target_link_libraries(symbol_table_test PRIVATE z80_debugger_core)
 
 # Performance benchmark
 add_executable(performance_benchmark tests/performance_benchmark.cpp)

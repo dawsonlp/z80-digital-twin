@@ -11,6 +11,8 @@
 #include <vector>
 #include <array>
 
+#include "memory/fast_memory.h"
+
 namespace z80 {
 
 // =============================================================================
@@ -29,11 +31,8 @@ union RegisterPair {
     explicit RegisterPair(uint16_t value) : r16(value) {}
 };
 
-// Forward declaration
-class CPU;
-
-/// @brief Function pointer type for Z80 instruction implementations
-using InstructionHandler = void (CPU::*)();
+// Forward declaration of the CPU class template.
+template <class Memory> class CPUImpl;
 
 /// @brief Z80 CPU execution states for prefix instruction handling
 enum class CPUState : uint8_t {
@@ -70,13 +69,14 @@ namespace Constants {
 // Z80 CPU Class
 // =============================================================================
 
-class CPU {
+template <class Memory = FastMemory>
+class CPUImpl {
 public:
     // -------------------------------------------------------------------------
     // Construction/Destruction
     // -------------------------------------------------------------------------
-    CPU();
-    ~CPU();
+    CPUImpl();
+    ~CPUImpl();
     
     // -------------------------------------------------------------------------
     // Core Execution
@@ -131,6 +131,16 @@ public:
     // -------------------------------------------------------------------------
     bool IsHalted() const { return _halted; }
     void SetHalted(bool halted) { _halted = halted; }
+
+    /// @brief Whether the CPU is at an instruction boundary (no prefix pending).
+    /// @details Step() advances one opcode byte; for prefixed instructions the
+    ///          CPU sits in an intermediate prefix state until the sequence
+    ///          completes. A debugger calls Step() until this returns true to
+    ///          advance exactly one whole instruction.
+    bool InstructionComplete() const { return current_state == CPUState::NORMAL; }
+
+    /// @brief Current interrupt mode (0, 1, or 2).
+    uint8_t InterruptMode() const { return _interrupt_mode; }
     
     // -------------------------------------------------------------------------
     // Memory and I/O Access
@@ -145,6 +155,14 @@ public:
     /// @param address Memory address to read from
     /// @return Byte value at the specified address
     uint8_t ReadMemory(uint16_t address) const { return memory[address]; }
+
+    /// @brief Access the underlying memory device (the policy plug).
+    /// @details Lets tooling configure the plug without breaking encapsulation
+    ///          of CPU state — e.g. the debugger installs a write hook on a
+    ///          DebugMemory plug. Production code using FastMemory rarely needs
+    ///          this.
+    Memory& GetMemory() noexcept { return memory; }
+    const Memory& GetMemory() const noexcept { return memory; }
     
     /// @brief Loads a program into memory
     /// @param program Vector of bytes to load
@@ -216,12 +234,14 @@ private:
     int8_t current_displacement; ///< Displacement for DD CB/FD CB instructions
     
     // Memory and I/O
-    std::array<uint8_t, Constants::MEMORY_SIZE> memory;    ///< 64KB memory space
+    Memory memory;                                         ///< Pluggable memory device (policy)
     std::array<uint8_t, Constants::IO_PORTS> io_ports;     ///< 256 I/O ports
     
     // -------------------------------------------------------------------------
     // Instruction Dispatch Tables
     // -------------------------------------------------------------------------
+    /// @brief Pointer to a member function implementing one Z80 instruction.
+    using InstructionHandler = void (CPUImpl::*)();
     std::array<InstructionHandler, 256> basic_opcodes;     ///< Basic instruction set
     std::array<InstructionHandler, 256> ED_opcodes;        ///< ED-prefixed instructions
     
@@ -640,6 +660,12 @@ private:
     void make_carry(bool value) { SetCarryFlag(value); }
     bool carry() const { return GetCarryFlag(); }
 };
+
+/// @brief Production CPU type — the zero-overhead FastMemory plug.
+/// @details Preserves the historical `z80::CPU` name and behaviour, so all
+///          existing code, examples, and benchmarks compile and run unchanged.
+///          The debugger instantiates CPUImpl<DebugMemory> instead.
+using CPU = CPUImpl<FastMemory>;
 
 } // namespace z80
 

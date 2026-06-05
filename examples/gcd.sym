@@ -18,7 +18,13 @@
       "address": "0x000F",
       "name": "DONE",
       "type": "LABEL",
-      "description": "HALT - GCD result is in HL"
+      "description": "store result and halt"
+    },
+    {
+      "address": "0x9000",
+      "name": "RESULT",
+      "type": "WORD_VARIABLE",
+      "description": "GCD result (16-bit)"
     }
   ]
 }

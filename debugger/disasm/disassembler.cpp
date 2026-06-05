@@ -310,21 +310,34 @@ Instruction Disassembler::Decode(const ByteReader& read, uint16_t address,
     out.address = address;
     Cursor cur{read, address};
 
+    // Wrap the resolver so every name it substitutes is recorded, letting the
+    // UI colour operand symbols by type without re-parsing the operand text.
+    std::vector<std::string> used;
+    SymbolResolver recording;
+    if (resolve) {
+        recording = [&used, &resolve](uint16_t a) -> std::optional<std::string> {
+            auto name = resolve(a);
+            if (name) used.push_back(*name);
+            return name;
+        };
+    }
+
     // Consume any DD/FD prefixes (last one wins); dispatch on the final opcode.
     Index ix = Index::None;
     for (;;) {
         const uint8_t op = cur.next();
         if (op == 0xDD) { ix = Index::IX; continue; }
         if (op == 0xFD) { ix = Index::IY; continue; }
-        if (op == 0xED) { decode_ed(cur, resolve, out); break; }
+        if (op == 0xED) { decode_ed(cur, recording, out); break; }
         if (op == 0xCB) {
             if (ix == Index::None) decode_cb(cur, out);
             else                   decode_index_cb(cur, ix, out);
             break;
         }
-        decode_base(op, cur, ix, resolve, out);
+        decode_base(op, cur, ix, recording, out);
         break;
     }
+    out.symbols_used = std::move(used);
 
     out.length = cur.n > 4 ? 4 : cur.n;
     out.bytes = cur.bytes;

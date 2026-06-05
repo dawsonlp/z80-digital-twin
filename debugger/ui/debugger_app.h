@@ -3,10 +3,10 @@
 // Copyright (c) 2025 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
-// The ImGui application shell. It owns the CPU + DebugSession + symbol table,
-// runs the GLFW/OpenGL frame loop, dispatches debug commands, and renders the
-// panels. All execution control goes through DebugSession; panels only read
-// CPU state and issue commands.
+// The application shell: owns the CPU + DebugSession + symbol table + the panel
+// list, runs the GLFW/OpenGL frame loop, applies the commands panels post, and
+// handles program/symbol loading and the menu bar. Per-panel rendering lives in
+// the Panel classes under ui/panels/.
 //
 
 #ifndef Z80_DBG_DEBUGGER_APP_H
@@ -15,8 +15,11 @@
 #include "debug_session.h"
 #include "disassembler.h"
 #include "symbol_table.h"
+#include "ui_context.h"
+#include "panel.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -40,31 +43,15 @@ public:
     /// @brief Set a breakpoint at an address (e.g. from the command line).
     void AddBreakpoint(uint16_t address);
 
-    /// @brief Run the GUI. In smoke mode, render a few frames and exit (used to
-    ///        validate the toolchain/build without a human at the keyboard).
-    /// @param shot_path If non-empty, render offscreen and write a PPM
-    ///        screenshot here on the final frame, then exit (implies smoke).
-    /// @return process exit code (0 on success).
+    /// @brief Run the GUI. In smoke mode, render a few frames and exit.
+    /// @param shot_path If non-empty, write a PPM screenshot on the final frame.
     int Run(bool smoke = false, int smoke_frames = 3,
             const std::string& shot_path = {});
 
 private:
-    // -- Frame + command handling -------------------------------------------
-    void DrawUi();
-    void ExecuteCommands();         // applies pending one-shot commands
-    void BeforeExecAction();        // clears dirty set ahead of a step/run
-
-    // -- Panels --------------------------------------------------------------
     void DrawMenuBar();
-    void DrawControlBar();
-    void DrawRegisters();
-    void DrawDisassembly();
-    void DrawMemory();
-    void DrawIoPorts();
-
-    // -- Helpers -------------------------------------------------------------
-    ByteReader Reader() const;
-    SymbolResolver Resolver() const;
+    void ExecuteCommands();   // applies the commands panels posted last frame
+    UiContext MakeContext();  // fresh per-frame context for the panels
 
     // -- State ---------------------------------------------------------------
     DebugCPU cpu_;
@@ -74,30 +61,12 @@ private:
 
     GLFWwindow* window_ = nullptr;
 
-    // Pending one-shot commands set by the control bar, applied once per frame.
-    bool cmd_step_ = false;
-    bool cmd_step_over_ = false;
-    bool cmd_run_ = false;
-    bool cmd_pause_ = false;
-    bool cmd_reset_ = false;
+    DebugCommands commands_;
+    std::string status_ = "Ready";
+    std::vector<std::unique_ptr<Panel>> panels_;
 
-    // Per-frame run budget (instructions) when free-running.
-    uint64_t run_budget_ = 250000;
-
-    // Disassembly view.
-    bool follow_pc_ = true;
-    uint16_t disasm_top_ = 0x0000;
-
-    // Memory view.
-    char mem_goto_buf_[8] = "0000";
-    bool mem_goto_pending_ = false;
-    uint16_t mem_goto_addr_ = 0x0000;
-
-    // Symbol load field.
-    char sym_path_buf_[512] = "";
-
-    // Status of the most recent action (for the status bar).
-    std::string last_status_ = "Ready";
+    uint64_t run_budget_ = 250000;   // instructions per frame while free-running
+    char sym_path_buf_[512] = "";    // menu: symbol-file path field
 };
 
 } // namespace z80::dbg

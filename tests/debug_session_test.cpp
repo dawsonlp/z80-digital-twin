@@ -151,6 +151,69 @@ int main() {
         check(cpu.PC() == 0x0000, "Reset -> PC 0x0000");
     }
 
+    // --- Step-Over ----------------------------------------------------------
+    std::cout << "\n[7] Step-Over\n";
+    {
+        // 0x0000 CD 06 00  CALL 0x0006
+        // 0x0003 3E 99     LD A, 0x99       (after return)
+        // 0x0005 76        HALT
+        // 0x0006 3E 11     LD A, 0x11       (subroutine)
+        // 0x0008 C9        RET
+        const std::vector<uint8_t> prog = {
+            0xCD, 0x06, 0x00, 0x3E, 0x99, 0x76, 0x3E, 0x11, 0xC9};
+        DebugCPU cpu;
+        cpu.LoadProgram(prog, 0x0000);
+        DebugSession s(cpu);
+
+        StepResult r = s.StepOver();                  // over the CALL
+        check(r.reason == StopReason::StepComplete, "step-over CALL completes");
+        check(cpu.PC() == 0x0003, "returned to 0x0003");
+        check(cpu.A() == 0x11, "subroutine ran (A = 0x11)");
+
+        StepResult r2 = s.StepOver();                 // non-call -> single step
+        check(r2.reason == StopReason::StepComplete, "step-over non-call steps");
+        check(cpu.PC() == 0x0005, "advanced to HALT");
+        check(cpu.A() == 0x99, "executed LD A,0x99");
+    }
+
+    // Step-Over stops at a user breakpoint inside the subroutine.
+    {
+        const std::vector<uint8_t> prog = {
+            0xCD, 0x06, 0x00, 0x3E, 0x99, 0x76, 0x3E, 0x11, 0xC9};
+        DebugCPU cpu;
+        cpu.LoadProgram(prog, 0x0000);
+        DebugSession s(cpu);
+        s.AddBreakpoint(0x0006);                      // inside the subroutine
+
+        StepResult r = s.StepOver();
+        check(r.reason == StopReason::Breakpoint, "user BP inside sub stops step-over");
+        check(cpu.PC() == 0x0006, "paused at the inner breakpoint");
+        check(s.HasBreakpoint(0x0003) == false, "temp return BP cleaned up");
+    }
+
+    // Step-Over on a NOT-taken conditional CALL falls through (no subroutine).
+    {
+        // 0x0000 AF        XOR A            (Z = 1)
+        // 0x0001 C4 08 00  CALL NZ, 0x0008  (NZ false -> not taken)
+        // 0x0004 3E 22     LD A, 0x22
+        // 0x0006 76        HALT
+        // 0x0007 00        NOP
+        // 0x0008 3E 55     LD A, 0x55       (must NOT run)
+        // 0x000A C9        RET
+        const std::vector<uint8_t> prog = {
+            0xAF, 0xC4, 0x08, 0x00, 0x3E, 0x22, 0x76, 0x00, 0x3E, 0x55, 0xC9};
+        DebugCPU cpu;
+        cpu.LoadProgram(prog, 0x0000);
+        DebugSession s(cpu);
+
+        s.StepInstruction();                          // XOR A -> Z=1
+        check(cpu.PC() == 0x0001, "at the conditional CALL");
+        StepResult r = s.StepOver();                  // not taken: fall through
+        check(r.reason == StopReason::StepComplete, "not-taken CALL falls through");
+        check(cpu.PC() == 0x0004, "advanced past the CALL to 0x0004");
+        check(cpu.A() == 0x00, "subroutine did not run (A still 0)");
+    }
+
     std::cout << "\n=======================\n";
     if (failures == 0) {
         std::cout << "✅ ALL DEBUG-SESSION CHECKS PASSED\n";

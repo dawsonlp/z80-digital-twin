@@ -19,6 +19,7 @@
 
 #include "z80_cpu.h"
 #include "memory/debug_memory.h"
+#include "disassembler.h"
 
 #include <cstdint>
 #include <optional>
@@ -78,6 +79,18 @@ public:
 
     /// @brief Advance exactly one whole instruction (across any prefix bytes).
     StepResult StepInstruction();
+
+    /// @brief Step a whole instruction, but run CALL/RST subroutines to
+    ///        completion (stopping at the instruction after the call).
+    /// @details Decodes the instruction at PC for its length; for CALL/RST it
+    ///          sets a temporary breakpoint at the return address and runs until
+    ///          it is reached (handling not-taken conditional calls, which fall
+    ///          through immediately). Any other instruction behaves like
+    ///          StepInstruction(). A user breakpoint hit inside the subroutine
+    ///          stops early and is reported as Breakpoint. Recursion stops at
+    ///          the first return to that address (a known simple-step-over
+    ///          limitation). Runs synchronously.
+    StepResult StepOver();
 
     /// @brief Mark the session running so RunSlice() will execute.
     void Run() noexcept { if (state_ != RunState::Halted) state_ = RunState::Running; }
@@ -146,6 +159,9 @@ private:
     static constexpr int kStepByteGuard = 8;
 
     DebugCPU& cpu_;
+    Disassembler disasm_;
+    ByteReader reader_;            ///< Reads CPU memory for the disassembler.
+
     RunState state_ = RunState::Paused;
 
     std::unordered_map<uint16_t, Breakpoint> breakpoints_;

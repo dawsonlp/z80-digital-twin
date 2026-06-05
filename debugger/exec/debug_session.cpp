@@ -11,6 +11,7 @@
 namespace z80::dbg {
 
 DebugSession::DebugSession(DebugCPU& cpu) : cpu_(cpu) {
+    reader_ = [this](uint16_t address) { return cpu_.ReadMemory(address); };
     cpu_.GetMemory().SetWriteHook(
         [this](uint16_t address, uint8_t old_value, uint8_t new_value) {
             OnMemoryWrite(address, old_value, new_value);
@@ -66,6 +67,47 @@ StepResult DebugSession::StepInstruction() {
     }
     state_ = cpu_.IsHalted() ? RunState::Halted : RunState::Paused;
     return {reason, cycles, cpu_.PC()};
+}
+
+StepResult DebugSession::StepOver() {
+    if (cpu_.IsHalted()) {
+        state_ = RunState::Halted;
+        return {StopReason::AlreadyHalted, 0, cpu_.PC()};
+    }
+
+    const uint16_t pc = cpu_.PC();
+    const Instruction ins = disasm_.Decode(reader_, pc);
+    const bool subroutine = (ins.mnemonic == "CALL" || ins.mnemonic == "RST");
+    if (!subroutine) {
+        return StepInstruction();   // not a call: a plain single step
+    }
+
+    // Set a (temporary) breakpoint at the return address and run until reached.
+    const uint16_t ret = static_cast<uint16_t>(pc + ins.length);
+    const bool preexisting = HasBreakpoint(ret);
+    if (!preexisting) {
+        AddBreakpoint(ret, /*temporary=*/true);
+    }
+
+    const uint64_t before = cpu_.GetCycleCount();
+    Run();
+    StepResult last{StopReason::BudgetExhausted, 0, pc};
+    // Bound the synchronous run so a non-returning subroutine cannot hang.
+    constexpr int kMaxSlices = 100000;
+    for (int i = 0; i < kMaxSlices && state_ == RunState::Running; ++i) {
+        last = RunSlice(1 << 16);
+    }
+
+    if (!preexisting) {
+        RemoveBreakpoint(ret);   // no-op if it already auto-removed on hit
+    }
+
+    // Reaching the return address is a completed step-over, not a "breakpoint".
+    StopReason reason = last.reason;
+    if (cpu_.PC() == ret && reason == StopReason::Breakpoint) {
+        reason = StopReason::StepComplete;
+    }
+    return {reason, cpu_.GetCycleCount() - before, cpu_.PC()};
 }
 
 StepResult DebugSession::RunSlice(uint64_t max_instructions) {

@@ -1,0 +1,182 @@
+//
+// Z80 Digital Twin Debugger - DebugSession implementation
+// Copyright (c) 2025 Larry Dawson
+// Licensed under the MIT License (see LICENSE file)
+//
+
+#include "debug_session.h"
+
+#include <algorithm>
+
+namespace z80::dbg {
+
+DebugSession::DebugSession(DebugCPU& cpu) : cpu_(cpu) {
+    cpu_.GetMemory().SetWriteHook(
+        [this](uint16_t address, uint8_t old_value, uint8_t new_value) {
+            OnMemoryWrite(address, old_value, new_value);
+        });
+    state_ = cpu_.IsHalted() ? RunState::Halted : RunState::Paused;
+}
+
+DebugSession::~DebugSession() {
+    cpu_.GetMemory().ClearWriteHook();
+}
+
+void DebugSession::OnMemoryWrite(uint16_t address, uint8_t /*old_value*/,
+                                 uint8_t /*new_value*/) {
+    dirty_.insert(address);
+    if (watchpoints_.find(address) != watchpoints_.end()) {
+        watch_hit_ = address;
+    }
+}
+
+void DebugSession::StepRaw() {
+    // Step() consumes one opcode byte; loop until the instruction completes.
+    int guard = 0;
+    do {
+        cpu_.Step();
+    } while (!cpu_.InstructionComplete() && ++guard < kStepByteGuard);
+}
+
+bool DebugSession::BreakpointStopsAt(uint16_t pc) const {
+    const auto it = breakpoints_.find(pc);
+    return it != breakpoints_.end() && it->second.enabled;
+}
+
+StepResult DebugSession::StepInstruction() {
+    if (cpu_.IsHalted()) {
+        state_ = RunState::Halted;
+        return {StopReason::AlreadyHalted, 0, cpu_.PC()};
+    }
+
+    watch_hit_.reset();
+    skip_breakpoint_once_.reset();
+
+    const uint64_t before = cpu_.GetCycleCount();
+    StepRaw();
+    const uint64_t cycles = cpu_.GetCycleCount() - before;
+
+    StopReason reason;
+    if (watch_hit_) {
+        reason = StopReason::Watchpoint;
+    } else if (cpu_.IsHalted()) {
+        reason = StopReason::Halted;
+    } else {
+        reason = StopReason::StepComplete;
+    }
+    state_ = cpu_.IsHalted() ? RunState::Halted : RunState::Paused;
+    return {reason, cycles, cpu_.PC()};
+}
+
+StepResult DebugSession::RunSlice(uint64_t max_instructions) {
+    if (cpu_.IsHalted()) {
+        state_ = RunState::Halted;
+        return {StopReason::Halted, 0, cpu_.PC()};
+    }
+    if (state_ != RunState::Running) {
+        state_ = RunState::Running;
+    }
+    watch_hit_.reset();
+
+    const uint64_t before = cpu_.GetCycleCount();
+    StopReason reason = StopReason::BudgetExhausted;
+
+    for (uint64_t i = 0; i < max_instructions; ++i) {
+        const uint16_t pc = cpu_.PC();
+
+        if (BreakpointStopsAt(pc)) {
+            const bool resuming_here =
+                skip_breakpoint_once_ && *skip_breakpoint_once_ == pc;
+            if (!resuming_here) {
+                Breakpoint& bp = breakpoints_[pc];
+                ++bp.hit_count;
+                const bool temporary = bp.temporary;
+                if (temporary) {
+                    breakpoints_.erase(pc);
+                }
+                // Remember this stop so the next resume steps past it once.
+                skip_breakpoint_once_ = pc;
+                state_ = RunState::Paused;
+                reason = StopReason::Breakpoint;
+                break;
+            }
+        }
+        // The skip applies to at most the first instruction of the slice.
+        skip_breakpoint_once_.reset();
+
+        StepRaw();
+
+        if (watch_hit_) {
+            state_ = RunState::Paused;
+            reason = StopReason::Watchpoint;
+            break;
+        }
+        if (cpu_.IsHalted()) {
+            state_ = RunState::Halted;
+            reason = StopReason::Halted;
+            break;
+        }
+    }
+
+    return {reason, cpu_.GetCycleCount() - before, cpu_.PC()};
+}
+
+void DebugSession::Reset() {
+    cpu_.Reset();
+    state_ = RunState::Paused;
+    dirty_.clear();
+    watch_hit_.reset();
+    skip_breakpoint_once_.reset();
+}
+
+void DebugSession::AddBreakpoint(uint16_t address, bool temporary) {
+    auto [it, inserted] = breakpoints_.try_emplace(address);
+    Breakpoint& bp = it->second;
+    bp.address = address;
+    bp.enabled = true;            // adding (re-)enables the breakpoint
+    if (inserted) {
+        bp.temporary = temporary; // the temporary flag is fixed at creation
+        bp.hit_count = 0;
+    }
+}
+
+void DebugSession::RemoveBreakpoint(uint16_t address) {
+    breakpoints_.erase(address);
+    if (skip_breakpoint_once_ && *skip_breakpoint_once_ == address) {
+        skip_breakpoint_once_.reset();
+    }
+}
+
+void DebugSession::ToggleBreakpoint(uint16_t address) {
+    const auto it = breakpoints_.find(address);
+    if (it == breakpoints_.end()) {
+        AddBreakpoint(address);
+    } else {
+        it->second.enabled = !it->second.enabled;
+    }
+}
+
+bool DebugSession::HasBreakpoint(uint16_t address) const {
+    return breakpoints_.find(address) != breakpoints_.end();
+}
+
+std::vector<Breakpoint> DebugSession::Breakpoints() const {
+    std::vector<Breakpoint> out;
+    out.reserve(breakpoints_.size());
+    for (const auto& [addr, bp] : breakpoints_) {
+        out.push_back(bp);
+    }
+    std::sort(out.begin(), out.end(),
+              [](const Breakpoint& a, const Breakpoint& b) {
+                  return a.address < b.address;
+              });
+    return out;
+}
+
+std::vector<uint16_t> DebugSession::Watchpoints() const {
+    std::vector<uint16_t> out(watchpoints_.begin(), watchpoints_.end());
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+} // namespace z80::dbg

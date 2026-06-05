@@ -61,6 +61,21 @@ target_include_directories(z80_cpu PUBLIC src)
 target_compile_features(z80_cpu PUBLIC cxx_std_23)
 
 # =============================================================================
+# Debugger Core Library (no UI dependencies)
+# =============================================================================
+
+# Execution core: owns the debug loop, stepping, breakpoints, watchpoints.
+# UI-free and unit-testable. Disassembler/symbols will join this library next.
+add_library(z80_debugger_core STATIC
+    debugger/exec/debug_session.cpp
+    debugger/exec/debug_session.h
+)
+
+target_include_directories(z80_debugger_core PUBLIC debugger/exec)
+target_link_libraries(z80_debugger_core PUBLIC z80_cpu)
+target_compile_features(z80_debugger_core PUBLIC cxx_std_23)
+
+# =============================================================================
 # Main Executable
 # =============================================================================
 # Executable Targets (Commented out - files not yet created)
@@ -76,6 +91,10 @@ target_link_libraries(cpu_test PRIVATE z80_cpu)
 # DebugMemory plug verification (write hook + plug parity)
 add_executable(debug_memory_test tests/debug_memory_test.cpp)
 target_link_libraries(debug_memory_test PRIVATE z80_cpu)
+
+# Debugger execution core (stepping, breakpoints, watchpoints)
+add_executable(debug_session_test tests/debug_session_test.cpp)
+target_link_libraries(debug_session_test PRIVATE z80_debugger_core)
 
 # Performance benchmark
 add_executable(performance_benchmark tests/performance_benchmark.cpp)

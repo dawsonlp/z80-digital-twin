@@ -90,7 +90,7 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
 
     ImGui::Checkbox("Follow PC", &follow_pc_);
     ImGui::SameLine();
-    ImGui::TextDisabled("(click the gutter to toggle a breakpoint)");
+    ImGui::TextDisabled("(gutter = breakpoint; right-click an address to label it)");
 
     DebugSession& session = ctx.session;
     if (follow_pc_ && session.State() != RunState::Running) {
@@ -137,9 +137,14 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
                 ImGui::TextColored(symbol_color(sym->type), "%s", sym->name.c_str());
             }
 
-            // Address
+            // Address (right-click to label this address)
             ImGui::TableSetColumnIndex(2);
             ImGui::Text("%04X", addr);
+            if (ImGui::BeginPopupContextItem("lbl")) {
+                if (ImGui::IsWindowAppearing()) PrimeSymbolEdit(edit_, addr, ctx.symbols);
+                DrawSymbolEditForm(ctx, edit_);
+                ImGui::EndPopup();
+            }
 
             // Bytes
             ImGui::TableSetColumnIndex(3);

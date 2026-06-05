@@ -61,7 +61,14 @@ void MemoryPanel::Draw(UiContext& ctx) {
         while (clipper.Step()) {
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
                 const uint16_t base = static_cast<uint16_t>(row * 16);
+                ImGui::PushID(base);
                 ImGui::Text("%04X ", base);
+                // Right-click the address to label this location.
+                if (ImGui::BeginPopupContextItem("lbl")) {
+                    if (ImGui::IsWindowAppearing()) PrimeSymbolEdit(edit_, base, ctx.symbols);
+                    DrawSymbolEditForm(ctx, edit_);
+                    ImGui::EndPopup();
+                }
                 ImGui::SameLine();
                 for (int c = 0; c < 16; ++c) {
                     const uint16_t a = static_cast<uint16_t>(base + c);
@@ -78,6 +85,7 @@ void MemoryPanel::Draw(UiContext& ctx) {
                     ascii.push_back((v >= 32 && v < 127) ? static_cast<char>(v) : '.');
                 }
                 ImGui::TextUnformatted(ascii.c_str());
+                ImGui::PopID();
             }
         }
         clipper.End();

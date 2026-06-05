@@ -163,6 +163,13 @@ void DebuggerApp::DrawMenuBar() {
         if (ImGui::Button("Load Symbols") && sym_path_buf_[0] != '\0') {
             LoadSymbolFile(sym_path_buf_);
         }
+        ImGui::SameLine();
+        if (ImGui::Button("Save Symbols") && sym_path_buf_[0] != '\0') {
+            if (symbols_.SaveToFile(sym_path_buf_))
+                status_ = std::format("Saved {} symbols to {}", symbols_.Size(), sym_path_buf_);
+            else
+                status_ = std::format("Failed to save symbols to {}", sym_path_buf_);
+        }
         ImGui::Separator();
         if (ImGui::MenuItem("Quit")) {
             glfwSetWindowShouldClose(window_, GLFW_TRUE);

@@ -37,6 +37,9 @@ public:
     /// @brief Load a small built-in demo program (GCD) when none is supplied.
     void LoadDemo();
 
+    /// @brief Set a breakpoint at an address (e.g. from the command line).
+    void AddBreakpoint(uint16_t address);
+
     /// @brief Run the GUI. In smoke mode, render a few frames and exit (used to
     ///        validate the toolchain/build without a human at the keyboard).
     /// @param shot_path If non-empty, render offscreen and write a PPM

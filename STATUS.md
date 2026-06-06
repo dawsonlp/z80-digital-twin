@@ -13,7 +13,9 @@ see [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md); for the debugger architecture se
 ## Core engine
 
 - **Z80 CPU** — full instruction set incl. CB/ED/DD/FD/DDCB/FDCB; cycle-accurate
-  T-state counting. ([src/z80_cpu.h](src/z80_cpu.h), [src/z80_cpu.cpp](src/z80_cpu.cpp))
+  T-state counting; maskable-interrupt injection (`Interrupt()`: IM 0/1/2, IFF
+  handling, HALT wake, EI one-instruction deferral).
+  ([src/z80_cpu.h](src/z80_cpu.h), [src/z80_cpu.cpp](src/z80_cpu.cpp))
 - **Pluggable memory + I/O (compile-time policies)** — `CPUImpl<Memory, Io>`
   with `using CPU = CPUImpl<FastMemory, OpenBusIo>`:
   - `FastMemory` — zero-overhead production/benchmark plug (~2 GHz-equivalent).
@@ -24,9 +26,10 @@ see [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md); for the debugger architecture se
     256 read/write latches (opt-in); `ObservableIo<Inner>` — decorator that logs
     bus transactions. `IN`/`OUT` carry the **full 16-bit port** (A or BC on the
     high byte).
-- **Direction** ([ARCHITECTURE.md](ARCHITECTURE.md)): next foundation piece is
-  CPU maskable-interrupt injection; then the Spectrum devices (`SpectrumIo`,
-  ULA) built on these policies.
+- **Direction** ([ARCHITECTURE.md](ARCHITECTURE.md)): the CPU foundations are in
+  place (policies + interrupt). Next is the Device/Machine layer + PAL frame
+  clock, then the ULA (`SpectrumIo` + video) — see
+  [SPECTRUM_DESIGN.md](SPECTRUM_DESIGN.md).
 
 ## Debugger core (UI-free, unit-tested) — `z80_debugger_core`
 

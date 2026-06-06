@@ -103,6 +103,10 @@ target_link_libraries(observable_memory_test PRIVATE z80_cpu)
 add_executable(io_policy_test tests/io_policy_test.cpp)
 target_link_libraries(io_policy_test PRIVATE z80_cpu)
 
+# Maskable interrupt verification (IM0/1/2, masking, HALT wake, EI deferral)
+add_executable(interrupt_test tests/interrupt_test.cpp)
+target_link_libraries(interrupt_test PRIVATE z80_cpu)
+
 # Debugger execution core (stepping, breakpoints, watchpoints)
 add_executable(debug_session_test tests/debug_session_test.cpp)
 target_link_libraries(debug_session_test PRIVATE z80_debugger_core)

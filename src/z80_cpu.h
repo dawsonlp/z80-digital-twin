@@ -91,7 +91,17 @@ public:
     
     /// @brief Resets the CPU to initial state
     void Reset();
-    
+
+    /// @brief Request a maskable interrupt (e.g. the ULA's 50 Hz frame INT).
+    /// @param bus The byte a device places on the data bus during acknowledge
+    ///            (Spectrum bus floats to 0xFF). Used by IM 0 (as an RST opcode)
+    ///            and IM 2 (low byte of the vector).
+    /// @return true if accepted. Accepted only when IFF1 is set and the CPU is
+    ///         not in the one-instruction shadow of an EI. On acceptance: clears
+    ///         IFF1/IFF2, wakes HALT, pushes PC, and jumps per interrupt mode
+    ///         (IM0: RST vector from `bus`; IM1: 0x0038; IM2: [I:bus] vector).
+    bool Interrupt(uint8_t bus = 0xFF);
+
     // -------------------------------------------------------------------------
     // 16-bit Register Accessors
     // -------------------------------------------------------------------------
@@ -229,6 +239,7 @@ private:
     // Interrupt flags
     bool _IFF1;                 ///< Interrupt Enable Flag 1
     bool _IFF2;                 ///< Interrupt Enable Flag 2
+    bool ei_defer_ = false;     ///< EI just ran: defer INT one instruction
     
     // Interrupt mode
     uint8_t _interrupt_mode;    ///< Interrupt mode (0, 1, or 2)

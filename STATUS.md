@@ -69,8 +69,14 @@ debugger; the app composes them).
 - **`screen.h`** — Spectrum display decode (ported to C++23 `constexpr`/`span`
   from the author's C decoder): `decode_attribute`, per-byte and per-line
   (32 bytes → 256 palette indices) pixel expansion with the FLASH ink/paper swap
-  (`flash_phase()`), and the 16-colour `kPalette`/`to_rgb`. The screen-memory
-  deinterleave lands with the ULA proper.
+  (`flash_phase()`), and the 16-colour `kPalette`/`to_rgb`.
+- **`video.h`** — frame assembly: border + 256×192 display into one palette-index
+  frame (default 320×256), via `render_scanline`/`render_frame`. The interleaved
+  display-memory layout collapses into a per-line base-address calc
+  (`bitmap_address`/`attribute_address`). Everything is read through a
+  `FrameSource` seam ("what did the beam see here?"), so render fidelity lives in
+  the source: a final-memory source is correct for static/boot screens and
+  per-line (rainbow) borders; a beam-accurate source drops in later unchanged.
 
 ## Debugger UI — `z80_debugger` (ImGui + GLFW + OpenGL via FetchContent)
 
@@ -104,7 +110,8 @@ Modular panels over a shared `UiContext`; each panel is a `Panel` subclass.
 `cpu_test`, `observable_memory_test`, `io_policy_test`, `interrupt_test` (IM 0/1/2,
 masking, HALT wake, EI deferral), `timing_test` (clock tree + geometry),
 `machine_test` (frame budget, device ticks, interrupt-per-frame), `screen_decode_test`
-(attribute/byte/line, FLASH swap, palette — incl. compile-time `static_assert`s), `debug_session_test`
+(attribute/byte/line, FLASH swap, palette — incl. compile-time `static_assert`s), `video_test`
+(address mapping, border fill, display decode through the FrameSource seam), `debug_session_test`
 (incl. coverage + SMC + `RunForTStates`), `disassembler_test` (golden + length
 sweep + branch targets), `symbol_table_test` (round-trip + forgiving parse +
 FindContaining). All green; clean Release build, no warnings.

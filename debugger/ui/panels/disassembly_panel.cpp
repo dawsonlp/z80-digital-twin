@@ -30,6 +30,14 @@ bool parse_hex16(const char* s, uint16_t& out) {
     }
 }
 
+// Resolve a go-to entry: a symbol name (preferred, so "FLAGS" beats hex "FA"),
+// otherwise a hex address ("5C3B" or "0x5C3B").
+bool resolve_goto(UiContext& ctx, const char* text, uint16_t& out) {
+    if (!text || text[0] == '\0') return false;
+    if (auto addr = ctx.symbols.Resolve(text)) { out = *addr; return true; }
+    return parse_hex16(text, out);
+}
+
 // Render an operand string, colouring substituted symbol names by type, showing
 // a description tooltip on hover, and a "Go to" right-click menu. Returns an
 // address to jump the view to if the user picked one this frame.
@@ -90,24 +98,52 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
     ImGui::SetNextWindowSize(ImVec2(520, 614), ImGuiCond_FirstUseEver);
     ImGui::Begin("Disassembly");
 
-    // -- Toolbar: go-to-address, Follow PC -----------------------------------
-    auto go_to = [&](uint16_t addr) { top_ = addr; follow_pc_ = false; };
+    // -- Toolbar: history, go-to (hex or symbol), Follow PC ------------------
+    auto navigate = [&](uint16_t addr) {
+        if (addr == top_ && !follow_pc_) return;   // already there
+        back_.push_back(top_);
+        forward_.clear();
+        top_ = addr;
+        follow_pc_ = false;
+    };
+    auto go_back = [&]() {
+        if (back_.empty()) return;
+        forward_.push_back(top_);
+        top_ = back_.back();
+        back_.pop_back();
+        follow_pc_ = false;
+    };
+    auto go_forward = [&]() {
+        if (forward_.empty()) return;
+        back_.push_back(top_);
+        top_ = forward_.back();
+        forward_.pop_back();
+        follow_pc_ = false;
+    };
 
-    ImGui::TextUnformatted("Addr");
+    ImGui::BeginDisabled(back_.empty());
+    if (ImGui::Button("<")) go_back();
+    ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(70);
-    uint16_t typed = 0;
-    if (ImGui::InputTextWithHint("##disgoto", "hex", goto_buf_, sizeof(goto_buf_),
-                                 ImGuiInputTextFlags_CharsHexadecimal |
-                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
-        if (parse_hex16(goto_buf_, typed)) go_to(typed);
-    }
+    ImGui::BeginDisabled(forward_.empty());
+    if (ImGui::Button(">")) go_forward();
+    ImGui::EndDisabled();
     ImGui::SameLine();
-    if (ImGui::Button("Go") && parse_hex16(goto_buf_, typed)) go_to(typed);
+
+    ImGui::TextUnformatted("Go to");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(130);
+    uint16_t target = 0;
+    auto submit = [&]() {
+        if (resolve_goto(ctx, goto_buf_, target)) navigate(target);
+        else if (goto_buf_[0]) ctx.status = std::string("Unknown address/symbol: ") + goto_buf_;
+    };
+    if (ImGui::InputTextWithHint("##disgoto", "hex or symbol", goto_buf_, sizeof(goto_buf_),
+                                 ImGuiInputTextFlags_EnterReturnsTrue)) submit();
+    ImGui::SameLine();
+    if (ImGui::Button("Go")) submit();
     ImGui::SameLine();
     ImGui::Checkbox("Follow PC", &follow_pc_);
-    ImGui::SameLine();
-    ImGui::TextDisabled("(right-click an address or target to act)");
 
     DebugSession& session = ctx.session;
     if (follow_pc_ && session.State() != RunState::Running) {
@@ -205,7 +241,7 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
         ImGui::EndTable();
     }
 
-    if (jump_request) go_to(*jump_request);
+    if (jump_request) navigate(*jump_request);
     ImGui::End();
 }
 

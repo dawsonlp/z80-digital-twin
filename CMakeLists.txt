@@ -48,6 +48,7 @@ set(CORE_HEADERS
     src/io/open_bus_io.h
     src/io/latched_io.h
     src/io/observable_io.h
+    src/io/callback_io.h
 )
 
 # =============================================================================
@@ -134,6 +135,11 @@ target_link_libraries(screen_decode_test PRIVATE z80_machine)
 add_executable(video_test tests/video_test.cpp)
 target_link_libraries(video_test PRIVATE z80_machine)
 
+# Spectrum boot (headless): boots the 48K ROM and checks the screen rendered.
+# SKIPs cleanly when spec48.rom is absent (the ROM is not in the repo).
+add_executable(spectrum_boot_test tests/spectrum_boot_test.cpp)
+target_link_libraries(spectrum_boot_test PRIVATE z80_machine)
+
 # Debugger execution core (stepping, breakpoints, watchpoints)
 add_executable(debug_session_test tests/debug_session_test.cpp)
 target_link_libraries(debug_session_test PRIVATE z80_debugger_core)
@@ -219,6 +225,11 @@ if(Z80_BUILD_UI)
     target_include_directories(z80_debugger PRIVATE debugger/ui debugger/ui/panels)
     target_link_libraries(z80_debugger PRIVATE z80_debugger_core imgui)
     target_compile_features(z80_debugger PRIVATE cxx_std_23)
+
+    # --- The ZX Spectrum viewer --------------------------------------------
+    add_executable(spectrum apps/spectrum/main.cpp)
+    target_link_libraries(spectrum PRIVATE z80_machine imgui)
+    target_compile_features(spectrum PRIVATE cxx_std_23)
 endif()
 
 # =============================================================================

@@ -14,6 +14,7 @@
 
 #include "spectrum/spectrum_machine.h"
 #include "spectrum/screen.h"
+#include "spectrum/keyboard.h"
 
 #define GL_SILENCE_DEPRECATION
 #include "imgui.h"
@@ -75,6 +76,28 @@ int write_ppm(const std::string& path, const sm::SpectrumMachine& machine) {
 
 void glfw_error_callback(int error, const char* description) {
     std::cerr << "GLFW error " << error << ": " << description << "\n";
+}
+
+// Translate the host keyboard's current state into the Spectrum matrix. GLFW
+// key tokens for printable ASCII match uppercase ASCII (GLFW_KEY_A == 'A'), so
+// the matrix's ascii table maps straight through. Level-polled each frame — the
+// real keyboard is a level, not an edge, so this is exactly right.
+void poll_keyboard(GLFWwindow* window, sm::Ula& ula) {
+    namespace kb = z80::machine::spectrum::keyboard;
+    ula.release_all_keys();
+
+    const auto press = [&](kb::Key k) { ula.key_down(k.half_row, k.bit); };
+    const auto down  = [&](int glfw_key) { return glfwGetKey(window, glfw_key) == GLFW_PRESS; };
+
+    for (const kb::AsciiKey& k : kb::kAsciiKeys)
+        if (down(k.c)) ula.key_down(k.half_row, k.bit);
+
+    if (down(GLFW_KEY_ENTER)) press(kb::kEnter);
+    if (down(GLFW_KEY_SPACE)) press(kb::kSpace);
+    if (down(GLFW_KEY_LEFT_SHIFT) || down(GLFW_KEY_RIGHT_SHIFT)) press(kb::kCapsShift);
+    if (down(GLFW_KEY_LEFT_CONTROL) || down(GLFW_KEY_RIGHT_CONTROL)) press(kb::kSymbolShift);
+    // Backspace = DELETE = CAPS SHIFT + 0.
+    if (down(GLFW_KEY_BACKSPACE)) { press(kb::kCapsShift); press(kb::key_for_ascii('0')); }
 }
 
 } // namespace
@@ -159,6 +182,7 @@ int main(int argc, char** argv) {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
+        poll_keyboard(window, machine.ula());
         machine.run_frame();
         machine.render_rgba(rgba);
 

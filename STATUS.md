@@ -78,16 +78,20 @@ debugger; the app composes them).
   `FrameSource` seam ("what did the beam see here?"), so render fidelity lives in
   the source: a final-memory source is correct for static/boot screens and
   per-line (rainbow) borders; a beam-accurate source drops in later unchanged.
-- **`ula.h` / `spectrum_machine.h`** — the running ZX Spectrum 48K. The **ULA**
-  latches the border on `OUT 0xFE` into a frame-T-state-stamped timeline (resolved
-  to a per-line colour each frame), reads keyboard/EAR on `IN`, advances the FLASH
-  phase, and is the renderer's `FrameSource`. **`SpectrumMachine`** wires
+- **`ula.h` / `keyboard.h` / `spectrum_machine.h`** — the running ZX Spectrum 48K.
+  The **ULA** latches the border on `OUT 0xFE` into a frame-T-state-stamped timeline
+  (resolved to a per-line colour each frame), reads the **keyboard** on `IN` (the
+  8×5 matrix, active-low half-rows selected by the port's high byte) + EAR,
+  advances the FLASH phase, and is the renderer's `FrameSource`. `keyboard.h` holds
+  the hardware matrix layout (key→row/bit); the viewer maps host keys to it. **`SpectrumMachine`** wires
   `CPUImpl<FastMemory, CallbackIo>` + ULA + the frame clock: `run_frame()` runs a
   PAL frame (50 Hz INT) and renders to palette indices / RGBA. Boots `spec48.rom`
   to the copyright screen (verified headless by `spectrum_boot_test`).
 - **`spectrum` viewer** (`apps/spectrum/`, built with the UI) — boots a ROM and
-  shows the live screen (border + display, 3×) in a GLFW/ImGui window;
-  `--shot FILE` renders headless to a PPM. `spectrum spec48.rom`.
+  shows the live screen (border + display, 3×) in a GLFW/ImGui window, with the
+  host **keyboard** wired to the matrix (letters/digits/ENTER/SPACE, Shift→CAPS,
+  Ctrl→SYM SHIFT, Backspace→DELETE); `--shot FILE` renders headless to a PPM.
+  `spectrum spec48.rom`.
 
 ## Debugger UI — `z80_debugger` (ImGui + GLFW + OpenGL via FetchContent)
 
@@ -123,6 +127,7 @@ masking, HALT wake, EI deferral), `timing_test` (clock tree + geometry),
 `machine_test` (frame budget, device ticks, interrupt-per-frame), `screen_decode_test`
 (attribute/byte/line, FLASH swap, palette — incl. compile-time `static_assert`s), `video_test`
 (address mapping, border fill, display decode through the FrameSource seam),
+`keyboard_test` (matrix layout + active-low half-row IN decode),
 `spectrum_boot_test` (boots the 48K ROM headlessly and checks the screen drew;
 SKIPs when `spec48.rom` is absent), `debug_session_test`
 (incl. coverage + SMC + `RunForTStates`), `disassembler_test` (golden + length

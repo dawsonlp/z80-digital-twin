@@ -135,6 +135,10 @@ target_link_libraries(screen_decode_test PRIVATE z80_machine)
 add_executable(video_test tests/video_test.cpp)
 target_link_libraries(video_test PRIVATE z80_machine)
 
+# Spectrum keyboard (matrix layout + active-low half-row IN decode)
+add_executable(keyboard_test tests/keyboard_test.cpp)
+target_link_libraries(keyboard_test PRIVATE z80_machine)
+
 # Spectrum boot (headless): boots the 48K ROM and checks the screen rendered.
 # SKIPs cleanly when spec48.rom is absent (the ROM is not in the repo).
 add_executable(spectrum_boot_test tests/spectrum_boot_test.cpp)

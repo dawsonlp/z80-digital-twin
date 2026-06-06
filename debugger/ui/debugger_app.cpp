@@ -186,6 +186,12 @@ bool DebuggerApp::LoadTape(const std::string& path) {
     return true;
 }
 
+void DebuggerApp::SetRomWriteProtect(bool on) {
+    if (on) cpu_.GetMemory().SetWriteProtect(0x0000, 0x3FFF);
+    else cpu_.GetMemory().ClearWriteProtect();
+    status_ = on ? "ROM write-protected (0x0000-0x3FFF)" : "ROM writable";
+}
+
 void DebuggerApp::AddBreakpoint(uint16_t address) {
     session_.AddBreakpoint(address);
 }

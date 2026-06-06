@@ -112,6 +112,7 @@ int main(int argc, char** argv) {
     std::string tape_path;
     int frames = 0;
     bool turbo = false;
+    bool protect_rom = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -119,6 +120,7 @@ int main(int argc, char** argv) {
         else if (arg == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
         else if (arg == "--tape" && i + 1 < argc) tape_path = argv[++i];
         else if (arg == "--turbo") turbo = true;
+        else if (arg == "--protect-rom") protect_rom = true;
         else if (!arg.empty() && arg[0] != '-') rom_path = arg;
         else std::cerr << "Unknown argument: " << arg << "\n";
     }
@@ -134,6 +136,8 @@ int main(int argc, char** argv) {
         std::cerr << "Failed to load ROM (size must be <= 16 KB).\n";
         return 1;
     }
+    machine.set_rom_write_protect(protect_rom);
+    if (protect_rom) std::cout << "ROM write-protected (0x0000-0x3FFF)\n";
 
     if (!tape_path.empty()) {
         const std::vector<uint8_t> tap = read_file(tape_path);

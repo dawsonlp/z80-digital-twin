@@ -111,7 +111,9 @@ debugger; the app composes them).
   Ctrl→SYM SHIFT, Backspace→DELETE) and **beeper sound**. Paced to real Spectrum
   speed via a 50.08 Hz fixed timestep (decoupled from the display's vsync;
   `--turbo` runs uncapped; fps shown in the title). `--tape file.tap` (F5 plays);
-  `--shot FILE` renders headless to a PPM. `spectrum spec48.rom`.
+  `--protect-rom` makes 0x0000–0x3FFF read-only (off by default, so stray ROM
+  writes stay visible for diagnosis); `--shot FILE` renders headless to a PPM.
+  `spectrum spec48.rom`.
 
 ## Debugger UI — `z80_debugger` (ImGui + GLFW + OpenGL via FetchContent)
 

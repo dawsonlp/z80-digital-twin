@@ -147,6 +147,10 @@ target_link_libraries(raster_test PRIVATE z80_machine)
 add_executable(tape_test tests/tape_test.cpp)
 target_link_libraries(tape_test PRIVATE z80_machine)
 
+# Beeper resampler (1-bit speaker timeline -> PCM)
+add_executable(beeper_test tests/beeper_test.cpp)
+target_link_libraries(beeper_test PRIVATE z80_machine)
+
 # Spectrum boot (headless): boots the 48K ROM and checks the screen rendered.
 # SKIPs cleanly when spec48.rom is absent (the ROM is not in the repo).
 add_executable(spectrum_boot_test tests/spectrum_boot_test.cpp)
@@ -223,6 +227,29 @@ if(Z80_BUILD_UI)
     # Don't lint vendored third-party sources.
     target_compile_options(imgui PRIVATE -w)
 
+    # --- miniaudio (audio backend; single header) ---------------------------
+    FetchContent_Declare(miniaudio
+        GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+        GIT_TAG        0.11.21
+        GIT_SHALLOW    TRUE)
+    FetchContent_GetProperties(miniaudio)
+    if(NOT miniaudio_POPULATED)
+        FetchContent_Populate(miniaudio)   # header only; don't build its CMake project
+    endif()
+
+    add_library(z80_audio STATIC apps/audio/audio_output.cpp apps/audio/audio_output.h)
+    target_include_directories(z80_audio PUBLIC apps/audio)
+    target_include_directories(z80_audio SYSTEM PRIVATE ${miniaudio_SOURCE_DIR})
+    target_compile_features(z80_audio PUBLIC cxx_std_23)
+    target_compile_options(z80_audio PRIVATE -w)   # don't lint vendored miniaudio
+    if(APPLE)
+        target_link_libraries(z80_audio PRIVATE
+            "-framework CoreFoundation" "-framework CoreAudio" "-framework AudioToolbox")
+    elseif(UNIX)
+        find_package(Threads REQUIRED)
+        target_link_libraries(z80_audio PRIVATE Threads::Threads ${CMAKE_DL_LIBS} m)
+    endif()
+
     # --- The debugger application -------------------------------------------
     add_executable(z80_debugger
         debugger/main.cpp
@@ -245,7 +272,7 @@ if(Z80_BUILD_UI)
 
     # --- The ZX Spectrum viewer --------------------------------------------
     add_executable(spectrum apps/spectrum/main.cpp)
-    target_link_libraries(spectrum PRIVATE z80_machine imgui)
+    target_link_libraries(spectrum PRIVATE z80_machine z80_audio imgui)
     target_compile_features(spectrum PRIVATE cxx_std_23)
 endif()
 

@@ -296,13 +296,14 @@ decodes; loading stripes appear for free via the border timeline. Verified end t
 end: a synthesised `10 BORDER 2` tape, loaded via scripted `LOAD ""`, autoruns and
 turns the border red. Apps: `--tape file.tap`, then `LOAD ""` + F5 to play.
 
-**12.3 Sound (beeper) — planned.** The ULA records the speaker level (`OUT 0xFE`
-bit 4, OR'd with MIC bit 3) into a T-cycle timeline. A dependency-free resampler
-maps it to PCM by integrating the level over each sample's T-cycle window
-(1 s = 3.5 M T = 44 100 samples), so tones reproduce with proper averaging. A small
-audio backend drains a ring buffer the frame loop fills (882 samples/frame at
-50 Hz). Live backend: miniaudio (single-header, CoreAudio on macOS); the resampler
-is unit-tested independently.
+**12.3 Sound (beeper) — done.** The ULA records the speaker level (`OUT 0xFE`
+bit 4) as a T-cycle edge timeline. `beeper.h`'s `BeeperResampler` maps it to PCM by
+integrating the level over each sample's T-cycle window (1 s = 3.5 M T = 44 100
+samples), so tones reproduce with proper averaging — it works in absolute
+T-cycles, so no per-frame drift. The `spectrum` viewer plays it live: a small
+`z80_audio` lib (miniaudio + a lock-free PCM ring buffer) drained by the audio
+thread, fed each frame on the real-time (50 Hz) path (turbo skips audio). The
+resampler is unit-tested independently (`beeper_test`).
 
 ---
 

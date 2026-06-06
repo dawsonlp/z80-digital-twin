@@ -100,13 +100,18 @@ debugger; the app composes them).
   T-cycle → EAR level (`IN 0xFE` bit 6), so the ROM `LOAD` times the edges and
   decodes — loading stripes come free via the border timeline. `load_tape`/
   `play_tape`; in the apps `--tape file.tap`, then `LOAD ""` + **F5** to play.
+- **`beeper.h` (sound)** — the 1-bit speaker (`OUT 0xFE` bit 4) recorded as a
+  T-cycle edge timeline (like the border) and resampled to PCM by integrating the
+  level over each sample's T-cycle window (1 s = 3.5 M T = 44 100 samples). The
+  `spectrum` viewer plays it live via a small `z80_audio` lib (miniaudio +
+  lock-free ring buffer), fed on the real-time (50 Hz) path.
 - **`spectrum` viewer** (`apps/spectrum/`, built with the UI) — boots a ROM and
   shows the live screen (border + display, 3×) in a GLFW/ImGui window, with the
   host **keyboard** wired to the matrix (letters/digits/ENTER/SPACE, Shift→CAPS,
-  Ctrl→SYM SHIFT, Backspace→DELETE). Paced to real Spectrum speed via a 50.08 Hz
-  fixed timestep (decoupled from the display's vsync; `--turbo` runs uncapped;
-  fps shown in the title). `--shot FILE` renders headless to a PPM.
-  `spectrum spec48.rom`.
+  Ctrl→SYM SHIFT, Backspace→DELETE) and **beeper sound**. Paced to real Spectrum
+  speed via a 50.08 Hz fixed timestep (decoupled from the display's vsync;
+  `--turbo` runs uncapped; fps shown in the title). `--tape file.tap` (F5 plays);
+  `--shot FILE` renders headless to a PPM. `spectrum spec48.rom`.
 
 ## Debugger UI — `z80_debugger` (ImGui + GLFW + OpenGL via FetchContent)
 
@@ -149,6 +154,7 @@ masking, HALT wake, EI deferral), `timing_test` (clock tree + geometry),
 `keyboard_test` (matrix layout + active-low half-row IN decode),
 `raster_test` (beam-accurate per-scanline display reconstruction),
 `tape_test` (.tap pulse train + EAR-by-cycle),
+`beeper_test` (1-bit speaker → PCM resampler),
 `spectrum_debug_test` (a DebugSession breakpoints the running ROM),
 `spectrum_boot_test` (boots the 48K ROM headlessly and checks the screen drew;
 SKIPs when `spec48.rom` is absent), `debug_session_test`

@@ -15,6 +15,8 @@
 #include "spectrum/spectrum_machine.h"
 #include "spectrum/screen.h"
 #include "spectrum/keyboard.h"
+#include "spectrum/beeper.h"
+#include "audio_output.h"
 
 #define GL_SILENCE_DEPRECATION
 #include "imgui.h"
@@ -208,6 +210,25 @@ int main(int argc, char** argv) {
     int emulated = 0;
     bool f5_prev = false, f6_prev = false;   // tape transport edge detection
 
+    // Audio: the beeper edge timeline resampled to PCM and played via miniaudio.
+    // Only fed on the real-time (non-turbo) path, where one frame == 1/50 s of
+    // samples; in turbo the emulation outruns the sound card.
+    z80::audio::AudioOutput audio;
+    const bool sound = !turbo && audio.start(44100);
+    z80::machine::spectrum::BeeperResampler beeper(
+        z80::machine::spectrum::timing::kCpuHz, sound ? audio.sample_rate() : 44100);
+    std::vector<int16_t> samples;
+    if (sound) std::cout << "sound: on (" << audio.sample_rate() << " Hz)\n";
+
+    const auto pump_audio = [&] {
+        if (!sound) return;
+        samples.clear();
+        for (const auto& e : machine.ula().beeper_edges())
+            beeper.edge(e.cycle, e.level, samples);
+        beeper.advance(machine.cpu().GetCycleCount(), samples);
+        audio.push(samples);
+    };
+
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
         poll_keyboard(window, machine.ula());
@@ -233,6 +254,7 @@ int main(int argc, char** argv) {
             int ran = 0;
             while (accumulator >= frame_period && ran < 4) {    // real-time, capped catch-up
                 machine.run_frame();
+                pump_audio();                                    // drain this frame's beeper edges
                 accumulator -= frame_period;
                 ++ran;
                 ++emulated;

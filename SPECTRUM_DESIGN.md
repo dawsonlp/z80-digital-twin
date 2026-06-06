@@ -45,7 +45,7 @@ tape, and cycle-accurate timing/contention are deferred** (§9).
 ## 3. CPU prerequisites (hard blockers)
 
 Verified gaps; additive changes to the core, each landed *first* with headless
-unit tests, and **without regressing the `FastMemory+FastIo` benchmark**
+unit tests, and **without regressing the `FastMemory+OpenBusIo` benchmark**
 (ARCHITECTURE §8).
 
 ### 3.1 Maskable-interrupt injection

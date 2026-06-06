@@ -44,10 +44,10 @@ The CPU is parameterized on the two halves of its environment — what it reads/
 writes *into* (memory) and what it talks *to* (I/O):
 
 ```cpp
-template <class Memory = FastMemory, class Io = FastIo>
+template <class Memory = FastMemory, class Io = OpenBusIo>
 class CPUImpl { Memory memory; Io io; /* … */ };
 
-using CPU = CPUImpl<FastMemory, FastIo>;   // preserves existing usage
+using CPU = CPUImpl<FastMemory, OpenBusIo>;   // the bare Z80 (honest open bus)
 ```
 
 - **Compile-time** binding ⇒ each configuration is fully inlined and **zero-cost**;
@@ -160,13 +160,14 @@ using AppSession = DebugSession<AppCpu>;                                 // Mach
 - **Consequence:** the integrated app is built as one config — the Spectrum
   config — which also serves generic-Z80 debugging (arbitrary code simply
   doesn't exercise the Spectrum ports). The mass twin is a separate build on
-  bare policies (`CPUImpl<FastMemory, FastIo>` etc.), with no debugger or UI.
+  bare policies (`CPUImpl<FastMemory, OpenBusIo>` / `…, GpioIo>` etc.), with no
+  debugger or UI.
 - (Rejected alternative (b): fixing the debugger to a runtime-routing I/O — it
   would debug a proxy rather than the real `SpectrumIo`, losing fidelity.)
 
 ## 8. The performance invariant (sacred)
 
-`CPUImpl<FastMemory, FastIo>` is the **null configuration** and the performance
+`CPUImpl<FastMemory, OpenBusIo>` is the **null configuration** and the performance
 reference. Every capability must be **opt-in and zero-cost when off**, achieved
 by compile-time policy selection — never by runtime flags on the hot path. The
 `performance_benchmark` is the guardrail: **a throughput regression there is a

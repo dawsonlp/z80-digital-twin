@@ -1,9 +1,11 @@
 # Z80 Digital Twin — Reverse-Engineering Laboratory Roadmap
 
-**Status:** Vision / future work (not yet scheduled)
+**Status:** In progress. **L1 (execution coverage)** and **L2 (self-modifying-
+code detection)** are implemented, unit-tested, and surfaced in the UI (see
+[STATUS.md](STATUS.md)). L3+ remain future work.
 **Relationship to current work:** extends the existing debugger (see
-[DEBUGGER_DESIGN.md](DEBUGGER_DESIGN.md)). Nothing here blocks the near-term
-usability work; this is the north star it's heading toward.
+[DEBUGGER_DESIGN.md](DEBUGGER_DESIGN.md)). The near-term focus has shifted to
+simulated hardware (Spectrum ULA); L3+ resume after that.
 
 ---
 

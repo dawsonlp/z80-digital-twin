@@ -47,6 +47,9 @@ public:
     void set_clock(std::function<uint64_t()> clock) { clock_ = std::move(clock); }
     void set_reader(std::function<uint8_t(uint16_t)> reader) { read_ = std::move(reader); }
 
+    /// @brief Source of the EAR input bit (tape). true = high. Unset = idle high.
+    void set_ear_source(std::function<bool()> ear) { ear_source_ = std::move(ear); }
+
     // -- Port handlers (wire into CallbackIo) --------------------------------
 
     /// @brief OUT handler. The ULA decodes even ports; bits 0..2 set the border.
@@ -67,7 +70,8 @@ public:
         for (int row = 0; row < 8; ++row)
             if (((port >> (8 + row)) & 1) == 0)      // address line low -> row selected
                 result &= key_rows_[static_cast<std::size_t>(row)];
-        return static_cast<uint8_t>(result | 0xE0);  // D5..D7 high (EAR high, no tape)
+        const bool ear = ear_source_ ? ear_source_() : true;   // D6 = EAR (idle high)
+        return static_cast<uint8_t>((result & 0x1F) | 0xA0 | (ear ? 0x40 : 0x00));
     }
 
     // -- Display-file write observation (beam-accurate screen) ---------------
@@ -192,6 +196,7 @@ private:
 
     std::function<uint64_t()> clock_;
     std::function<uint8_t(uint16_t)> read_;
+    std::function<bool()> ear_source_;
 
     std::vector<BorderEvent> border_events_{{0, 0}};   // always non-empty (baseline)
     std::unordered_map<uint16_t, ScreenCell> screen_writes_;  // display-file writes this frame

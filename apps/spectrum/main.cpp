@@ -107,6 +107,7 @@ void poll_keyboard(GLFWwindow* window, sm::Ula& ula) {
 int main(int argc, char** argv) {
     std::string rom_path;
     std::string shot_path;
+    std::string tape_path;
     int frames = 0;
     bool turbo = false;
 
@@ -114,6 +115,7 @@ int main(int argc, char** argv) {
         const std::string arg = argv[i];
         if (arg == "--shot" && i + 1 < argc) shot_path = argv[++i];
         else if (arg == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
+        else if (arg == "--tape" && i + 1 < argc) tape_path = argv[++i];
         else if (arg == "--turbo") turbo = true;
         else if (!arg.empty() && arg[0] != '-') rom_path = arg;
         else std::cerr << "Unknown argument: " << arg << "\n";
@@ -129,6 +131,16 @@ int main(int argc, char** argv) {
     if (!machine.load_rom(rom)) {
         std::cerr << "Failed to load ROM (size must be <= 16 KB).\n";
         return 1;
+    }
+
+    if (!tape_path.empty()) {
+        const std::vector<uint8_t> tap = read_file(tape_path);
+        if (tap.empty() || !machine.load_tape(tap)) {
+            std::cerr << "Failed to load tape: " << tape_path << "\n";
+        } else {
+            std::cout << "Tape: " << tape_path << " (" << machine.tape().block_count()
+                      << " blocks). Type LOAD\"\" then press F5 to play.\n";
+        }
     }
 
     // -- Headless screenshot: no display needed ------------------------------
@@ -194,10 +206,19 @@ int main(int argc, char** argv) {
     auto fps_mark = last;
     double accumulator = 0.0;
     int emulated = 0;
+    bool f5_prev = false, f6_prev = false;   // tape transport edge detection
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
         poll_keyboard(window, machine.ula());
+
+        // Tape transport: F5 = play, F6 = stop (on key-down edge).
+        const bool f5 = glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS;
+        const bool f6 = glfwGetKey(window, GLFW_KEY_F6) == GLFW_PRESS;
+        if (f5 && !f5_prev) { machine.play_tape(); std::cout << "tape: play\n"; }
+        if (f6 && !f6_prev) { machine.stop_tape(); std::cout << "tape: stop\n"; }
+        f5_prev = f5;
+        f6_prev = f6;
 
         const auto now = clock::now();
         const double dt = std::chrono::duration<double>(now - last).count();

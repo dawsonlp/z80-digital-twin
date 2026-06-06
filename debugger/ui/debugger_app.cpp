@@ -155,6 +155,7 @@ bool DebuggerApp::LoadSpectrumRom(const std::string& path) {
     // and the display-file write observer for beam-accurate screen).
     ula_.set_clock([this] { return cpu_.GetCycleCount(); });
     ula_.set_reader([this](uint16_t a) { return cpu_.ReadMemory(a); });
+    ula_.set_ear_source([this] { return tape_.ear_level(cpu_.GetCycleCount()); });
     cpu_.GetIo().inner().OnOut([this](uint16_t p, uint8_t v) { ula_.write_port(p, v); });
     cpu_.GetIo().inner().OnIn([this](uint16_t p) { return ula_.read_port(p); });
     cpu_.GetMemory().AddWriteObserver(
@@ -168,6 +169,20 @@ bool DebuggerApp::LoadSpectrumRom(const std::string& path) {
 
     session_.ClearDirty();
     status_ = std::format("Loaded ZX Spectrum ROM ({} bytes) — press Run", rom.size());
+    return true;
+}
+
+bool DebuggerApp::LoadTape(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) { std::cerr << "Could not open tape: " << path << "\n"; return false; }
+    std::vector<uint8_t> tap((std::istreambuf_iterator<char>(in)),
+                             std::istreambuf_iterator<char>());
+    if (tap.empty() || !tape_.load_tap(tap)) {
+        std::cerr << "Failed to parse tape: " << path << "\n";
+        return false;
+    }
+    status_ = std::format("Tape: {} ({} blocks) — type LOAD\"\" then press F5",
+                          path, tape_.block_count());
     return true;
 }
 
@@ -361,6 +376,14 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
     while (!glfwWindowShouldClose(window_)) {
         glfwPollEvents();
         PollSpectrumKeyboard();
+        if (spectrum_mode_) {   // F5 = play tape (key-down edge)
+            const bool f5 = glfwGetKey(window_, GLFW_KEY_F5) == GLFW_PRESS;
+            if (f5 && !tape_play_prev_) {
+                tape_.play(cpu_.GetCycleCount());
+                status_ = "Tape: playing";
+            }
+            tape_play_prev_ = f5;
+        }
         ExecuteCommands();
 
         ImGui_ImplOpenGL3_NewFrame();

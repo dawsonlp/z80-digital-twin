@@ -27,6 +27,7 @@
 #include "memory/observable_memory.h"
 #include "machine.h"
 #include "screen.h"
+#include "tape.h"
 #include "timing.h"
 #include "ula.h"
 #include "video.h"
@@ -57,6 +58,7 @@ public:
                 ula_.on_write(addr, old_value, new_value);
             });
         cpu_.GetIo().SetRecording(false);   // the viewer doesn't read the I/O log
+        ula_.set_ear_source([this] { return tape_.ear_level(cpu_.GetCycleCount()); });
         cpu_.Reset();
     }
 
@@ -98,6 +100,12 @@ public:
         }
     }
 
+    // -- Tape ----------------------------------------------------------------
+    bool load_tape(std::span<const uint8_t> tap) { return tape_.load_tap(tap); }
+    void play_tape() { tape_.play(cpu_.GetCycleCount()); }
+    void stop_tape() { tape_.stop(); }
+    [[nodiscard]] Tape& tape() noexcept { return tape_; }
+
     [[nodiscard]] SpectrumCpu& cpu() noexcept { return cpu_; }
     [[nodiscard]] Ula& ula() noexcept { return ula_; }
     [[nodiscard]] uint64_t frame_count() const noexcept { return ula_.frame_counter(); }
@@ -105,6 +113,7 @@ public:
 private:
     SpectrumCpu cpu_;
     Ula ula_;
+    Tape tape_;
     Machine<SpectrumCpu> machine_;
 };
 

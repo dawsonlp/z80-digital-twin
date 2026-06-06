@@ -143,6 +143,10 @@ target_link_libraries(keyboard_test PRIVATE z80_machine)
 add_executable(raster_test tests/raster_test.cpp)
 target_link_libraries(raster_test PRIVATE z80_machine)
 
+# Tape (.tap pulse train + EAR-level playback)
+add_executable(tape_test tests/tape_test.cpp)
+target_link_libraries(tape_test PRIVATE z80_machine)
+
 # Spectrum boot (headless): boots the 48K ROM and checks the screen rendered.
 # SKIPs cleanly when spec48.rom is absent (the ROM is not in the repo).
 add_executable(spectrum_boot_test tests/spectrum_boot_test.cpp)

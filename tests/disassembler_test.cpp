@@ -12,6 +12,7 @@
 #include <array>
 #include <cstdint>
 #include <iostream>
+#include <optional>
 #include <vector>
 
 namespace {
@@ -145,6 +146,37 @@ int main() {
     expect(0x0000, {0xC3, 0x34, 0x12}, "JP MAIN", 3, resolve);
     expect(0x0000, {0xCD, 0x34, 0x12}, "CALL MAIN", 3, resolve);
     expect(0x0002, {0x28, 0x0B}, "JR Z, DONE", 2, resolve);
+
+    // --- Branch targets (powers right-click "Go to target") ------------------
+    std::cout << "\n[branch targets]\n";
+    {
+        Disassembler d;
+        auto bt = [&](uint16_t at, const std::vector<uint8_t>& bytes) {
+            place(at, bytes);
+            return d.Decode(reader(), at).branch_target;
+        };
+        auto has = [&](const char* what, std::optional<uint16_t> got, uint16_t want) {
+            const bool ok = got.has_value() && *got == want;
+            std::cout << (ok ? "  ✓ " : "  ✗ ") << what;
+            if (!ok) { std::cout << " [got " << (got ? int(*got) : -1) << "]"; ++failures; }
+            std::cout << '\n';
+        };
+        auto none = [&](const char* what, std::optional<uint16_t> got) {
+            const bool ok = !got.has_value();
+            std::cout << (ok ? "  ✓ " : "  ✗ ") << what << '\n';
+            if (!ok) ++failures;
+        };
+        has("JP 0x1234",        bt(0x0000, {0xC3, 0x34, 0x12}), 0x1234);
+        has("JP NZ, 0x1234",    bt(0x0000, {0xC2, 0x34, 0x12}), 0x1234);
+        has("CALL 0x2000",      bt(0x0000, {0xCD, 0x00, 0x20}), 0x2000);
+        has("CALL NC, 0x2000",  bt(0x0000, {0xD4, 0x00, 0x20}), 0x2000);
+        has("JR  (rel +0x0B)",  bt(0x0002, {0x18, 0x0B}),       0x000F);
+        has("DJNZ (rel -2)",    bt(0x0010, {0x10, 0xFE}),       0x0010);
+        has("RST 0x18",         bt(0x0000, {0xDF}),             0x0018);
+        none("RET has no target",     bt(0x0000, {0xC9}));
+        none("JP (HL) has no target", bt(0x0000, {0xE9}));
+        none("LD A,B has no target",  bt(0x0000, {0x78}));
+    }
 
     // --- Length coverage: all 256 base opcodes (excluding prefix bytes) -------
     std::cout << "\n[length sweep over base opcodes]\n";

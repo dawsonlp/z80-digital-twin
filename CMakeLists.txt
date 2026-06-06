@@ -148,6 +148,10 @@ target_link_libraries(raster_test PRIVATE z80_machine)
 add_executable(spectrum_boot_test tests/spectrum_boot_test.cpp)
 target_link_libraries(spectrum_boot_test PRIVATE z80_machine)
 
+# Debugger-driven Spectrum: a DebugSession breakpoints the running ROM.
+add_executable(spectrum_debug_test tests/spectrum_debug_test.cpp)
+target_link_libraries(spectrum_debug_test PRIVATE z80_debugger_core z80_machine)
+
 # Debugger execution core (stepping, breakpoints, watchpoints)
 add_executable(debug_session_test tests/debug_session_test.cpp)
 target_link_libraries(debug_session_test PRIVATE z80_debugger_core)
@@ -229,9 +233,10 @@ if(Z80_BUILD_UI)
         debugger/ui/panels/disassembly_panel.cpp
         debugger/ui/panels/memory_panel.cpp
         debugger/ui/panels/io_panel.cpp
-        debugger/ui/panels/smc_panel.cpp)
+        debugger/ui/panels/smc_panel.cpp
+        debugger/ui/panels/screen_panel.cpp)
     target_include_directories(z80_debugger PRIVATE debugger/ui debugger/ui/panels)
-    target_link_libraries(z80_debugger PRIVATE z80_debugger_core imgui)
+    target_link_libraries(z80_debugger PRIVATE z80_debugger_core z80_machine imgui)
     target_compile_features(z80_debugger PRIVATE cxx_std_23)
 
     # --- The ZX Spectrum viewer --------------------------------------------

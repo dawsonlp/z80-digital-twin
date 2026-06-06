@@ -17,6 +17,7 @@
 #include "symbol_table.h"
 #include "ui_context.h"
 #include "panel.h"
+#include "spectrum/ula.h"
 
 #include <cstdint>
 #include <memory>
@@ -44,11 +45,20 @@ public:
     /// @brief Load a tiny self-modifying demo (a self-incrementing operand loop).
     void LoadSmcDemo();
 
+    /// @brief Load a ≤16 KB ROM as a ZX Spectrum: wire the ULA to this CPU and
+    ///        enter Spectrum mode (a screen panel appears; free-run drives 50 Hz
+    ///        frames through the session so breakpoints still apply).
+    bool LoadSpectrumRom(const std::string& path);
+
     /// @brief Set a breakpoint at an address (e.g. from the command line).
     void AddBreakpoint(uint16_t address);
 
     /// @brief Execute up to @p count instructions immediately (CLI/scripting).
     void RunInstructions(uint64_t count);
+
+    /// @brief Drive @p count PAL frames immediately (Spectrum mode; CLI/scripting,
+    ///        e.g. to boot before a screenshot). Stops early on a breakpoint.
+    void RunSpectrumFrames(uint64_t count);
 
     /// @brief Run the GUI. In smoke mode, render a few frames and exit.
     /// @param shot_path If non-empty, write a PPM screenshot on the final frame.
@@ -59,6 +69,10 @@ private:
     void DrawMenuBar();
     void ExecuteCommands();   // applies the commands panels posted last frame
     UiContext MakeContext();  // fresh per-frame context for the panels
+
+    // -- Spectrum mode -------------------------------------------------------
+    void DriveSpectrumFrame();      // one PAL frame via the session (breakpoint-aware)
+    void PollSpectrumKeyboard();    // host keys -> ULA matrix (when ImGui isn't typing)
 
     // -- State ---------------------------------------------------------------
     DebugCPU cpu_;
@@ -75,6 +89,13 @@ private:
 
     uint64_t run_budget_ = 250000;   // instructions per frame while free-running
     char sym_path_buf_[512] = "";    // menu: symbol-file path field
+
+    // Spectrum machine (active only after LoadSpectrumRom).
+    machine::spectrum::Ula ula_;
+    bool spectrum_mode_ = false;     ///< driving a Spectrum (screen panel + frame run)
+    bool spectrum_running_ = false;  ///< free-running the machine at 50 Hz
+    bool frame_active_ = false;      ///< mid-frame (a breakpoint may have paused us)
+    uint64_t frame_budget_ = 0;      ///< T-states left in the current frame
 };
 
 } // namespace z80::dbg

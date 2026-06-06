@@ -268,6 +268,40 @@ state**, and unconnected bits / unmapped ports read as open bus (`0xFF`).
 Steps 1–3 are pure logic, unit-tested (rot-proof); 4–5 verified by build +
 screenshot (the ROM copyright screen is the acceptance shot).
 
+## 12. Machine I/O: debugger, tape, sound
+
+**Unifying pattern — T-cycle event timelines.** Border colour, beam-accurate
+screen, sound, and tape are the *same* mechanism: a peripheral's level changes are
+recorded as a **T-cycle-stamped event timeline** during a frame, then
+*reconstructed* into the output medium — pixels for video, PCM samples for audio.
+Tape is the mirror image: a timeline *drives* `IN` instead of being recorded from
+`OUT`.
+
+**12.1 Debugger-driven Spectrum (done).** One shared CPU config —
+`CPUImpl<ObservableMemory, ObservableIo<CallbackIo>>` (`DebugCPU == SpectrumCpu`).
+`ObservableMemory`'s multi-observer feeds the debugger's dirty/watch/SMC *and* the
+ULA's beam-accurate screen at once; `ObservableIo<CallbackIo>` logs transactions
+for the I/O panel while the inner `CallbackIo` routes ports to the ULA. The
+debugger free-runs the machine one PAL frame per UI tick via
+`DebugSession::RunForTStates`, so breakpoints apply — and a breakpoint *mid-frame*
+pauses with the frame held open, resuming the **same** frame (no new interrupt) on
+continue. `z80_debugger --spectrum <rom>` adds a Spectrum Screen panel; host keys
+feed the matrix when ImGui isn't capturing them.
+
+**12.2 Tape (`.tap`, real-signal) — planned.** Parse `.tap` blocks; synthesise the
+standard ROM pulse train (pilot 2168T · sync 667/735T · bit 855T/1710T) as pulse
+durations. Playback maps CPU T-cycle → pulse index → EAR level; `IN 0xFE` returns
+`keyboard | (ear<<6)`. The ROM `LOAD` times the edges and decodes; loading stripes
+appear for free via the border timeline.
+
+**12.3 Sound (beeper) — planned.** The ULA records the speaker level (`OUT 0xFE`
+bit 4, OR'd with MIC bit 3) into a T-cycle timeline. A dependency-free resampler
+maps it to PCM by integrating the level over each sample's T-cycle window
+(1 s = 3.5 M T = 44 100 samples), so tones reproduce with proper averaging. A small
+audio backend drains a ring buffer the frame loop fills (882 samples/frame at
+50 Hz). Live backend: miniaudio (single-header, CoreAudio on macOS); the resampler
+is unit-tested independently.
+
 ---
 
 *Draft — refined collaboratively; next refinement point is the screen-decoder

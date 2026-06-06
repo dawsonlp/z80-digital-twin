@@ -25,6 +25,7 @@ int main(int argc, char** argv) {
 
     std::string program_path;
     std::string symbol_path;
+    std::string spectrum_rom;
     uint16_t org = 0x0000;
     bool smoke = false;
     std::string shot_path;
@@ -46,6 +47,8 @@ int main(int argc, char** argv) {
             breakpoints.push_back(static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 16)));
         } else if (arg == "--demo" && i + 1 < argc) {
             demo = argv[++i];
+        } else if (arg == "--spectrum" && i + 1 < argc) {
+            spectrum_rom = argv[++i];
         } else if (arg == "--run" && i + 1 < argc) {
             run_count = std::strtoull(argv[++i], nullptr, 10);
         } else if (!arg.empty() && arg[0] != '-') {
@@ -56,7 +59,9 @@ int main(int argc, char** argv) {
     }
 
     DebuggerApp app;
-    if (!program_path.empty()) {
+    if (!spectrum_rom.empty()) {
+        if (!app.LoadSpectrumRom(spectrum_rom)) return 1;
+    } else if (!program_path.empty()) {
         if (!app.LoadProgramFile(program_path, org)) return 1;
     } else if (demo == "smc") {
         app.LoadSmcDemo();
@@ -70,7 +75,8 @@ int main(int argc, char** argv) {
         app.AddBreakpoint(bp);
     }
     if (run_count > 0) {
-        app.RunInstructions(run_count);
+        if (!spectrum_rom.empty()) app.RunSpectrumFrames(run_count);
+        else app.RunInstructions(run_count);
     }
 
     return app.Run(smoke, 5, shot_path);

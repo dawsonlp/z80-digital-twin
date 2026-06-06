@@ -4,10 +4,11 @@
 // Licensed under the MIT License (see LICENSE file)
 //
 // Ties the CPU, the ULA, and the generic frame clock into a running 48K:
-//   * CPU = CPUImpl<ObservableMemory, CallbackIo> (the ULA wires its port decode
-//     into the CallbackIo handlers; ObservableMemory is the flat 64 KB space —
-//     16 KB ROM at 0x0000, 48 KB RAM above — whose write hook feeds the ULA's
-//     beam-accurate screen reconstruction);
+//   * CPU = CPUImpl<ObservableMemory, ObservableIo<CallbackIo>> — the same config
+//     the debugger drives, so a DebugSession can run this machine directly. The
+//     ULA hooks the inner CallbackIo's ports; ObservableIo logs transactions for
+//     the I/O panel; ObservableMemory's write hook feeds the beam-accurate
+//     screen (16 KB ROM at 0x0000, 48 KB RAM above);
 //   * the ULA is given the CPU's clock and a RAM reader, observes display-file
 //     writes, and acts as the renderer's FrameSource;
 //   * Machine<Cpu> runs each PAL frame (asserting the 50 Hz interrupt) and the
@@ -22,6 +23,7 @@
 
 #include "z80_cpu.h"
 #include "io/callback_io.h"
+#include "io/observable_io.h"
 #include "memory/observable_memory.h"
 #include "machine.h"
 #include "screen.h"
@@ -37,7 +39,7 @@
 
 namespace z80::machine::spectrum {
 
-using SpectrumCpu = z80::CPUImpl<z80::ObservableMemory, z80::CallbackIo>;
+using SpectrumCpu = z80::CPUImpl<z80::ObservableMemory, z80::ObservableIo<z80::CallbackIo>>;
 
 class SpectrumMachine {
 public:
@@ -48,8 +50,8 @@ public:
     SpectrumMachine() : machine_(cpu_, timing::kTPerFrame) {
         ula_.set_clock([this] { return cpu_.GetCycleCount(); });
         ula_.set_reader([this](uint16_t addr) { return cpu_.ReadMemory(addr); });
-        cpu_.GetIo().OnOut([this](uint16_t port, uint8_t value) { ula_.write_port(port, value); });
-        cpu_.GetIo().OnIn([this](uint16_t port) { return ula_.read_port(port); });
+        cpu_.GetIo().inner().OnOut([this](uint16_t port, uint8_t value) { ula_.write_port(port, value); });
+        cpu_.GetIo().inner().OnIn([this](uint16_t port) { return ula_.read_port(port); });
         cpu_.GetMemory().AddWriteObserver(
             [this](uint16_t addr, uint8_t old_value, uint8_t new_value) {
                 ula_.on_write(addr, old_value, new_value);
@@ -67,7 +69,8 @@ public:
 
     /// @brief Run one PAL frame (fires the frame interrupt) and advance the ULA.
     void run_frame() {
-        ula_.begin_frame();   // drop the previous frame's display-write history
+        ula_.begin_frame();             // drop the previous frame's display-write history
+        cpu_.GetIo().ClearTransactions();  // bound the I/O log (one frame's worth)
         machine_.RunFrame([this](uint64_t target) {
             const uint64_t before = cpu_.GetCycleCount();
             while (cpu_.GetCycleCount() - before < target && !cpu_.IsHalted()) {

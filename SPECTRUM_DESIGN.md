@@ -66,26 +66,35 @@ Honor: **`EI` defers** acceptance until after the following instruction;
 **HALT wake**. Tests: IM1 + `IFF1` pushes PC and jumps to `0x0038`; ignored when
 `IFF1=0`; HALT resumes on INT.
 
-### 3.2 I/O compile-time policy
-`IN A,(n)` / `IN r,(C)` currently drop the **high** address byte, which the
-Spectrum keyboard needs. Rather than a runtime hook, I/O becomes the CPU's second
-**compile-time policy** (ARCHITECTURE §6):
+### 3.2 I/O compile-time policy (devices, not storage)
+`IN A,(n)` / `IN r,(C)` currently drop the **high** address byte (needed by the
+keyboard) *and* model ports as a stored array — which is a fiction (ARCHITECTURE
+§6): real `OUT` is a transient pulse, `IN` reads a device's live state, and the
+two can hit different hardware. I/O becomes the CPU's second **compile-time
+policy**, an **event/query** seam:
 
 ```cpp
-template <class Memory = FastMemory, class Io = FastIo> class CPUImpl { … };
+template <class Memory = FastMemory, class Io = OpenBusIo> class CPUImpl { … };
 // Io contract: uint8_t In(uint16_t port); void Out(uint16_t port, uint8_t);
 ```
 
 - IN/OUT compute the **full 16-bit port** (`(A<<8)|n`, or `BC`) and call
-  `io_.In/Out` — so adopting the policy *is* the 16-bit-addressing fix.
-- `FastIo` (256-byte array) is the default → the twin is unchanged and zero-cost;
-  port storage moves into `FastIo`, with `ReadPort/WritePort` kept as thin
-  delegators and `Io& GetIo()` added (mirrors `GetMemory()`).
-- `SpectrumIo` routes `0xFE`→ULA (and later Kempston, …).
-- **Debugger consequence:** `DebugSession` becomes templated on the CPU config
-  (ARCHITECTURE §7); disassembler/symbols are already config-agnostic.
+  `io_.In/Out` — adopting the policy *is* the 16-bit-addressing fix.
+- **Default `OpenBusIo`** (honest "nothing attached": `Out` discarded, `In` →
+  `0xFF`). `LatchedIo` (the old array) is an opt-in device for tests/simple
+  peripherals. `SpectrumIo` routes `0xFE`→ULA (later Kempston, …) with real
+  read≠write asymmetry. `ObservableIo<Inner>` (debug decorator) records bus
+  transactions.
+- Replace the raw `ReadPort/WritePort(uint8_t)` array API with `Io& GetIo()`
+  device access (mirrors `GetMemory()`); `LatchedIo` offers explicit peek/poke
+  for tests. **Back-compat (decision i):** the few port-poking tests/examples
+  switch to `LatchedIo`.
+- **Debugger consequence:** `DebugSession` is templated on the CPU config
+  (ARCHITECTURE §7); disassembler/symbols are already config-agnostic. The I/O
+  *panel* is rewritten as a passive **bus-transaction log** (it must never
+  poll-read ports — real `IN` can have side effects).
 
-This is a memory-policy-sized refactor; sequence it like that one (§10).
+This is a memory-policy-sized refactor; sequence it like that one (§11).
 
 ## 4. Memory observation (debugger capability)
 
@@ -100,7 +109,8 @@ concern. (A running Spectrum is still fully debuggable because it uses
 ## 5. Device abstraction & Machine
 
 ```
-SpectrumCPU = CPUImpl<ObservableMemory, SpectrumIo>
+SpectrumCPU = CPUImpl<ObservableMemory, SpectrumIo>               // runnable
+SpectrumDbg = CPUImpl<ObservableMemory, ObservableIo<SpectrumIo>> // in the debugger
 Machine     = SpectrumCPU + devices(ULA, …) + PAL frame clock
 Device:  port In/Out (via the Io policy)  ·  tick/frame hooks (INT, FLASH)  ·
          device state (render source, input sink)
@@ -175,9 +185,14 @@ non-interlaced picture.) Our model uses a single repeating 312-line frame.
 
 ## 8. I/O map (Spectrum 48K, relevant bits) — implemented by `SpectrumIo`
 
-- `OUT (0xFE)`: bits 0–2 **border**; bit 3 **MIC**; bit 4 **speaker** (beeper).
-- `IN (0xFE)`: bits 0–4 = the five keys of the half-row(s) selected by the high
-  address byte (0 = pressed); bit 6 = **EAR** (tape in).
+`SpectrumIo` is a faithful device: **write and read of `0xFE` touch different
+state**, and unconnected bits / unmapped ports read as open bus (`0xFF`).
+
+- `OUT (0xFE)`: latches bits 0–2 **border**, bit 3 **MIC**, bit 4 **speaker**
+  (beeper). Other bits are not connected — written and forgotten.
+- `IN (0xFE)`: returns bits 0–4 = the five keys of the half-row(s) selected by the
+  **high** address byte (0 = pressed); bit 6 = **EAR** (tape in). It does **not**
+  return anything you `OUT`.
 - The ULA responds to all even ports (A0 = 0); `0xFE` is canonical.
 
 ## 9. Deferred (later milestones)
@@ -201,10 +216,13 @@ non-interlaced picture.) Our model uses a single repeating 312-line frame.
 
 1. **`ObservableMemory`** — make the write hook multi-observer; migrate
    `DebugSession`; unit test (two observers both fire). *(headless)*
-2. **I/O policy** — add the `Io` template param (default `FastIo`), move port
-   storage into `FastIo`, add `SpectrumIo` stub, retarget `DebugSession`
-   (decision a), redo explicit instantiations. Tests: 16-bit port visible,
-   `FastIo` back-compat, **benchmark unchanged**. *(headless)*
+2. **I/O policy** — add the `Io` template param (default `OpenBusIo`); provide
+   `LatchedIo` (old array, opt-in) and `ObservableIo<Inner>` (debug decorator);
+   add `SpectrumIo` stub; replace `ReadPort/WritePort` with `GetIo()`; retarget
+   `DebugSession` (decision a); redo explicit instantiations; rewrite the I/O
+   panel as a passive transaction log. Tests: 16-bit port reaches the device,
+   `OpenBusIo` reads `0xFF`, `LatchedIo` round-trips, **benchmark unchanged**.
+   *(logic headless; panel by build/screenshot)*
 3. **`CPU::Interrupt()`** — IM0/1/2, IFF, HALT-wake, EI-deferral + tests.
    *(headless)*
 4. **Device + Machine** — PAL frame clock (§6), INT per frame, "run as Spectrum"

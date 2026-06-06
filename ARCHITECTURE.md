@@ -60,17 +60,21 @@ This is the mechanism. The use cases are just **named instantiations** of it.
 ## 4. Named configurations (use case → config)
 
 ```cpp
-// Mass IoT twin — the performance reference; specialise I/O per deployment:
-using CPU          = CPUImpl<FastMemory, FastIo>;        // default
+// Bare Z80 — honest default (open bus); the performance reference:
+using CPU          = CPUImpl<FastMemory, OpenBusIo>;
+// Mass IoT twin — specialise I/O per deployment:
 //                   CPUImpl<FastMemory, GpioIo>         // real Raspberry Pi pins
 //                   CPUImpl<FastMemory, SerialIo>       // UART / serial chip
+//                   CPUImpl<FastMemory, LatchedIo>      // simple latched ports (opt-in)
 
-// ZX Spectrum (runnable and debuggable):
-using SpectrumCPU  = CPUImpl<ObservableMemory, SpectrumIo>;
+// ZX Spectrum, runnable: real device behaviour, zero observation overhead:
+using SpectrumCPU      = CPUImpl<ObservableMemory, SpectrumIo>;
+// ZX Spectrum, in the debugger: same truth + bus-transaction observation:
+using SpectrumDebugCPU = CPUImpl<ObservableMemory, ObservableIo<SpectrumIo>>;
 ```
 
 Each picks its environment at compile time; nothing bleeds across; the bare
-`FastMemory + FastIo` stays the benchmark-guarded reference (§8).
+`FastMemory + OpenBusIo` stays the benchmark-guarded reference (§8).
 
 ## 5. Memory policies
 
@@ -83,27 +87,55 @@ Each picks its environment at compile time; nothing bleeds across; the bare
 
 Reads are never hooked, so observation costs nothing on fetch/operand traffic.
 
-## 6. I/O policies
+## 6. I/O policies — I/O is a *device*, not storage
 
-The `Io` policy answers "what does this Z80 talk to," with the **full 16-bit
-port** (`(A<<8)|n` for `IN/OUT (n)`, `BC` for `(C)` forms). Adopting the policy
-*is* the 16-bit-addressing fix the Spectrum keyboard needs — there's no separate
-hook.
+Real Z80 I/O has no implicit storage. `OUT` is a **transient bus pulse** (~2
+T-states); whether a value persists is entirely up to the external device (it
+must latch it). `IN` reads a device's **live state**, which may be unrelated to
+anything written (write and read can hit different hardware behind one port).
+Memory is just the special case where the device — RAM — latches every address.
+
+The `Io` policy reflects this: it's an **event/query** seam with the **full
+16-bit port** (`(A<<8)|n` for `IN/OUT (n)`, `BC` for `(C)` forms) — and adopting
+it *is* the 16-bit-addressing fix the Spectrum keyboard needs.
 
 ```cpp
-struct Io {                          // policy contract
-    uint8_t In(uint16_t port);
-    void    Out(uint16_t port, uint8_t value);
+struct Io {                          // policy contract — events, not a store
+    uint8_t In(uint16_t port);                 // ask the device for live state
+    void    Out(uint16_t port, uint8_t value); // hand the device a transient write
 };
 ```
 
-- **`FastIo`** — today's 256-byte array behaviour; the twin default.
-- **`SpectrumIo`** — routes ports to ULA (`0xFE`), Kempston, etc.
+Devices (truth):
+- **`OpenBusIo`** — the honest **default** for "nothing attached": `Out` is
+  discarded; `In` returns the floating-bus value (`0xFF`). No round-trip.
+- **`LatchedIo`** — a bank of read/write latches (the old 256-byte array, *named
+  for what it is*: one legitimate-but-simplistic device, handy for tests and
+  simple IoT models — **not** "how I/O works").
+- **`SpectrumIo`** — real machine behaviour: `OUT 0xFE` latches only the
+  border/MIC/speaker bits, `IN 0xFE` returns keyboard+EAR, unmapped ports →
+  open bus.
 - **`GpioIo` / `SerialIo` / …** — drive real hardware or device models.
+
+Observation (debugger), mirroring memory:
+- **`ObservableIo<Inner>`** — a **decorator** that forwards `In`/`Out` to the
+  real device and **records each transaction** (direction, port, value, cycle)
+  for the debugger. It shows a *bus-transaction log*, never a fake "current value
+  of each port."
+
+> **Why this matters beyond accuracy:** a real `IN` can have side effects
+> (clear a flag, advance a FIFO). So the debugger must **never poll-read ports**
+> to display them — it may only observe transactions the program itself makes.
+> The old storing-array model silently licensed that wrong behaviour; the device
+> model forbids it.
 
 A policy is a thin seam; stateful device logic (e.g. the ULA) lives in a device
 object the policy forwards to, so devices stay independently testable and can be
 shared across the I/O *and* memory seams (the ULA needs both).
+
+**Default decision (i):** the bare `CPU` defaults to `OpenBusIo` — correctness is
+the default; the convenient `LatchedIo` round-trip is opt-in (a few port-poking
+tests/examples select it explicitly).
 
 ## 7. The debugger over policy configurations
 
@@ -112,8 +144,8 @@ through consistently. The config is named once as a type alias; everything that
 touches the CPU uses it:
 
 ```cpp
-using AppCpu     = CPUImpl<ObservableMemory, SpectrumIo>;   // this build's config
-using AppSession = DebugSession<AppCpu>;                    // Machine<AppCpu> too
+using AppCpu     = CPUImpl<ObservableMemory, ObservableIo<SpectrumIo>>;  // this build's config
+using AppSession = DebugSession<AppCpu>;                                 // Machine<AppCpu> too
 ```
 
 - `DebugSession` and `Machine` are **templates on the config** (constrained to an
@@ -144,7 +176,7 @@ debugger and emulators grow.
 ## 9. Module layout & build targets
 
 ```
-src/                  core engine            -> z80_cpu        (FastMemory, ObservableMemory, FastIo)
+src/                  core engine            -> z80_cpu        (memory: FastMemory/ObservableMemory; io: OpenBusIo/LatchedIo/ObservableIo)
 debugger/{exec,disasm,symbols}  capability   -> z80_debugger_core
 machine/                        capability   -> z80_machine    (Spectrum: SpectrumIo, ULA, decoder, …)
 debugger/ui  (+ machine UI panels)  frontend -> z80_debugger   (+ imgui)

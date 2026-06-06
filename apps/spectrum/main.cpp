@@ -23,8 +23,10 @@
 #include <GLFW/glfw3.h>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <format>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -106,11 +108,13 @@ int main(int argc, char** argv) {
     std::string rom_path;
     std::string shot_path;
     int frames = 0;
+    bool turbo = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--shot" && i + 1 < argc) shot_path = argv[++i];
         else if (arg == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
+        else if (arg == "--turbo") turbo = true;
         else if (!arg.empty() && arg[0] != '-') rom_path = arg;
         else std::cerr << "Unknown argument: " << arg << "\n";
     }
@@ -179,13 +183,42 @@ int main(int argc, char** argv) {
 
     std::array<uint32_t, sm::SpectrumMachine::kPixels> rgba{};
 
+    // The Spectrum runs at 50.08 Hz; pace emulated frames to wall-clock with a
+    // fixed timestep, independent of the display's vsync refresh. (vsync stays on
+    // to avoid tearing; --turbo runs one frame per refresh instead.) The engine
+    // does ~680x real-time headless, so this is purely a throttle.
+    using clock = std::chrono::steady_clock;
+    constexpr double kHz = z80::machine::spectrum::timing::kFrameRateHz;
+    const double frame_period = 1.0 / kHz;
+    auto last = clock::now();
+    auto fps_mark = last;
+    double accumulator = 0.0;
+    int emulated = 0;
+
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
-
         poll_keyboard(window, machine.ula());
-        machine.run_frame();
-        machine.render_rgba(rgba);
 
+        const auto now = clock::now();
+        const double dt = std::chrono::duration<double>(now - last).count();
+        last = now;
+
+        if (turbo) {
+            machine.run_frame();
+            ++emulated;
+        } else {
+            accumulator += dt;
+            if (accumulator > 0.25) accumulator = 0.25;        // don't spiral after a stall
+            int ran = 0;
+            while (accumulator >= frame_period && ran < 4) {    // real-time, capped catch-up
+                machine.run_frame();
+                accumulator -= frame_period;
+                ++ran;
+                ++emulated;
+            }
+        }
+
+        machine.render_rgba(rgba);
         glBindTexture(GL_TEXTURE_2D, texture);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, sm::video::kFrameWidth, sm::video::kFrameHeight,
                         GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
@@ -206,6 +239,19 @@ int main(int argc, char** argv) {
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(window);
+
+        const double since = std::chrono::duration<double>(now - fps_mark).count();
+        if (since >= 1.0) {
+            const double fps = emulated / since;
+            glfwSetWindowTitle(window, std::format(
+                "ZX Spectrum 48K — {:.0f} fps ({:.0f}% of 50 Hz){}",
+                fps, fps / kHz * 100.0, turbo ? "  [turbo]" : "").c_str());
+            std::cout << std::format("emulated {:.1f} fps ({:.0f}% of real){}\n",
+                                     fps, fps / kHz * 100.0, turbo ? "  [turbo]" : "")
+                      << std::flush;
+            fps_mark = now;
+            emulated = 0;
+        }
     }
 
     glDeleteTextures(1, &texture);

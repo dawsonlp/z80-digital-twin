@@ -90,7 +90,9 @@ debugger; the app composes them).
 - **`spectrum` viewer** (`apps/spectrum/`, built with the UI) — boots a ROM and
   shows the live screen (border + display, 3×) in a GLFW/ImGui window, with the
   host **keyboard** wired to the matrix (letters/digits/ENTER/SPACE, Shift→CAPS,
-  Ctrl→SYM SHIFT, Backspace→DELETE); `--shot FILE` renders headless to a PPM.
+  Ctrl→SYM SHIFT, Backspace→DELETE). Paced to real Spectrum speed via a 50.08 Hz
+  fixed timestep (decoupled from the display's vsync; `--turbo` runs uncapped;
+  fps shown in the title). `--shot FILE` renders headless to a PPM.
   `spectrum spec48.rom`.
 
 ## Debugger UI — `z80_debugger` (ImGui + GLFW + OpenGL via FetchContent)

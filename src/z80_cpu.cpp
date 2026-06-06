@@ -7,6 +7,7 @@
 #include "memory/observable_memory.h"
 #include "io/latched_io.h"
 #include "io/observable_io.h"
+#include "io/callback_io.h"
 #include <algorithm>
 
 namespace z80 {
@@ -4275,8 +4276,10 @@ void CPUImpl<Memory, Io>::SLL_mHL() {
 //  - <FastMemory, OpenBusIo>                   : z80::CPU — production / benchmark
 //  - <ObservableMemory, OpenBusIo>             : memory-observer tests
 //  - <ObservableMemory, ObservableIo<LatchedIo>> : the debugger (DebugCPU)
+//  - <FastMemory, CallbackIo>                  : the ZX Spectrum machine (ULA)
 template class CPUImpl<FastMemory, OpenBusIo>;
 template class CPUImpl<ObservableMemory, OpenBusIo>;
 template class CPUImpl<ObservableMemory, ObservableIo<LatchedIo>>;
+template class CPUImpl<FastMemory, CallbackIo>;
 
 } // namespace z80

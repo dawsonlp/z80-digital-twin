@@ -24,8 +24,9 @@ see [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md); for the debugger architecture se
     devices can attach at once); reads stay cheap.
   - `OpenBusIo` — honest default (`Out` discarded, `In` → `0xFF`); `LatchedIo` —
     256 read/write latches (opt-in); `ObservableIo<Inner>` — decorator that logs
-    bus transactions. `IN`/`OUT` carry the **full 16-bit port** (A or BC on the
-    high byte).
+    bus transactions; `CallbackIo` — generic bridge forwarding `IN`/`OUT` to
+    installed handlers (keeps machine-specific port decode out of the core).
+    `IN`/`OUT` carry the **full 16-bit port** (A or BC on the high byte).
 - **Direction** ([ARCHITECTURE.md](ARCHITECTURE.md)): the CPU foundations
   (policies + interrupt) and the Machine layer (frame clock + `timing.h`) are in
   place. Next is the ULA (`SpectrumIo` ports + keyboard/border + video screen) on
@@ -77,6 +78,16 @@ debugger; the app composes them).
   `FrameSource` seam ("what did the beam see here?"), so render fidelity lives in
   the source: a final-memory source is correct for static/boot screens and
   per-line (rainbow) borders; a beam-accurate source drops in later unchanged.
+- **`ula.h` / `spectrum_machine.h`** — the running ZX Spectrum 48K. The **ULA**
+  latches the border on `OUT 0xFE` into a frame-T-state-stamped timeline (resolved
+  to a per-line colour each frame), reads keyboard/EAR on `IN`, advances the FLASH
+  phase, and is the renderer's `FrameSource`. **`SpectrumMachine`** wires
+  `CPUImpl<FastMemory, CallbackIo>` + ULA + the frame clock: `run_frame()` runs a
+  PAL frame (50 Hz INT) and renders to palette indices / RGBA. Boots `spec48.rom`
+  to the copyright screen (verified headless by `spectrum_boot_test`).
+- **`spectrum` viewer** (`apps/spectrum/`, built with the UI) — boots a ROM and
+  shows the live screen (border + display, 3×) in a GLFW/ImGui window;
+  `--shot FILE` renders headless to a PPM. `spectrum spec48.rom`.
 
 ## Debugger UI — `z80_debugger` (ImGui + GLFW + OpenGL via FetchContent)
 
@@ -111,7 +122,9 @@ Modular panels over a shared `UiContext`; each panel is a `Panel` subclass.
 masking, HALT wake, EI deferral), `timing_test` (clock tree + geometry),
 `machine_test` (frame budget, device ticks, interrupt-per-frame), `screen_decode_test`
 (attribute/byte/line, FLASH swap, palette — incl. compile-time `static_assert`s), `video_test`
-(address mapping, border fill, display decode through the FrameSource seam), `debug_session_test`
+(address mapping, border fill, display decode through the FrameSource seam),
+`spectrum_boot_test` (boots the 48K ROM headlessly and checks the screen drew;
+SKIPs when `spec48.rom` is absent), `debug_session_test`
 (incl. coverage + SMC + `RunForTStates`), `disassembler_test` (golden + length
 sweep + branch targets), `symbol_table_test` (round-trip + forgiving parse +
 FindContaining). All green; clean Release build, no warnings.

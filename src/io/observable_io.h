@@ -49,15 +49,27 @@ public:
     [[nodiscard]] uint64_t TransactionCount() const noexcept { return total_; }
     void ClearTransactions() noexcept { log_.clear(); }
 
+    /// @brief Enable/disable recording. The total counter keeps running either
+    ///        way; when off nothing is stored — zero-cost on a busy bus (e.g. the
+    ///        Spectrum scanning the keyboard every frame). Default on.
+    void SetRecording(bool on) noexcept { recording_ = on; }
+    [[nodiscard]] bool Recording() const noexcept { return recording_; }
+
 private:
     void record(uint16_t port, uint8_t value, bool is_out) {
         ++total_;
-        if (log_.size() < kMaxLog) log_.push_back({port, value, is_out, total_});
+        if (!recording_) return;
+        // Bounded ring: keep the most recent transactions (drop the oldest
+        // quarter when full, so this stays amortized O(1) even under a flood).
+        if (log_.size() >= kMaxLog)
+            log_.erase(log_.begin(), log_.begin() + (kMaxLog / 4));
+        log_.push_back({port, value, is_out, total_});
     }
 
     Inner inner_;
     std::vector<Transaction> log_;
     uint64_t total_ = 0;
+    bool recording_ = true;
     static constexpr std::size_t kMaxLog = 4096;
 };
 

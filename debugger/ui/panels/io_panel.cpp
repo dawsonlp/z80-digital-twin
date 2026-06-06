@@ -21,16 +21,29 @@ void IoPanel::Draw(UiContext& ctx) {
     // port can have side effects — so we show what the *program* did and never
     // poll ports ourselves. The transaction log comes from ObservableIo.
     auto& io = ctx.cpu().GetIo();
-    const auto& transactions = io.Transactions();
 
-    ImGui::Text("transactions: %llu", static_cast<unsigned long long>(io.TransactionCount()));
+    // Recording is off by default (a running machine floods the bus); the user
+    // opts in. Keep the device in sync with the toggle, and clear the log when
+    // turning recording off so a stale window isn't left on screen.
+    if (ImGui::Checkbox("Record", &record_)) {
+        io.SetRecording(record_);
+        if (!record_) io.ClearTransactions();
+    }
+    io.SetRecording(record_);
+    ImGui::SameLine();
+    ImGui::Text("total: %llu", static_cast<unsigned long long>(io.TransactionCount()));
     ImGui::SameLine();
     if (ImGui::Button("Clear")) io.ClearTransactions();
-    ImGui::SameLine();
-    ImGui::TextDisabled("(bus activity; not stored port values)");
 
+    if (!record_) {
+        ImGui::TextDisabled("Recording off — tick Record to capture bus activity.");
+        ImGui::End();
+        return;
+    }
+
+    const auto& transactions = io.Transactions();
     if (transactions.empty()) {
-        ImGui::TextDisabled("No I/O performed yet.");
+        ImGui::TextDisabled("No I/O recorded yet.");
         ImGui::End();
         return;
     }

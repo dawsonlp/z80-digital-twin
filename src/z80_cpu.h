@@ -169,9 +169,9 @@ public:
 
     /// @brief Access the underlying memory device (the policy plug).
     /// @details Lets tooling configure the plug without breaking encapsulation
-    ///          of CPU state — e.g. the debugger installs a write hook on a
-    ///          DebugMemory plug. Production code using FastMemory rarely needs
-    ///          this.
+    ///          of CPU state — e.g. the debugger adds a write observer on an
+    ///          ObservableMemory plug. Production code using FastMemory rarely
+    ///          needs this.
     Memory& GetMemory() noexcept { return memory; }
     const Memory& GetMemory() const noexcept { return memory; }
     
@@ -675,7 +675,7 @@ private:
 /// @brief Production CPU type — the zero-overhead FastMemory plug.
 /// @details Preserves the historical `z80::CPU` name and behaviour, so all
 ///          existing code, examples, and benchmarks compile and run unchanged.
-///          The debugger instantiates CPUImpl<DebugMemory> instead.
+///          The debugger instantiates CPUImpl<ObservableMemory> instead.
 using CPU = CPUImpl<FastMemory>;
 
 } // namespace z80

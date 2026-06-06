@@ -44,7 +44,7 @@ set(CORE_SOURCES
 set(CORE_HEADERS
     src/z80_cpu.h
     src/memory/fast_memory.h
-    src/memory/debug_memory.h
+    src/memory/observable_memory.h
 )
 
 # =============================================================================
@@ -92,9 +92,9 @@ target_compile_features(z80_debugger_core PUBLIC cxx_std_23)
 add_executable(cpu_test tests/cpu_test.cpp)
 target_link_libraries(cpu_test PRIVATE z80_cpu)
 
-# DebugMemory plug verification (write hook + plug parity)
-add_executable(debug_memory_test tests/debug_memory_test.cpp)
-target_link_libraries(debug_memory_test PRIVATE z80_cpu)
+# ObservableMemory plug verification (multi-observer + plug parity)
+add_executable(observable_memory_test tests/observable_memory_test.cpp)
+target_link_libraries(observable_memory_test PRIVATE z80_cpu)
 
 # Debugger execution core (stepping, breakpoints, watchpoints)
 add_executable(debug_session_test tests/debug_session_test.cpp)

@@ -18,19 +18,20 @@ see [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md); for the debugger architecture se
   `using CPU = CPUImpl<FastMemory>`:
   - `FastMemory` — zero-overhead production/benchmark plug (~2 GHz-equivalent,
     unchanged from before the refactor).
-  - `DebugMemory` — write-intercepting `operator[]` proxy delivering exact
-    `(address, old, new)` events to an installable hook; reads stay cheap.
+  - `ObservableMemory` — write-intercepting `operator[]` proxy fanning exact
+    `(address, old, new)` events to a list of observers (debugger + future
+    devices can attach at once); reads stay cheap.
 - I/O still flows through `ReadPort`/`WritePort` (a stored 256-byte array).
-- **Direction** ([ARCHITECTURE.md](ARCHITECTURE.md)): `DebugMemory` becomes a
-  multi-observer `ObservableMemory`, and I/O becomes a second compile-time policy
-  (honest devices — `OpenBusIo`/`SpectrumIo`/… — not a stored array).
+- **Direction** ([ARCHITECTURE.md](ARCHITECTURE.md)): I/O becomes a second
+  compile-time policy (honest devices — `OpenBusIo`/`SpectrumIo`/… — not a stored
+  array).
 
 ## Debugger core (UI-free, unit-tested) — `z80_debugger_core`
 
 - **DebugSession** — owns the execution loop: full-instruction stepping (across
   prefixes), Step-Over (temporary return breakpoint), bounded `RunSlice` with
-  inline breakpoints, write-watchpoints + dirty tracking via the DebugMemory
-  hook, Run/Pause/Reset.
+  inline breakpoints, write-watchpoints + dirty tracking via an ObservableMemory
+  observer, Run/Pause/Reset.
 - **Disassembler** — stateless octal decoder, all prefixes, faithful IX/IY
   semantics; exposes length, mnemonic, operands, `symbols_used`, and
   `branch_target`; symbol resolution decoupled behind an injected resolver.

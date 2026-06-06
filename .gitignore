@@ -107,3 +107,6 @@ docs/rtf/
 
 # ImGui layout file (written at runtime)
 imgui.ini
+
+# ROM images (kept locally, not committed — typically copyrighted)
+*.rom

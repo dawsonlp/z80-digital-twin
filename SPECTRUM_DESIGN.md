@@ -288,11 +288,13 @@ pauses with the frame held open, resuming the **same** frame (no new interrupt) 
 continue. `z80_debugger --spectrum <rom>` adds a Spectrum Screen panel; host keys
 feed the matrix when ImGui isn't capturing them.
 
-**12.2 Tape (`.tap`, real-signal) — planned.** Parse `.tap` blocks; synthesise the
-standard ROM pulse train (pilot 2168T · sync 667/735T · bit 855T/1710T) as pulse
-durations. Playback maps CPU T-cycle → pulse index → EAR level; `IN 0xFE` returns
-`keyboard | (ear<<6)`. The ROM `LOAD` times the edges and decodes; loading stripes
-appear for free via the border timeline.
+**12.2 Tape (`.tap`, real-signal) — done.** `tape.h` parses `.tap` blocks and
+synthesises the standard ROM pulse train (pilot 2168T · sync 667/735T · bit
+855T/1710T) as pulse durations. Playback maps CPU T-cycle → pulse index → EAR
+level; `IN 0xFE` returns `keyboard | (ear<<6)`. The ROM `LOAD` times the edges and
+decodes; loading stripes appear for free via the border timeline. Verified end to
+end: a synthesised `10 BORDER 2` tape, loaded via scripted `LOAD ""`, autoruns and
+turns the border red. Apps: `--tape file.tap`, then `LOAD ""` + F5 to play.
 
 **12.3 Sound (beeper) — planned.** The ULA records the speaker level (`OUT 0xFE`
 bit 4, OR'd with MIC bit 3) into a T-cycle timeline. A dependency-free resampler

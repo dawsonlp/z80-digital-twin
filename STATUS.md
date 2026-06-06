@@ -91,9 +91,15 @@ debugger; the app composes them).
   (multicolour, raster splits) render correctly (per-scanline; mid-line is the
   remaining refinement). Untouched bytes read straight from RAM. **`SpectrumMachine`** wires
   `CPUImpl<ObservableMemory, ObservableIo<CallbackIo>>` (the same config the
-  debugger drives, so `machine.cpu()` is debuggable) + ULA + the frame clock: `run_frame()` runs a
+  debugger drives, so `machine.cpu()` is debuggable) + ULA + the frame clock + a
+  **`Tape`**: `run_frame()` runs a
   PAL frame (50 Hz INT) and renders to palette indices / RGBA. Boots `spec48.rom`
   to the copyright screen (verified headless by `spectrum_boot_test`).
+- **`tape.h` (`.tap`, real-signal)** — parses `.tap` blocks and synthesises the
+  actual ROM cassette signal (pilot/sync/data pulse train); playback maps the CPU
+  T-cycle → EAR level (`IN 0xFE` bit 6), so the ROM `LOAD` times the edges and
+  decodes — loading stripes come free via the border timeline. `load_tape`/
+  `play_tape`; in the apps `--tape file.tap`, then `LOAD ""` + **F5** to play.
 - **`spectrum` viewer** (`apps/spectrum/`, built with the UI) — boots a ROM and
   shows the live screen (border + display, 3×) in a GLFW/ImGui window, with the
   host **keyboard** wired to the matrix (letters/digits/ENTER/SPACE, Shift→CAPS,
@@ -142,6 +148,7 @@ masking, HALT wake, EI deferral), `timing_test` (clock tree + geometry),
 (address mapping, border fill, display decode through the FrameSource seam),
 `keyboard_test` (matrix layout + active-low half-row IN decode),
 `raster_test` (beam-accurate per-scanline display reconstruction),
+`tape_test` (.tap pulse train + EAR-by-cycle),
 `spectrum_debug_test` (a DebugSession breakpoints the running ROM),
 `spectrum_boot_test` (boots the 48K ROM headlessly and checks the screen drew;
 SKIPs when `spec48.rom` is absent), `debug_session_test`

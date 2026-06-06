@@ -26,6 +26,7 @@ int main(int argc, char** argv) {
     std::string program_path;
     std::string symbol_path;
     std::string spectrum_rom;
+    std::string tape_path;
     uint16_t org = 0x0000;
     bool smoke = false;
     std::string shot_path;
@@ -49,6 +50,8 @@ int main(int argc, char** argv) {
             demo = argv[++i];
         } else if (arg == "--spectrum" && i + 1 < argc) {
             spectrum_rom = argv[++i];
+        } else if (arg == "--tape" && i + 1 < argc) {
+            tape_path = argv[++i];
         } else if (arg == "--run" && i + 1 < argc) {
             run_count = std::strtoull(argv[++i], nullptr, 10);
         } else if (!arg.empty() && arg[0] != '-') {
@@ -70,6 +73,9 @@ int main(int argc, char** argv) {
     }
     if (!symbol_path.empty()) {
         app.LoadSymbolFile(symbol_path);
+    }
+    if (!tape_path.empty() && !spectrum_rom.empty()) {
+        app.LoadTape(tape_path);
     }
     for (uint16_t bp : breakpoints) {
         app.AddBreakpoint(bp);

@@ -18,6 +18,7 @@
 #include "ui_context.h"
 #include "panel.h"
 #include "spectrum/ula.h"
+#include "spectrum/tape.h"
 
 #include <cstdint>
 #include <memory>
@@ -49,6 +50,9 @@ public:
     ///        enter Spectrum mode (a screen panel appears; free-run drives 50 Hz
     ///        frames through the session so breakpoints still apply).
     bool LoadSpectrumRom(const std::string& path);
+
+    /// @brief Load a `.tap` for the Spectrum (press F5 in the window to play).
+    bool LoadTape(const std::string& path);
 
     /// @brief Set a breakpoint at an address (e.g. from the command line).
     void AddBreakpoint(uint16_t address);
@@ -92,6 +96,8 @@ private:
 
     // Spectrum machine (active only after LoadSpectrumRom).
     machine::spectrum::Ula ula_;
+    machine::spectrum::Tape tape_;
+    bool tape_play_prev_ = false;    ///< F5 edge detection
     bool spectrum_mode_ = false;     ///< driving a Spectrum (screen panel + frame run)
     bool spectrum_running_ = false;  ///< free-running the machine at 50 Hz
     bool frame_active_ = false;      ///< mid-frame (a breakpoint may have paused us)

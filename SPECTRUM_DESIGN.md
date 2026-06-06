@@ -305,6 +305,30 @@ T-cycles, so no per-frame drift. The `spectrum` viewer plays it live: a small
 thread, fed each frame on the real-time (50 Hz) path (turbo skips audio). The
 resampler is unit-tested independently (`beeper_test`).
 
+## 13. ROM write protection (and the syntax-check writes)
+
+On a ZX Spectrum 48K, the 16 KB ROM occupying the low quarter of the address
+space (`0x0000–0x3FFF`) is read-only on real hardware, and the firmware *relies*
+on that: during the **syntax-checking pass** (when you ENTER a line), the FP
+calculator evaluates
+expressions with the calculator-stack destination deliberately pointed at
+`0x0000` (`LD DE,0x0000`), so the scratch 5-byte FP results are thrown away —
+the writes to ROM are simply ignored by the bus. The *run* pass then re-evaluates
+with `DE = STKEND` and stores for real.
+
+A sweep (BORDER/PRINT/PAUSE/`2+3`/`LET`) shows every such write funnels through a
+single constant-stacker routine — `0x33E0 LD (DE),A`, `0x33E8 LDIR`, `0x33F3
+LD (DE),A` — always targeting `0x0000–0x0004`. So it's one well-defined behavior,
+not scattered bugs, and the CPU executes it faithfully.
+
+Modelling: `ObservableMemory::SetWriteProtect(lo,hi)` makes ROM read-only (the
+default for the Spectrum apps); a refused write leaves the byte unchanged and
+fires a **blocked-write** observer. `DebugSession` records these as `BlockedWrite`
+events with their own coverage flag (`kBlockedWrite`), shown in the UI distinctly
+from SMC (amber vs magenta; ROM bytes tinted blue). `--writable-rom` disables
+protection so the writes land (corrupting ROM, flagged as SMC) for what-if
+analysis.
+
 ---
 
 *Draft — refined collaboratively; next refinement point is the screen-decoder

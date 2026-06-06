@@ -6,6 +6,7 @@
 
 #include "memory_panel.h"
 #include "ui_context.h"
+#include "symbol_style.h"
 
 #include "imgui.h"
 
@@ -75,6 +76,10 @@ void MemoryPanel::Draw(UiContext& ctx) {
                     const uint8_t v = cpu.ReadMemory(a);
                     if (dirty.count(a)) ImGui::TextColored(dirty_col, "%02X", v);
                     else                ImGui::Text("%02X", v);
+                    // Hover a byte to see which symbol/region it belongs to.
+                    if (ImGui::IsItemHovered())
+                        if (auto sym = ctx.symbols.FindContaining(a))
+                            SymbolTooltipIfHovered(*sym);
                     ImGui::SameLine();
                 }
                 ImGui::Text(" ");

@@ -330,6 +330,17 @@ std::optional<Symbol> SymbolTable::Lookup(uint16_t address) const {
     return std::nullopt;
 }
 
+std::optional<Symbol> SymbolTable::FindContaining(uint16_t address) const {
+    if (auto it = by_address_.find(address); it != by_address_.end()) return it->second;
+    // Largest symbol with address <= the query; check it covers `address`.
+    auto it = by_address_.upper_bound(address);
+    if (it == by_address_.begin()) return std::nullopt;
+    --it;
+    const Symbol& s = it->second;
+    const uint32_t end = static_cast<uint32_t>(s.address) + (s.size ? s.size : 1);
+    return address < end ? std::optional<Symbol>(s) : std::nullopt;
+}
+
 std::optional<std::string> SymbolTable::ResolveName(uint16_t address) const {
     if (auto it = by_address_.find(address); it != by_address_.end()) return it->second.name;
     return std::nullopt;

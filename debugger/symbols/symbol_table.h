@@ -72,6 +72,11 @@ public:
     /// @brief Full symbol at an exact address.
     [[nodiscard]] std::optional<Symbol> Lookup(uint16_t address) const;
 
+    /// @brief The symbol whose [address, address+size) range contains @p address
+    ///        (exact match preferred). Answers "what lives at this byte?" for
+    ///        multi-byte regions/variables.
+    [[nodiscard]] std::optional<Symbol> FindContaining(uint16_t address) const;
+
     /// @brief Label name at an exact address (for the disassembler resolver).
     [[nodiscard]] std::optional<std::string> ResolveName(uint16_t address) const;
 

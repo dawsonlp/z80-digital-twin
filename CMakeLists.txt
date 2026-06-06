@@ -170,6 +170,8 @@ if(Z80_BUILD_UI)
         debugger/ui/debugger_app.h
         debugger/ui/symbol_edit.cpp
         debugger/ui/symbol_edit.h
+        debugger/ui/symbol_style.cpp
+        debugger/ui/symbol_style.h
         debugger/ui/panels/control_panel.cpp
         debugger/ui/panels/registers_panel.cpp
         debugger/ui/panels/disassembly_panel.cpp

@@ -6,6 +6,7 @@
 
 #include "disassembly_panel.h"
 #include "ui_context.h"
+#include "symbol_style.h"
 
 #include "imgui.h"
 
@@ -18,66 +19,43 @@
 namespace z80::dbg {
 namespace {
 
-// A code symbol gets its own line label (in the Label column); a data symbol
-// (variable / region) only appears inline when referenced by an instruction.
-bool is_code_label(SymbolType t) {
-    return t == SymbolType::Function ||
-           t == SymbolType::Label ||
-           t == SymbolType::JumpTarget;
-}
-
-ImVec4 symbol_color(SymbolType t) {
-    switch (t) {
-        case SymbolType::Function:     return {0.50f, 1.00f, 0.80f, 1.0f};  // teal
-        case SymbolType::JumpTarget:   return {1.00f, 0.85f, 0.40f, 1.0f};  // amber
-        case SymbolType::Label:        return {0.70f, 0.75f, 1.00f, 1.0f};  // blue
-        case SymbolType::Variable:     return {0.90f, 0.75f, 0.50f, 1.0f};  // tan
-        case SymbolType::DataRegion:   return {0.80f, 0.60f, 0.90f, 1.0f};  // violet
-        case SymbolType::ByteVariable: return {1.00f, 0.60f, 0.30f, 1.0f};  // orange
-        case SymbolType::WordVariable: return {0.60f, 0.55f, 1.00f, 1.0f};  // purple
-    }
-    return {1, 1, 1, 1};
-}
-
-std::optional<SymbolType> type_of(UiContext& ctx, const std::string& name) {
-    if (auto addr = ctx.symbols.Resolve(name))
-        if (auto sym = ctx.symbols.Lookup(*addr))
-            return sym->type;
-    return std::nullopt;
-}
-
-// Render an operand string, colouring any substituted symbol names by type.
+// Render an operand string, colouring substituted symbol names by type and
+// showing a description tooltip when hovered.
 void draw_operands(UiContext& ctx, const Instruction& ins) {
     const std::string& ops = ins.operands;
 
-    // Collect (position, length, colour) for each used symbol occurrence.
-    struct Hit { size_t pos; size_t len; ImVec4 col; };
+    struct Hit { size_t pos; size_t len; Symbol sym; };
     std::vector<Hit> hits;
     for (const auto& name : ins.symbols_used) {
         if (name.empty()) continue;
-        const ImVec4 col = symbol_color(type_of(ctx, name).value_or(SymbolType::Label));
+        auto addr = ctx.symbols.Resolve(name);
+        if (!addr) continue;
+        auto sym = ctx.symbols.Lookup(*addr);
+        if (!sym) continue;
         for (size_t p = ops.find(name); p != std::string::npos; p = ops.find(name, p + name.size()))
-            hits.push_back({p, name.size(), col});
+            hits.push_back({p, name.size(), *sym});
     }
     std::sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) { return a.pos < b.pos; });
 
     bool first = true;
-    auto emit = [&](const std::string& s, bool colored, ImVec4 col) {
-        if (s.empty()) return;
+    auto plain = [&](const std::string& seg) {
+        if (seg.empty()) return;
         if (!first) ImGui::SameLine(0, 0);
         first = false;
-        if (colored) ImGui::TextColored(col, "%s", s.c_str());
-        else         ImGui::TextUnformatted(s.c_str());
+        ImGui::TextUnformatted(seg.c_str());
     };
 
     size_t cursor = 0;
     for (const auto& h : hits) {
         if (h.pos < cursor) continue;   // overlapping match: skip
-        emit(ops.substr(cursor, h.pos - cursor), false, {});
-        emit(ops.substr(h.pos, h.len), true, h.col);
+        plain(ops.substr(cursor, h.pos - cursor));
+        if (!first) ImGui::SameLine(0, 0);
+        first = false;
+        ImGui::TextColored(SymbolColor(h.sym.type), "%s", ops.substr(h.pos, h.len).c_str());
+        SymbolTooltipIfHovered(h.sym);
         cursor = h.pos + h.len;
     }
-    emit(ops.substr(cursor), false, {});
+    plain(ops.substr(cursor));
     if (first) ImGui::TextUnformatted("");   // ensure the row has content
 }
 
@@ -131,10 +109,11 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
             }
             if (has_bp) ImGui::PopStyleColor();
 
-            // Label column: code symbols (function / label / jump target), coloured.
+            // Label column: code symbols, coloured, with a description tooltip.
             ImGui::TableSetColumnIndex(1);
-            if (auto sym = ctx.symbols.Lookup(addr); sym && is_code_label(sym->type)) {
-                ImGui::TextColored(symbol_color(sym->type), "%s", sym->name.c_str());
+            if (auto sym = ctx.symbols.Lookup(addr); sym && IsCodeLabel(sym->type)) {
+                ImGui::TextColored(SymbolColor(sym->type), "%s", sym->name.c_str());
+                SymbolTooltipIfHovered(*sym);
             }
 
             // Address (right-click to label this address)
@@ -153,7 +132,7 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
                 hexbytes += std::format("{:02X} ", ins.bytes[b]);
             ImGui::TextUnformatted(hexbytes.c_str());
 
-            // Instruction: mnemonic + colour-coded operand symbols.
+            // Instruction: mnemonic + colour-coded operand symbols (with tooltips).
             ImGui::TableSetColumnIndex(4);
             if (addr == pc) {
                 ImGui::TextColored(ImVec4(1, 1, 0.6f, 1), "%s", ins.text.c_str());

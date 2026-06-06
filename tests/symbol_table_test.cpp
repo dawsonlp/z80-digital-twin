@@ -138,6 +138,25 @@ int main() {
         check(!warnings.empty(), "parse error reported");
     }
 
+    // --- FindContaining: range lookup (powers memory hover tooltips) --------
+    std::cout << "\n[6b] FindContaining range lookup\n";
+    {
+        SymbolTable t;
+        t.Define(Symbol{0x5C00, "KSTATE", SymbolType::DataRegion, "keyboard", 8});
+        t.DefineLabel(0x5C08, "LAST_K", SymbolType::ByteVariable);
+
+        auto exact = t.FindContaining(0x5C00);
+        check(exact && exact->name == "KSTATE", "exact start -> KSTATE");
+        auto mid = t.FindContaining(0x5C03);
+        check(mid && mid->name == "KSTATE", "mid-region 0x5C03 -> KSTATE");
+        auto last = t.FindContaining(0x5C07);
+        check(last && last->name == "KSTATE", "region end 0x5C07 -> KSTATE");
+        auto next = t.FindContaining(0x5C08);
+        check(next && next->name == "LAST_K", "0x5C08 -> LAST_K (not KSTATE)");
+        check(!t.FindContaining(0x5C09).has_value(), "0x5C09 -> none (past both)");
+        check(!t.FindContaining(0x4000).has_value(), "below first symbol -> none");
+    }
+
     // --- Disassembler integration via MakeResolver --------------------------
     std::cout << "\n[6] Disassembler uses the symbol table\n";
     {

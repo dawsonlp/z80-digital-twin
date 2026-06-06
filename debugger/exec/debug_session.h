@@ -21,6 +21,7 @@
 #include "memory/debug_memory.h"
 #include "disassembler.h"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <unordered_map>
@@ -47,6 +48,23 @@ enum class StopReason {
     Halted,            ///< CPU reached HALT.
     BudgetExhausted,   ///< Run slice used its full instruction budget.
     AlreadyHalted,     ///< Action requested while already halted (no-op).
+    SelfModified,      ///< Paused because Break-on-SMC was armed and code was written.
+};
+
+/// @brief Per-address execution/coverage flags (bitmask).
+enum CoverageFlag : uint8_t {
+    kExecOpcode   = 1u << 0,  ///< Was executed as an instruction's first byte.
+    kExecOperand  = 1u << 1,  ///< Was an operand byte of an executed instruction.
+    kSelfModified = 1u << 2,  ///< Written after having executed as code (SMC).
+};
+
+/// @brief A recorded self-modifying-code event.
+struct SmcEvent {
+    uint16_t address = 0;     ///< Code byte that was overwritten.
+    uint8_t old_value = 0;    ///< Byte before the write (free, from the hook).
+    uint8_t new_value = 0;    ///< Byte written.
+    uint16_t writer_pc = 0;   ///< Instruction that performed the write.
+    uint64_t cycle = 0;       ///< T-state count when it happened.
 };
 
 /// @brief A program-counter breakpoint with metadata.
@@ -138,6 +156,31 @@ public:
     }
     void ClearDirty() noexcept { dirty_.clear(); }
 
+    // -- Execution coverage (L1) ---------------------------------------------
+
+    /// @brief Coverage flags for an address (see CoverageFlag).
+    [[nodiscard]] uint8_t CoverageFlags(uint16_t address) const { return coverage_[address]; }
+
+    /// @brief Number of distinct bytes seen as code (opcode or operand).
+    [[nodiscard]] uint32_t CoveredBytes() const noexcept { return covered_bytes_; }
+
+    /// @brief Coverage as a percentage of the 64 KB space.
+    [[nodiscard]] double CoveragePercent() const noexcept {
+        return 100.0 * static_cast<double>(covered_bytes_) / 65536.0;
+    }
+
+    // -- Self-modifying code (L2) --------------------------------------------
+
+    /// @brief Recorded SMC events (capped; SmcCount() is the true total).
+    [[nodiscard]] const std::vector<SmcEvent>& SmcEvents() const noexcept { return smc_events_; }
+
+    /// @brief Total SMC writes detected (may exceed SmcEvents().size()).
+    [[nodiscard]] uint64_t SmcCount() const noexcept { return smc_total_; }
+
+    /// @brief Pause the run when code is overwritten.
+    void SetBreakOnSmc(bool on) noexcept { break_on_smc_ = on; }
+    [[nodiscard]] bool BreakOnSmc() const noexcept { return break_on_smc_; }
+
     // -- State accessors -----------------------------------------------------
 
     [[nodiscard]] RunState State() const noexcept { return state_; }
@@ -145,8 +188,15 @@ public:
     [[nodiscard]] const DebugCPU& Cpu() const noexcept { return cpu_; }
 
 private:
+    /// @brief Execute one whole instruction: stamp coverage + writer PC, step.
+    void ExecuteOneInstruction();
+
     /// @brief Run Step() until the CPU is at an instruction boundary.
     void StepRaw();
+
+    /// @brief Record the coverage span of the instruction at @p start, decoding
+    ///        it only the first time that start executes (amortized ~free).
+    void RecordCoverage(uint16_t start);
 
     /// @brief Whether an enabled breakpoint exists at @p pc.
     [[nodiscard]] bool BreakpointStopsAt(uint16_t pc) const;
@@ -174,6 +224,16 @@ private:
 
     // Set by the write hook when a watched address is written during a slice.
     std::optional<uint16_t> watch_hit_;
+
+    // Execution coverage (L1) and self-modifying-code tracking (L2).
+    std::array<uint8_t, 65536> coverage_{};   ///< Per-address CoverageFlag bits.
+    uint32_t covered_bytes_ = 0;              ///< Count of bytes seen as code.
+    std::vector<SmcEvent> smc_events_;        ///< Recorded SMC events (capped).
+    uint64_t smc_total_ = 0;                  ///< Total SMC writes detected.
+    uint16_t current_instruction_pc_ = 0;     ///< PC of the instruction now executing.
+    bool break_on_smc_ = false;
+    bool smc_break_pending_ = false;          ///< Set by the hook to stop a slice.
+    static constexpr std::size_t kMaxSmcEvents = 8192;
 };
 
 } // namespace z80::dbg

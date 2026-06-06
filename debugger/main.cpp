@@ -4,10 +4,12 @@
 // Licensed under the MIT License (see LICENSE file)
 //
 // Usage:
-//   z80_debugger [program.bin] [--org 0xADDR] [--sym file.sym] [--smoke]
+//   z80_debugger [program.bin] [--org 0xADDR] [--sym file.sym]
+//                [--demo gcd|smc] [--run N] [--bp HEX] [--smoke] [--shot FILE]
 //
-// With no program, a built-in GCD demo is loaded so the UI has something to
-// step through. --smoke renders a few frames headlessly and exits (build check).
+// With no program, a built-in demo is loaded (--demo gcd, the default, or
+// --demo smc for a self-modifying example). --run N executes N instructions at
+// startup (handy for scripting / to populate coverage + SMC before a shot).
 //
 
 #include "debugger_app.h"
@@ -27,6 +29,8 @@ int main(int argc, char** argv) {
     bool smoke = false;
     std::string shot_path;
     std::vector<uint16_t> breakpoints;
+    std::string demo = "gcd";
+    uint64_t run_count = 0;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -40,6 +44,10 @@ int main(int argc, char** argv) {
             org = static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 0));
         } else if (arg == "--bp" && i + 1 < argc) {
             breakpoints.push_back(static_cast<uint16_t>(std::strtoul(argv[++i], nullptr, 16)));
+        } else if (arg == "--demo" && i + 1 < argc) {
+            demo = argv[++i];
+        } else if (arg == "--run" && i + 1 < argc) {
+            run_count = std::strtoull(argv[++i], nullptr, 10);
         } else if (!arg.empty() && arg[0] != '-') {
             program_path = arg;
         } else {
@@ -48,16 +56,21 @@ int main(int argc, char** argv) {
     }
 
     DebuggerApp app;
-    if (program_path.empty()) {
+    if (!program_path.empty()) {
+        if (!app.LoadProgramFile(program_path, org)) return 1;
+    } else if (demo == "smc") {
+        app.LoadSmcDemo();
+    } else {
         app.LoadDemo();
-    } else if (!app.LoadProgramFile(program_path, org)) {
-        return 1;
     }
     if (!symbol_path.empty()) {
         app.LoadSymbolFile(symbol_path);
     }
     for (uint16_t bp : breakpoints) {
         app.AddBreakpoint(bp);
+    }
+    if (run_count > 0) {
+        app.RunInstructions(run_count);
     }
 
     return app.Run(smoke, 5, shot_path);

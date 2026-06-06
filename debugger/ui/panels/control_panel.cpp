@@ -43,6 +43,9 @@ void ControlPanel::Draw(UiContext& ctx) {
                 ctx.cpu().PC(),
                 static_cast<unsigned long long>(ctx.cpu().GetCycleCount()),
                 halted ? "yes" : "no");
+    ImGui::Text("Coverage: %.1f%%    SMC: %llu",
+                ctx.session.CoveragePercent(),
+                static_cast<unsigned long long>(ctx.session.SmcCount()));
     ImGui::TextUnformatted(ctx.status.c_str());
     ImGui::End();
 }

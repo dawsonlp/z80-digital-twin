@@ -146,6 +146,13 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
     ImGui::Checkbox("Follow PC", &follow_pc_);
 
     DebugSession& session = ctx.session;
+
+    // Honour a cross-panel jump request (e.g. from the SMC panel).
+    if (ctx.disasm_goto) {
+        navigate(*ctx.disasm_goto);
+        ctx.disasm_goto.reset();
+    }
+
     if (follow_pc_ && session.State() != RunState::Running) {
         top_ = ctx.cpu().PC();
     }
@@ -193,9 +200,16 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
                 SymbolTooltipIfHovered(*sym);
             }
 
-            // Address: right-click for line actions (go to target, BP, label).
+            // Address: tinted by execution coverage; red if self-modified.
+            // Right-click for line actions (go to target, BP, label).
             ImGui::TableSetColumnIndex(2);
-            ImGui::Text("%04X", addr);
+            const uint8_t cov = session.CoverageFlags(addr);
+            if (cov & kSelfModified)
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%04X", addr);
+            else if (cov & (kExecOpcode | kExecOperand))
+                ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.5f, 1.0f), "%04X", addr);
+            else
+                ImGui::TextDisabled("%04X", addr);
             if (ImGui::BeginPopupContextItem("rowmenu")) {
                 if (ins.branch_target) {
                     const uint16_t t = *ins.branch_target;

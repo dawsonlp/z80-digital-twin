@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -40,8 +41,14 @@ public:
     /// @brief Load a small built-in demo program (GCD) when none is supplied.
     void LoadDemo();
 
+    /// @brief Load a tiny self-modifying demo (a self-incrementing operand loop).
+    void LoadSmcDemo();
+
     /// @brief Set a breakpoint at an address (e.g. from the command line).
     void AddBreakpoint(uint16_t address);
+
+    /// @brief Execute up to @p count instructions immediately (CLI/scripting).
+    void RunInstructions(uint64_t count);
 
     /// @brief Run the GUI. In smoke mode, render a few frames and exit.
     /// @param shot_path If non-empty, write a PPM screenshot on the final frame.
@@ -63,6 +70,7 @@ private:
 
     DebugCommands commands_;
     std::string status_ = "Ready";
+    std::optional<uint16_t> disasm_goto_;   ///< cross-panel "jump disassembly" request
     std::vector<std::unique_ptr<Panel>> panels_;
 
     uint64_t run_budget_ = 250000;   // instructions per frame while free-running

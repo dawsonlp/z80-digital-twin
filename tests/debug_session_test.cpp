@@ -214,6 +214,71 @@ int main() {
         check(cpu.A() == 0x00, "subroutine did not run (A still 0)");
     }
 
+    // --- Execution coverage (L1) --------------------------------------------
+    std::cout << "\n[8] Execution coverage map\n";
+    {
+        DebugCPU cpu = make_cpu();   // GCD prog: LD A,5; LD (0x9000),A; SRL A; NOP; HALT
+        DebugSession s(cpu);
+        check(s.CoveredBytes() == 0, "no coverage before running");
+
+        s.Run();
+        s.RunSlice(1000);   // runs to HALT
+
+        check((s.CoverageFlags(0x0000) & kExecOpcode) != 0, "0x0000 marked opcode");
+        // LD A,0x05 is 2 bytes; 0x0001 is its operand.
+        check((s.CoverageFlags(0x0001) & kExecOperand) != 0, "0x0001 marked operand");
+        // CB-prefixed SRL A at 0x0005 spans 2 bytes (CB 3F).
+        check((s.CoverageFlags(0x0005) & kExecOpcode) != 0, "0x0005 marked opcode");
+        check((s.CoverageFlags(0x0006) & kExecOperand) != 0, "0x0006 (CB subop) marked");
+        check(s.CoverageFlags(0x4000) == 0, "untouched address has no coverage");
+        check(s.CoveredBytes() >= 9, "covered byte count is plausible");
+
+        s.Reset();
+        check(s.CoveredBytes() == 0, "Reset clears coverage");
+    }
+
+    // --- Self-modifying code detection (L2) ---------------------------------
+    std::cout << "\n[9] Self-modifying code\n";
+    {
+        // Self-incrementing operand loop:
+        //   0x0000 3E 00     LD A, 0x00     (operand 0x0001 gets incremented)
+        //   0x0002 21 01 00  LD HL, 0x0001
+        //   0x0005 34        INC (HL)       -> writes 0x0001 (executed operand = SMC)
+        //   0x0006 18 F8     JR 0x0000
+        const std::vector<uint8_t> prog = {
+            0x3E, 0x00, 0x21, 0x01, 0x00, 0x34, 0x18, 0xF8};
+        DebugCPU cpu;
+        cpu.LoadProgram(prog, 0x0000);
+        DebugSession s(cpu);
+
+        check(s.SmcCount() == 0, "no SMC before running");
+        s.Run();
+        s.RunSlice(8);   // ~2 loops
+
+        check(s.SmcCount() >= 1, "SMC detected");
+        check((s.CoverageFlags(0x0001) & kSelfModified) != 0, "0x0001 flagged self-modified");
+        const auto& ev = s.SmcEvents();
+        check(!ev.empty() && ev[0].address == 0x0001, "event target is 0x0001");
+        check(!ev.empty() && ev[0].writer_pc == 0x0005, "writer PC is the INC (HL)");
+        check(!ev.empty() && ev[0].old_value == 0x00 && ev[0].new_value == 0x01,
+              "captured old=0x00 new=0x01");
+
+        // A write to a never-executed data address is not SMC.
+        const uint64_t before = s.SmcCount();
+        cpu.WriteMemory(0x9000, 0x42);
+        check(s.SmcCount() == before, "write to non-code is not SMC");
+
+        // Break-on-SMC stops a run at the offending write.
+        DebugCPU cpu2;
+        cpu2.LoadProgram(prog, 0x0000);
+        DebugSession s2(cpu2);
+        s2.SetBreakOnSmc(true);
+        s2.Run();
+        StepResult r = s2.RunSlice(1000);
+        check(r.reason == StopReason::SelfModified, "Break-on-SMC stops the run");
+        check(s2.State() == RunState::Paused, "paused after SMC break");
+    }
+
     std::cout << "\n=======================\n";
     if (failures == 0) {
         std::cout << "✅ ALL DEBUG-SESSION CHECKS PASSED\n";

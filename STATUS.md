@@ -1,6 +1,6 @@
 # Project Status — Where We Are
 
-**As of:** 2026-06-05
+**As of:** 2026-06-06
 **Branch of record:** `main`
 
 A snapshot of what's built and working, taken before starting the simulated-
@@ -20,8 +20,10 @@ see [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md); for the debugger architecture se
     unchanged from before the refactor).
   - `DebugMemory` — write-intercepting `operator[]` proxy delivering exact
     `(address, old, new)` events to an installable hook; reads stay cheap.
-- I/O still flows through `ReadPort`/`WritePort` (the clean tap point for future
-  device virtualization).
+- I/O still flows through `ReadPort`/`WritePort` (a stored 256-byte array).
+- **Direction** ([ARCHITECTURE.md](ARCHITECTURE.md)): `DebugMemory` becomes a
+  multi-observer `ObservableMemory`, and I/O becomes a second compile-time policy
+  (honest devices — `OpenBusIo`/`SpectrumIo`/… — not a stored array).
 
 ## Debugger core (UI-free, unit-tested) — `z80_debugger_core`
 
@@ -84,9 +86,11 @@ popups) are confirmed visually rather than automated.
 
 ## What's next
 
-- **Now:** attach simulated hardware — the Spectrum ULA (screen, border,
-  keyboard, EAR/MIC/speaker, 50 Hz interrupt), starting with the screen and the
-  existing screen-byte decoder, driving display updates from memory-write hooks.
-  Design to be written up next.
+- **Designed, ready to implement:** the Spectrum ULA (screen via full-frame
+  redraw → per-scanline timing, border, keyboard, EAR/MIC/speaker, 50 Hz
+  interrupt). See [ARCHITECTURE.md](ARCHITECTURE.md) and
+  [SPECTRUM_DESIGN.md](SPECTRUM_DESIGN.md). Foundations land first: multi-observer
+  `ObservableMemory` → I/O compile-time policy → CPU interrupt injection.
 - **Later (roadmap):** L3 annotation knowledge base (comments, data typing,
-  xrefs) → L4 listing → L5 reassemblable export → L6 round-trip verify.
+  xrefs) → L4 listing → L5 reassemblable export → L6 round-trip verify
+  ([DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md)).

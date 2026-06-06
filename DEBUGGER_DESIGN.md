@@ -2,7 +2,9 @@
 
 **Version:** 2.0
 **Date:** June 5, 2026
-**Status:** Design Phase (Pre-Implementation)
+**Status:** Implemented — the v2.0 design is realized (see [STATUS.md](STATUS.md)).
+Platform/policy model: [ARCHITECTURE.md](ARCHITECTURE.md). (Uses the
+currently-named `DebugMemory`, which ARCHITECTURE evolves into `ObservableMemory`.)
 
 > **v2.0 rewrite note.** This document replaces a v1.0 draft whose central
 > premise — a CPU-fed EventBus driving runtime-loadable plugins with

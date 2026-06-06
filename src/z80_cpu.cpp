@@ -48,6 +48,7 @@ void CPUImpl<Memory, Io>::Reset() {
     // Clear interrupt flags
     _IFF1 = false;
     _IFF2 = false;
+    ei_defer_ = false;
     
     // Initialize interrupt mode
     _interrupt_mode = 0;
@@ -59,6 +60,47 @@ void CPUImpl<Memory, Io>::Reset() {
     current_state = CPUState::NORMAL;
     
     // Memory and I/O devices manage their own initial state (the policies).
+}
+
+template <class Memory, class Io>
+bool CPUImpl<Memory, Io>::Interrupt(uint8_t bus) {
+    // Maskable interrupt: accepted only when enabled and not in the one-
+    // instruction shadow of an EI (so an `EI : RET` handler tail can't be
+    // re-entered between the two).
+    if (!_IFF1 || ei_defer_) return false;
+
+    // Acceptance wakes a halted CPU. PC already points past the HALT (the fetch
+    // advanced it), so it is the correct return address.
+    _halted = false;
+
+    // Acknowledge: mask further interrupts and save the return address.
+    _IFF1 = false;
+    _IFF2 = false;
+    PushWord(_PC);
+
+    switch (_interrupt_mode) {
+        case 2: {
+            // Vector table: address = (I << 8) | bus; PC = word at that address.
+            const uint16_t vector = static_cast<uint16_t>((I() << 8) | bus);
+            const uint16_t lo = memory[vector];
+            const uint16_t hi = memory[static_cast<uint16_t>(vector + 1)];
+            _PC = static_cast<uint16_t>(lo | (hi << 8));
+            t_cycle += 19;
+            break;
+        }
+        case 0:
+            // The device places an instruction on the bus; in practice an RST
+            // (Spectrum bus = 0xFF = RST 38). Jump to that RST vector.
+            _PC = static_cast<uint16_t>(bus & 0x38);
+            t_cycle += 13;
+            break;
+        case 1:
+        default:
+            _PC = 0x0038;
+            t_cycle += 13;
+            break;
+    }
+    return true;
 }
 
 // =============================================================================
@@ -74,9 +116,13 @@ void CPUImpl<Memory, Io>::RunUntilCycle(uint64_t target_cycle) {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::Step() {
+    // EI defers interrupt acceptance until *after* the following instruction.
+    // Capture the flag here; clear it once that following instruction completes.
+    const bool ei_was_pending = ei_defer_;
+
     // Fetch instruction opcode
     uint8_t opcode = memory[PC()++];
-    
+
     // Execute based on current CPU state
     switch (current_state) {
         case CPUState::NORMAL:
@@ -183,6 +229,10 @@ void CPUImpl<Memory, Io>::Step() {
             }
             break;
     }
+
+    // If an EI was pending before this instruction (and this instruction was not
+    // itself the EI), the one-instruction deferral window has now closed.
+    if (ei_was_pending) ei_defer_ = false;
 }
 
 // =============================================================================
@@ -2984,6 +3034,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::EI() {
     IFF1() = true;
     IFF2() = true;
+    ei_defer_ = true;   // interrupts not accepted until after the next instruction
     t_cycle += 4;
 }
 

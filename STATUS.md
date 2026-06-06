@@ -66,6 +66,11 @@ debugger; the app composes them).
   asserts the frame interrupt (`CPU::Interrupt`), advances one frame's worth of
   T-states via the caller's stepper (raw speed, or `RunForTStates` for
   breakpoint-aware debugging), carries the per-frame overrun, and ticks devices.
+- **`screen.h`** — Spectrum display decode (ported to C++23 `constexpr`/`span`
+  from the author's C decoder): `decode_attribute`, per-byte and per-line
+  (32 bytes → 256 palette indices) pixel expansion with the FLASH ink/paper swap
+  (`flash_phase()`), and the 16-colour `kPalette`/`to_rgb`. The screen-memory
+  deinterleave lands with the ULA proper.
 
 ## Debugger UI — `z80_debugger` (ImGui + GLFW + OpenGL via FetchContent)
 
@@ -98,7 +103,8 @@ Modular panels over a shared `UiContext`; each panel is a `Panel` subclass.
 
 `cpu_test`, `observable_memory_test`, `io_policy_test`, `interrupt_test` (IM 0/1/2,
 masking, HALT wake, EI deferral), `timing_test` (clock tree + geometry),
-`machine_test` (frame budget, device ticks, interrupt-per-frame), `debug_session_test`
+`machine_test` (frame budget, device ticks, interrupt-per-frame), `screen_decode_test`
+(attribute/byte/line, FLASH swap, palette — incl. compile-time `static_assert`s), `debug_session_test`
 (incl. coverage + SMC + `RunForTStates`), `disassembler_test` (golden + length
 sweep + branch targets), `symbol_table_test` (round-trip + forgiving parse +
 FindContaining). All green; clean Release build, no warnings.

@@ -126,6 +126,10 @@ target_link_libraries(timing_test PRIVATE z80_machine)
 add_executable(machine_test tests/machine_test.cpp)
 target_link_libraries(machine_test PRIVATE z80_machine)
 
+# Spectrum screen decode (attribute/byte/line, FLASH phase, palette)
+add_executable(screen_decode_test tests/screen_decode_test.cpp)
+target_link_libraries(screen_decode_test PRIVATE z80_machine)
+
 # Debugger execution core (stepping, breakpoints, watchpoints)
 add_executable(debug_session_test tests/debug_session_test.cpp)
 target_link_libraries(debug_session_test PRIVATE z80_debugger_core)

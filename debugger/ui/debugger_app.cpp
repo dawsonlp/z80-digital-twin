@@ -159,6 +159,7 @@ bool DebuggerApp::LoadSpectrumRom(const std::string& path) {
     cpu_.GetIo().inner().OnIn([this](uint16_t p) { return ula_.read_port(p); });
     cpu_.GetMemory().AddWriteObserver(
         [this](uint16_t a, uint8_t o, uint8_t n) { ula_.on_write(a, o, n); });
+    cpu_.GetIo().SetRecording(false);   // I/O panel is quiet until the user opts in
 
     spectrum_mode_ = true;
     spectrum_running_ = false;
@@ -189,7 +190,6 @@ void DebuggerApp::DriveSpectrumFrame() {
         // fresh display-write history, and budget one frame of T-states.
         cpu_.Interrupt(0xFF);
         ula_.begin_frame();
-        cpu_.GetIo().ClearTransactions();
         frame_budget_ = kTPerFrame;
         frame_active_ = true;
     }

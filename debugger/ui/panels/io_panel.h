@@ -11,10 +11,15 @@
 
 namespace z80::dbg {
 
-/// @brief All 256 I/O ports with current value (hex/decimal).
+/// @brief Passive bus-transaction log (OUT/IN). Recording is off by default — a
+///        running machine (e.g. the Spectrum scanning the keyboard every frame)
+///        would otherwise flood it — and is toggled on demand.
 class IoPanel : public Panel {
 public:
     void Draw(UiContext& ctx) override;
+
+private:
+    bool record_ = false;   ///< quiet by default; tick to capture bus activity
 };
 
 } // namespace z80::dbg

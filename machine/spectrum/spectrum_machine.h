@@ -56,6 +56,7 @@ public:
             [this](uint16_t addr, uint8_t old_value, uint8_t new_value) {
                 ula_.on_write(addr, old_value, new_value);
             });
+        cpu_.GetIo().SetRecording(false);   // the viewer doesn't read the I/O log
         cpu_.Reset();
     }
 
@@ -70,7 +71,6 @@ public:
     /// @brief Run one PAL frame (fires the frame interrupt) and advance the ULA.
     void run_frame() {
         ula_.begin_frame();             // drop the previous frame's display-write history
-        cpu_.GetIo().ClearTransactions();  // bound the I/O log (one frame's worth)
         machine_.RunFrame([this](uint64_t target) {
             const uint64_t before = cpu_.GetCycleCount();
             while (cpu_.GetCycleCount() - before < target && !cpu_.IsHalted()) {

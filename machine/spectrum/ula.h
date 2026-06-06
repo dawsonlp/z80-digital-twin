@@ -43,6 +43,12 @@ namespace z80::machine::spectrum {
 
 class Ula {
 public:
+    /// @brief A speaker level change: absolute T-cycle and the new level (0/1).
+    struct BeeperEdge {
+        uint64_t cycle;
+        uint8_t level;
+    };
+
     // -- Wiring (set once, after the CPU exists) -----------------------------
     void set_clock(std::function<uint64_t()> clock) { clock_ = std::move(clock); }
     void set_reader(std::function<uint8_t(uint16_t)> reader) { read_ = std::move(reader); }
@@ -52,12 +58,21 @@ public:
 
     // -- Port handlers (wire into CallbackIo) --------------------------------
 
-    /// @brief OUT handler. The ULA decodes even ports; bits 0..2 set the border.
+    /// @brief OUT handler. The ULA decodes even ports: bits 0..2 set the border,
+    ///        bit 4 the speaker (beeper). Border changes are stamped frame-relative
+    ///        (per-scanline reconstruction); beeper edges are stamped absolute
+    ///        (the resampler works in absolute T-cycles).
     void write_port(uint16_t port, uint8_t value) {
         if ((port & 1) != 0) return;
         const uint8_t colour = static_cast<uint8_t>(value & 0x07);
         border_events_.push_back({frame_tstate(), colour});
         current_border_ = colour;
+
+        const uint8_t speaker = (value >> 4) & 1u;
+        if (speaker != beeper_level_) {
+            beeper_edges_.push_back({clock_ ? clock_() : 0, speaker});
+            beeper_level_ = speaker;
+        }
     }
 
     /// @brief IN handler. Even ports read the keyboard matrix + EAR; other ports
@@ -85,9 +100,20 @@ public:
         cell.writes.push_back({frame_tstate(), new_value});
     }
 
-    /// @brief Start a frame: drop the previous frame's display-write history.
-    ///        (Call before running the frame; render reads it after end_frame.)
-    void begin_frame() { screen_writes_.clear(); }
+    /// @brief Start a frame: drop the previous frame's display-write history and
+    ///        beeper edges (both consumed after end_frame, before the next begin).
+    void begin_frame() {
+        screen_writes_.clear();
+        beeper_edges_.clear();
+    }
+
+    // -- Beeper (audio) ------------------------------------------------------
+
+    /// @brief This frame's speaker edges (absolute T-cycle, level 0/1), in order.
+    [[nodiscard]] const std::vector<BeeperEdge>& beeper_edges() const noexcept {
+        return beeper_edges_;
+    }
+    [[nodiscard]] uint8_t beeper_level() const noexcept { return beeper_level_; }
 
     // -- Frame advance -------------------------------------------------------
 
@@ -200,8 +226,10 @@ private:
 
     std::vector<BorderEvent> border_events_{{0, 0}};   // always non-empty (baseline)
     std::unordered_map<uint16_t, ScreenCell> screen_writes_;  // display-file writes this frame
+    std::vector<BeeperEdge> beeper_edges_;                    // speaker edges this frame
     std::array<uint8_t, video::kFrameHeight> border_per_line_{};
     uint8_t current_border_ = 0;
+    uint8_t beeper_level_ = 0;
     std::array<uint8_t, 8> key_rows_{0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F};
     uint64_t frame_start_ = 0;
     uint64_t frame_counter_ = 0;

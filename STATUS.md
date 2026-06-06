@@ -26,16 +26,17 @@ see [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md); for the debugger architecture se
     256 read/write latches (opt-in); `ObservableIo<Inner>` — decorator that logs
     bus transactions. `IN`/`OUT` carry the **full 16-bit port** (A or BC on the
     high byte).
-- **Direction** ([ARCHITECTURE.md](ARCHITECTURE.md)): the CPU foundations are in
-  place (policies + interrupt). Next is the Device/Machine layer + PAL frame
-  clock, then the ULA (`SpectrumIo` + video) — see
-  [SPECTRUM_DESIGN.md](SPECTRUM_DESIGN.md).
+- **Direction** ([ARCHITECTURE.md](ARCHITECTURE.md)): the CPU foundations
+  (policies + interrupt) and the Machine layer (frame clock + `timing.h`) are in
+  place. Next is the ULA (`SpectrumIo` ports + keyboard/border + video screen) on
+  these foundations — see [SPECTRUM_DESIGN.md](SPECTRUM_DESIGN.md).
 
 ## Debugger core (UI-free, unit-tested) — `z80_debugger_core`
 
 - **DebugSession** — owns the execution loop: full-instruction stepping (across
   prefixes), Step-Over (temporary return breakpoint), bounded `RunSlice` with
-  inline breakpoints, write-watchpoints + dirty tracking via an ObservableMemory
+  inline breakpoints, `RunForTStates` (T-state-budgeted run — the breakpoint-aware
+  frame primitive), write-watchpoints + dirty tracking via an ObservableMemory
   observer, Run/Pause/Reset.
 - **Disassembler** — stateless octal decoder, all prefixes, faithful IX/IY
   semantics; exposes length, mnemonic, operands, `symbols_used`, and
@@ -48,6 +49,23 @@ see [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md); for the debugger architecture se
 - **Self-modifying-code detection (L2)** — write-to-executed-code raises an event
   `{addr, old, new, writer_pc, cycle}`; optional Break-on-SMC. The "before" byte
   is free from the hook (no instruction trapping).
+
+## Machine layer (UI-free, unit-tested) — `z80_machine`
+
+Header-only; templated on the CPU config and decoupled from the debugger via a
+stepper callback, so it depends only on `z80_cpu` (a sibling capability to the
+debugger; the app composes them).
+- **`timing.h`** — the ZX Spectrum 48K PAL time base: the ULA clock tree
+  (14 MHz `/2` → 7 MHz pixel `/2` → 3.5 MHz CPU) and the frame/scanline geometry
+  derived from it (224 T/line, 312 lines, 69,888 T/frame, display start T=14,336),
+  plus `to_master()`/`to_pixels()` for the sub-T-state path.
+- **`Device`** — peripheral interface with a per-frame `OnFrame()` lifecycle hook
+  (FLASH toggle, audio flush, …); port/memory interaction stays in the I/O and
+  memory policies.
+- **`Machine<Cpu>`** — drives the CPU in fixed T-state frame quanta: each frame
+  asserts the frame interrupt (`CPU::Interrupt`), advances one frame's worth of
+  T-states via the caller's stepper (raw speed, or `RunForTStates` for
+  breakpoint-aware debugging), carries the per-frame overrun, and ticks devices.
 
 ## Debugger UI — `z80_debugger` (ImGui + GLFW + OpenGL via FetchContent)
 
@@ -78,10 +96,12 @@ Modular panels over a shared `UiContext`; each panel is a `Panel` subclass.
 
 ## Tests (headless, run on every build)
 
-`cpu_test`, `debug_memory_test`, `debug_session_test` (incl. coverage + SMC),
-`disassembler_test` (golden + length sweep + branch targets), `symbol_table_test`
-(round-trip + forgiving parse + FindContaining). All green; clean Release build,
-no warnings.
+`cpu_test`, `observable_memory_test`, `io_policy_test`, `interrupt_test` (IM 0/1/2,
+masking, HALT wake, EI deferral), `timing_test` (clock tree + geometry),
+`machine_test` (frame budget, device ticks, interrupt-per-frame), `debug_session_test`
+(incl. coverage + SMC + `RunForTStates`), `disassembler_test` (golden + length
+sweep + branch targets), `symbol_table_test` (round-trip + forgiving parse +
+FindContaining). All green; clean Release build, no warnings.
 
 ## Verification caveat
 

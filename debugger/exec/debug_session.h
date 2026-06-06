@@ -128,6 +128,16 @@ public:
     ///          instruction it sits on before re-checking, so it makes progress.
     StepResult RunSlice(uint64_t max_instructions);
 
+    /// @brief Execute whole instructions until at least @p tstate_budget T-states
+    ///        have elapsed, stopping early on a breakpoint, watchpoint, SMC break,
+    ///        or HALT. Sets itself Running; only stops free-run on those events.
+    /// @details The breakpoint-aware frame primitive for a running machine: a PAL
+    ///          frame is a fixed T-state budget, not an instruction count. The
+    ///          final instruction may overrun the budget slightly (returned in
+    ///          StepResult::cycles), so the caller can carry the remainder.
+    ///          Resuming from a breakpoint steps past it once (as RunSlice does).
+    StepResult RunForTStates(uint64_t tstate_budget);
+
     /// @brief Reset the CPU and pause. Breakpoints and watchpoints are kept.
     void Reset();
 

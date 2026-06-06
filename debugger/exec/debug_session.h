@@ -6,8 +6,8 @@
 // DebugSession owns the debugger's execution loop. It drives a DebugCPU one
 // whole instruction at a time, runs bounded slices with inline breakpoint
 // checks, and surfaces memory-write events (dirty cells + write-watchpoints)
-// via the DebugMemory hook. It holds no UI state; a UI layer calls into it and
-// reads CPU state through it.
+// via the ObservableMemory write observers. It holds no UI state; a UI layer
+// calls into it and reads CPU state through it.
 //
 // Lifetime/RAII: the session installs a write hook capturing `this` for its
 // whole lifetime and clears it in the destructor, so no dangling callback can
@@ -18,7 +18,7 @@
 #define Z80_DBG_DEBUG_SESSION_H
 
 #include "z80_cpu.h"
-#include "memory/debug_memory.h"
+#include "memory/observable_memory.h"
 #include "disassembler.h"
 
 #include <array>
@@ -30,8 +30,8 @@
 
 namespace z80::dbg {
 
-/// @brief The CPU configuration the debugger drives: hooked memory plug.
-using DebugCPU = CPUImpl<DebugMemory>;
+/// @brief The CPU configuration the debugger drives: observable memory plug.
+using DebugCPU = CPUImpl<ObservableMemory>;
 
 /// @brief High-level run state of the session.
 enum class RunState {
@@ -136,7 +136,7 @@ public:
     [[nodiscard]] bool HasBreakpoint(uint16_t address) const;
     [[nodiscard]] std::vector<Breakpoint> Breakpoints() const;
 
-    // -- Write watchpoints (powered by the DebugMemory hook) -----------------
+    // -- Write watchpoints (powered by an ObservableMemory observer) ---------
 
     void AddWatchpoint(uint16_t address) { watchpoints_.insert(address); }
     void RemoveWatchpoint(uint16_t address) { watchpoints_.erase(address); }
@@ -211,6 +211,7 @@ private:
     DebugCPU& cpu_;
     Disassembler disasm_;
     ByteReader reader_;            ///< Reads CPU memory for the disassembler.
+    int write_observer_id_ = -1;   ///< Our registration on the memory plug.
 
     RunState state_ = RunState::Paused;
 

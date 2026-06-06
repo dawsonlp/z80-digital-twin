@@ -4,7 +4,7 @@
 //
 
 #include "z80_cpu.h"
-#include "memory/debug_memory.h"
+#include "memory/observable_memory.h"
 #include <algorithm>
 
 namespace z80 {
@@ -4218,9 +4218,9 @@ void CPUImpl<Memory>::SLL_mHL() {
 // =============================================================================
 // Emit the full CPU for each supported memory plug so translation units that
 // only see the declarations in z80_cpu.h link against these definitions.
-//  - CPUImpl<FastMemory>  : production / benchmark (aliased as z80::CPU)
-//  - CPUImpl<DebugMemory> : debugger build with write-hook instrumentation
+//  - CPUImpl<FastMemory>       : production / benchmark (aliased as z80::CPU)
+//  - CPUImpl<ObservableMemory> : tooling build with multi-observer write events
 template class CPUImpl<FastMemory>;
-template class CPUImpl<DebugMemory>;
+template class CPUImpl<ObservableMemory>;
 
 } // namespace z80

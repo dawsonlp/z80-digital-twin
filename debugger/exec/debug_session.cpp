@@ -12,7 +12,7 @@ namespace z80::dbg {
 
 DebugSession::DebugSession(DebugCPU& cpu) : cpu_(cpu) {
     reader_ = [this](uint16_t address) { return cpu_.ReadMemory(address); };
-    cpu_.GetMemory().SetWriteHook(
+    write_observer_id_ = cpu_.GetMemory().AddWriteObserver(
         [this](uint16_t address, uint8_t old_value, uint8_t new_value) {
             OnMemoryWrite(address, old_value, new_value);
         });
@@ -20,7 +20,7 @@ DebugSession::DebugSession(DebugCPU& cpu) : cpu_(cpu) {
 }
 
 DebugSession::~DebugSession() {
-    cpu_.GetMemory().ClearWriteHook();
+    cpu_.GetMemory().RemoveWriteObserver(write_observer_id_);
 }
 
 void DebugSession::OnMemoryWrite(uint16_t address, uint8_t old_value,

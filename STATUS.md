@@ -90,7 +90,8 @@ debugger; the app composes them).
   fetched it for that scanline — so per-scanline attribute/bitmap changes
   (multicolour, raster splits) render correctly (per-scanline; mid-line is the
   remaining refinement). Untouched bytes read straight from RAM. **`SpectrumMachine`** wires
-  `CPUImpl<ObservableMemory, CallbackIo>` + ULA + the frame clock: `run_frame()` runs a
+  `CPUImpl<ObservableMemory, ObservableIo<CallbackIo>>` (the same config the
+  debugger drives, so `machine.cpu()` is debuggable) + ULA + the frame clock: `run_frame()` runs a
   PAL frame (50 Hz INT) and renders to palette indices / RGBA. Boots `spec48.rom`
   to the copyright screen (verified headless by `spectrum_boot_test`).
 - **`spectrum` viewer** (`apps/spectrum/`, built with the UI) — boots a ROM and
@@ -118,6 +119,10 @@ Modular panels over a shared `UiContext`; each panel is a `Panel` subclass.
   polls ports (a real `IN` can have side effects).
 - **Self-Modifying Code** — event log (writer/target/`old→new`/cycle),
   click-to-jump, count, Break-on-SMC.
+- **Spectrum mode** (`--spectrum <rom>`) — drives the real ZX Spectrum under the
+  debugger: a **Spectrum Screen** panel (live border+display), 50 Hz frames run
+  through `RunForTStates` so breakpoints apply (a breakpoint *mid-frame* resumes
+  the same frame), host keyboard → matrix, ULA ports visible in the I/O panel.
 - Symbol editor popup (create/edit/remove; byte/word/label/function/jump-target)
   + File ▸ Save Symbols.
 
@@ -125,8 +130,8 @@ Modular panels over a shared `UiContext`; each panel is a `Panel` subclass.
 
 - `examples/gcd.sym`, `examples/spectrum48k.sym` (full ZX system-variable table).
 - Built-in demos: `--demo gcd` (default), `--demo smc` (self-modifying loop).
-- CLI: `[prog.bin] [--org A] [--sym f] [--bp HEX] [--demo gcd|smc] [--run N]
-  [--smoke] [--shot FILE]`.
+- CLI: `[prog.bin] [--org A] [--sym f] [--bp HEX] [--demo gcd|smc]
+  [--spectrum rom.rom] [--run N] [--smoke] [--shot FILE]`.
 
 ## Tests (headless, run on every build)
 
@@ -137,6 +142,7 @@ masking, HALT wake, EI deferral), `timing_test` (clock tree + geometry),
 (address mapping, border fill, display decode through the FrameSource seam),
 `keyboard_test` (matrix layout + active-low half-row IN decode),
 `raster_test` (beam-accurate per-scanline display reconstruction),
+`spectrum_debug_test` (a DebugSession breakpoints the running ROM),
 `spectrum_boot_test` (boots the 48K ROM headlessly and checks the screen drew;
 SKIPs when `spec48.rom` is absent), `debug_session_test`
 (incl. coverage + SMC + `RunForTStates`), `disassembler_test` (golden + length

@@ -12,6 +12,10 @@
 #include "panels/memory_panel.h"
 #include "panels/io_panel.h"
 #include "panels/smc_panel.h"
+#include "panels/screen_panel.h"
+
+#include "spectrum/timing.h"
+#include "spectrum/keyboard.h"
 
 #define GL_SILENCE_DEPRECATION
 #include "imgui.h"
@@ -131,8 +135,98 @@ void DebuggerApp::LoadSmcDemo() {
     status_ = "Loaded self-modifying demo (INC (HL) rewrites its own operand)";
 }
 
+bool DebuggerApp::LoadSpectrumRom(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        std::cerr << "Could not open ROM: " << path << "\n";
+        return false;
+    }
+    std::vector<uint8_t> rom((std::istreambuf_iterator<char>(in)),
+                             std::istreambuf_iterator<char>());
+    if (rom.empty() || rom.size() > 0x4000) {
+        std::cerr << "ROM must be 1..16384 bytes: " << path << "\n";
+        return false;
+    }
+
+    cpu_.Reset();
+    cpu_.LoadProgram(rom, 0x0000);
+
+    // Wire the ULA to this CPU (clock, RAM reader, ports via the inner CallbackIo,
+    // and the display-file write observer for beam-accurate screen).
+    ula_.set_clock([this] { return cpu_.GetCycleCount(); });
+    ula_.set_reader([this](uint16_t a) { return cpu_.ReadMemory(a); });
+    cpu_.GetIo().inner().OnOut([this](uint16_t p, uint8_t v) { ula_.write_port(p, v); });
+    cpu_.GetIo().inner().OnIn([this](uint16_t p) { return ula_.read_port(p); });
+    cpu_.GetMemory().AddWriteObserver(
+        [this](uint16_t a, uint8_t o, uint8_t n) { ula_.on_write(a, o, n); });
+
+    spectrum_mode_ = true;
+    spectrum_running_ = false;
+    frame_active_ = false;
+    panels_.push_back(std::make_unique<SpectrumScreenPanel>(ula_));
+
+    session_.ClearDirty();
+    status_ = std::format("Loaded ZX Spectrum ROM ({} bytes) — press Run", rom.size());
+    return true;
+}
+
 void DebuggerApp::AddBreakpoint(uint16_t address) {
     session_.AddBreakpoint(address);
+}
+
+void DebuggerApp::RunSpectrumFrames(uint64_t count) {
+    if (!spectrum_mode_) return;
+    session_.Run();
+    spectrum_running_ = true;
+    for (uint64_t i = 0; i < count && spectrum_running_; ++i) DriveSpectrumFrame();
+}
+
+void DebuggerApp::DriveSpectrumFrame() {
+    using machine::spectrum::timing::kTPerFrame;
+
+    if (!frame_active_) {
+        // Frame boundary: assert the 50 Hz interrupt (wakes any HALT), start a
+        // fresh display-write history, and budget one frame of T-states.
+        cpu_.Interrupt(0xFF);
+        ula_.begin_frame();
+        cpu_.GetIo().ClearTransactions();
+        frame_budget_ = kTPerFrame;
+        frame_active_ = true;
+    }
+
+    const StepResult r = session_.RunForTStates(frame_budget_);
+    frame_budget_ = (r.cycles >= frame_budget_) ? 0 : (frame_budget_ - r.cycles);
+
+    if (r.reason == StopReason::Breakpoint || r.reason == StopReason::Watchpoint ||
+        r.reason == StopReason::SelfModified) {
+        // A user stop mid-frame: pause the machine but keep the frame open so a
+        // Resume continues this same frame (no new interrupt).
+        spectrum_running_ = false;
+        status_ = std::format("Spectrum stopped: {} @ 0x{:04X}", reason_text(r.reason), r.pc);
+        return;
+    }
+
+    // Budget reached, or the ROM HALTed to wait for the next interrupt: the frame
+    // is done. (HALT is normal idling here, not a terminal stop.)
+    ula_.end_frame();
+    frame_active_ = false;
+}
+
+void DebuggerApp::PollSpectrumKeyboard() {
+    if (!spectrum_mode_ || ImGui::GetIO().WantCaptureKeyboard) return;
+    namespace kb = machine::spectrum::keyboard;
+
+    ula_.release_all_keys();
+    const auto down = [this](int key) { return glfwGetKey(window_, key) == GLFW_PRESS; };
+    const auto press = [this](kb::Key k) { ula_.key_down(k.half_row, k.bit); };
+
+    for (const kb::AsciiKey& k : kb::kAsciiKeys)
+        if (down(k.c)) ula_.key_down(k.half_row, k.bit);
+    if (down(GLFW_KEY_ENTER)) press(kb::kEnter);
+    if (down(GLFW_KEY_SPACE)) press(kb::kSpace);
+    if (down(GLFW_KEY_LEFT_SHIFT) || down(GLFW_KEY_RIGHT_SHIFT)) press(kb::kCapsShift);
+    if (down(GLFW_KEY_LEFT_CONTROL) || down(GLFW_KEY_RIGHT_CONTROL)) press(kb::kSymbolShift);
+    if (down(GLFW_KEY_BACKSPACE)) { press(kb::kCapsShift); press(kb::key_for_ascii('0')); }
 }
 
 void DebuggerApp::RunInstructions(uint64_t count) {
@@ -145,6 +239,8 @@ void DebuggerApp::RunInstructions(uint64_t count) {
 void DebuggerApp::ExecuteCommands() {
     if (commands_.reset) {
         session_.Reset();
+        frame_active_ = false;
+        spectrum_running_ = false;
         status_ = "Reset";
     }
     if (commands_.step) {
@@ -162,16 +258,21 @@ void DebuggerApp::ExecuteCommands() {
     if (commands_.run) {
         session_.ClearDirty();
         session_.Run();
-        status_ = "Running...";
+        if (spectrum_mode_) { spectrum_running_ = true; status_ = "Spectrum running (50 Hz)"; }
+        else status_ = "Running...";
     }
     if (commands_.pause) {
         session_.Pause();
+        spectrum_running_ = false;
         status_ = "Paused";
     }
     commands_.Clear();
 
-    // While running, advance a bounded slice per frame.
-    if (session_.State() == RunState::Running) {
+    if (spectrum_mode_) {
+        // Free-run the machine one PAL frame per UI tick (breakpoint-aware).
+        if (spectrum_running_) DriveSpectrumFrame();
+    } else if (session_.State() == RunState::Running) {
+        // While running, advance a bounded slice per frame.
         const StepResult r = session_.RunSlice(run_budget_);
         if (session_.State() != RunState::Running) {
             status_ = std::format("Stopped: {} @ 0x{:04X}", reason_text(r.reason), r.pc);
@@ -255,6 +356,7 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
     int frame = 0;
     while (!glfwWindowShouldClose(window_)) {
         glfwPollEvents();
+        PollSpectrumKeyboard();
         ExecuteCommands();
 
         ImGui_ImplOpenGL3_NewFrame();

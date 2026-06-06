@@ -21,6 +21,7 @@
 #include "memory/observable_memory.h"
 #include "io/latched_io.h"
 #include "io/observable_io.h"
+#include "io/callback_io.h"
 #include "disassembler.h"
 
 #include <array>
@@ -33,9 +34,12 @@
 namespace z80::dbg {
 
 /// @brief The CPU configuration the debugger drives: observable memory + an
-///        observable I/O device (latched ports, with a transaction log for the
-///        UI). A running machine config will substitute its own device later.
-using DebugCPU = CPUImpl<ObservableMemory, ObservableIo<LatchedIo>>;
+///        observable I/O device wrapping a CallbackIo. The transaction log feeds
+///        the I/O panel; the inner CallbackIo lets a machine (e.g. the ZX
+///        Spectrum ULA) hook its ports. With no handler installed the ports read
+///        as an open bus. This is the *same* config the SpectrumMachine uses, so
+///        a DebugSession can drive a running Spectrum directly.
+using DebugCPU = CPUImpl<ObservableMemory, ObservableIo<CallbackIo>>;
 
 /// @brief High-level run state of the session.
 enum class RunState {

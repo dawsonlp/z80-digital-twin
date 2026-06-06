@@ -133,9 +133,12 @@ Verified against the World of Spectrum 48K reference (numbers below) and Chris
 Smith, *The ZX Spectrum ULA* (the canonical hardware reference; consult it for
 the few sub-details flagged at implementation time).
 
-**Clocks & frame:**
-- CPU clock **3.5 MHz**; **69,888 T-states/frame** ⇒ **50.08 Hz** field rate.
-- **224 T-states/scanline**; **312 scanlines/frame** (224 × 312 = 69,888).
+**Clock tree (Smith):** a single **14 MHz** master clock divides down —
+`÷2` → **7 MHz pixel (dot) clock** → `÷2` → **3.5 MHz CPU clock**. Equivalently
+**1 T-state = 4 master cycles**, **1 pixel = 2 master cycles**, **2 pixels per
+T-state**. Every timing below derives from this ladder rather than being asserted:
+- **69,888 T-states/frame** (= 224 × 312) ⇒ **50.08 Hz** (3.5 MHz / 69,888).
+- **224 T-states/scanline**; **312 scanlines/frame**.
 
 **Scanline (224 T):** `128` display (256 px at **2 px/T-state**) · `24` right
 border · `48` horizontal retrace (beam flyback/blank) · `24` left border.
@@ -161,6 +164,35 @@ identical — there is **no difference between successive scans** from the TV's
 view. (Broadcast PAL is 625 lines as two interlaced fields of 312.5 lines; the
 Spectrum deliberately omits the half-line, which is why it shows a stable
 non-interlaced picture.) Our model uses a single repeating 312-line frame.
+
+### 6.1 Time base — the master clock is the ruler, not the step
+
+The 14 MHz master clock is the single source of truth for time, but we **do not
+step the CPU at 14 MHz** — that would quadruple the core's innermost loop and
+break the mass-twin performance invariant (ARCHITECTURE §8) for no benefit.
+Instead:
+
+- The **CPU stays a T-state counter** (`t_cycle`); that delta is the bridge.
+- The **Machine/ULA own the master-derived timeline**; the ×4 / ×2 ratios are
+  conversions used where needed, not a per-cycle obligation on the core.
+- A single **timing module** (`timing.h`, added with the Machine) encodes the
+  ladder once — master/cpu/pixel rates, `T_PER_LINE`, `LINES`, `T_PER_FRAME`,
+  `DISPLAY_START_T`, `master_per_T = 4`, `pixels_per_T = 2` — so there are no
+  scattered magic numbers, plus `to_master()` / `to_pixels()` for the rare
+  sub-T-state path.
+
+**Granularity each feature needs** (model only as deep as required):
+
+| Feature | Granularity |
+|---|---|
+| Frame/scanline timing, 50 Hz INT | T-state (have it) |
+| Memory contention (6,5,4,3,2,1,0,0) | T-state, *aligned* to `DISPLAY_START_T` — the delays are whole T-states; the master clock only fixes the alignment |
+| Raster effects (mid-frame border/attribute, multicolour) | T-state (per-scanline / per-byte position) |
+| Floating-bus "snow", mid-byte border change | pixel/master — the only true sub-T-state cases |
+
+So: work in **T-states** (CPU-aligned, and integer-exact since the divisors are
+powers of two), keep the clock ladder authoritative, and subdivide to
+pixel/master **inside the ULA, only when a dot-precise effect demands it**.
 
 ## 7. ULA video rendering
 

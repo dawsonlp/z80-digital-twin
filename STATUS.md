@@ -76,15 +76,21 @@ debugger; the app composes them).
   display-memory layout collapses into a per-line base-address calc
   (`bitmap_address`/`attribute_address`). Everything is read through a
   `FrameSource` seam ("what did the beam see here?"), so render fidelity lives in
-  the source: a final-memory source is correct for static/boot screens and
-  per-line (rainbow) borders; a beam-accurate source drops in later unchanged.
+  the source — the renderer never changed when the beam-accurate source (below)
+  replaced the final-memory one.
 - **`ula.h` / `keyboard.h` / `spectrum_machine.h`** — the running ZX Spectrum 48K.
   The **ULA** latches the border on `OUT 0xFE` into a frame-T-state-stamped timeline
   (resolved to a per-line colour each frame), reads the **keyboard** on `IN` (the
   8×5 matrix, active-low half-rows selected by the port's high byte) + EAR,
   advances the FLASH phase, and is the renderer's `FrameSource`. `keyboard.h` holds
-  the hardware matrix layout (key→row/bit); the viewer maps host keys to it. **`SpectrumMachine`** wires
-  `CPUImpl<FastMemory, CallbackIo>` + ULA + the frame clock: `run_frame()` runs a
+  the hardware matrix layout (key→row/bit); the viewer maps host keys to it.
+  **Beam-accurate screen:** the ULA observes display-file writes (0x4000–0x5AFF)
+  with their frame T-state via the `ObservableMemory` write hook, and
+  `screen_byte(addr, line)` reconstructs each byte as of the moment the beam
+  fetched it for that scanline — so per-scanline attribute/bitmap changes
+  (multicolour, raster splits) render correctly (per-scanline; mid-line is the
+  remaining refinement). Untouched bytes read straight from RAM. **`SpectrumMachine`** wires
+  `CPUImpl<ObservableMemory, CallbackIo>` + ULA + the frame clock: `run_frame()` runs a
   PAL frame (50 Hz INT) and renders to palette indices / RGBA. Boots `spec48.rom`
   to the copyright screen (verified headless by `spectrum_boot_test`).
 - **`spectrum` viewer** (`apps/spectrum/`, built with the UI) — boots a ROM and
@@ -130,6 +136,7 @@ masking, HALT wake, EI deferral), `timing_test` (clock tree + geometry),
 (attribute/byte/line, FLASH swap, palette — incl. compile-time `static_assert`s), `video_test`
 (address mapping, border fill, display decode through the FrameSource seam),
 `keyboard_test` (matrix layout + active-low half-row IN decode),
+`raster_test` (beam-accurate per-scanline display reconstruction),
 `spectrum_boot_test` (boots the 48K ROM headlessly and checks the screen drew;
 SKIPs when `spec48.rom` is absent), `debug_session_test`
 (incl. coverage + SMC + `RunForTStates`), `disassembler_test` (golden + length

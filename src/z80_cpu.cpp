@@ -4276,10 +4276,12 @@ void CPUImpl<Memory, Io>::SLL_mHL() {
 //  - <FastMemory, OpenBusIo>                   : z80::CPU — production / benchmark
 //  - <ObservableMemory, OpenBusIo>             : memory-observer tests
 //  - <ObservableMemory, ObservableIo<LatchedIo>> : the debugger (DebugCPU)
-//  - <FastMemory, CallbackIo>                  : the ZX Spectrum machine (ULA)
+//  - <FastMemory, CallbackIo>                  : ZX Spectrum (no screen observer)
+//  - <ObservableMemory, CallbackIo>            : ZX Spectrum (beam-accurate screen)
 template class CPUImpl<FastMemory, OpenBusIo>;
 template class CPUImpl<ObservableMemory, OpenBusIo>;
 template class CPUImpl<ObservableMemory, ObservableIo<LatchedIo>>;
 template class CPUImpl<FastMemory, CallbackIo>;
+template class CPUImpl<ObservableMemory, CallbackIo>;
 
 } // namespace z80

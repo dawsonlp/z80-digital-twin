@@ -14,8 +14,11 @@
 //   * end_frame() advances the FLASH phase (every 16 frames) and starts a fresh
 //     border timeline carrying the last colour forward.
 //   * As a FrameSource it answers border_for_line() from the resolved timeline
-//     and screen_byte() from RAM via the installed reader (the simple
-//     final-memory source — correct for static/boot screens and rainbow borders).
+//     and screen_byte() beam-accurately: it observes writes to the display file
+//     (0x4000..0x5AFF) with their frame T-state, and reconstructs each byte as of
+//     the moment the beam fetched it for a given scanline — so per-scanline
+//     attribute/bitmap changes (multicolour, raster splits) render correctly. A
+//     byte not written this frame is read straight from RAM (its constant value).
 //
 // The ULA learns the current T-state through an installed clock callback (it is
 // the clock master in real hardware) and reads RAM through a reader callback, so
@@ -32,6 +35,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -66,6 +70,21 @@ public:
         return static_cast<uint8_t>(result | 0xE0);  // D5..D7 high (EAR high, no tape)
     }
 
+    // -- Display-file write observation (beam-accurate screen) ---------------
+
+    /// @brief Memory-write observer (wire into ObservableMemory). Records writes
+    ///        to the display file with their frame T-state; others are ignored.
+    void on_write(uint16_t address, uint8_t old_value, uint8_t new_value) {
+        if (address < kScreenStart || address > kScreenEnd) return;
+        ScreenCell& cell = screen_writes_[address];
+        if (cell.writes.empty()) cell.initial = old_value;   // value at frame start
+        cell.writes.push_back({frame_tstate(), new_value});
+    }
+
+    /// @brief Start a frame: drop the previous frame's display-write history.
+    ///        (Call before running the frame; render reads it after end_frame.)
+    void begin_frame() { screen_writes_.clear(); }
+
     // -- Frame advance -------------------------------------------------------
 
     /// @brief Resolve the border timeline to a per-line colour, advance the
@@ -87,8 +106,23 @@ public:
         return border_per_line_[static_cast<std::size_t>(rendered_line)];
     }
 
-    [[nodiscard]] uint8_t screen_byte(uint16_t address, int /*display_line*/) const {
-        return read_ ? read_(address) : 0xFF;
+    /// @brief The display byte at @p address as the beam saw it on @p display_line
+    ///        (0..191): the last write at or before that line's fetch T-state, or
+    ///        the frame-start value. Bytes untouched this frame read straight from
+    ///        RAM (their value is constant across the frame).
+    [[nodiscard]] uint8_t screen_byte(uint16_t address, int display_line) const {
+        const auto it = screen_writes_.find(address);
+        if (it == screen_writes_.end()) return read_ ? read_(address) : 0xFF;
+
+        const uint32_t cutoff = static_cast<uint32_t>(timing::kDisplayStartT) +
+                                static_cast<uint32_t>(display_line) *
+                                static_cast<uint32_t>(timing::kTPerLine);
+        uint8_t value = it->second.initial;
+        for (const ScreenWrite& w : it->second.writes) {
+            if (w.tstate <= cutoff) value = w.value;
+            else break;                                  // writes are in time order
+        }
+        return value;
     }
 
     // -- Status --------------------------------------------------------------
@@ -115,9 +149,23 @@ public:
     void release_all_keys() noexcept { key_rows_.fill(0x1F); }
 
 private:
+    // The display file: 6144 bytes of bitmap (0x4000..0x57FF) + 768 of attributes
+    // (0x5800..0x5AFF).
+    static constexpr uint16_t kScreenStart = 0x4000;
+    static constexpr uint16_t kScreenEnd   = 0x5AFF;
+
     struct BorderEvent {
         uint32_t tstate;   ///< Frame-relative T-state of the change.
         uint8_t colour;    ///< Border colour 0..7.
+    };
+
+    struct ScreenWrite {
+        uint32_t tstate;   ///< Frame-relative T-state of the write.
+        uint8_t value;     ///< Byte written.
+    };
+    struct ScreenCell {
+        uint8_t initial = 0;              ///< Value at frame start (old of the first write).
+        std::vector<ScreenWrite> writes;  ///< This frame's writes, in time order.
     };
 
     [[nodiscard]] uint32_t frame_tstate() const {
@@ -146,6 +194,7 @@ private:
     std::function<uint8_t(uint16_t)> read_;
 
     std::vector<BorderEvent> border_events_{{0, 0}};   // always non-empty (baseline)
+    std::unordered_map<uint16_t, ScreenCell> screen_writes_;  // display-file writes this frame
     std::array<uint8_t, video::kFrameHeight> border_per_line_{};
     uint8_t current_border_ = 0;
     std::array<uint8_t, 8> key_rows_{0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F};

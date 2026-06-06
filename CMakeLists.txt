@@ -139,6 +139,10 @@ target_link_libraries(video_test PRIVATE z80_machine)
 add_executable(keyboard_test tests/keyboard_test.cpp)
 target_link_libraries(keyboard_test PRIVATE z80_machine)
 
+# Beam-accurate screen (per-scanline display-file reconstruction)
+add_executable(raster_test tests/raster_test.cpp)
+target_link_libraries(raster_test PRIVATE z80_machine)
+
 # Spectrum boot (headless): boots the 48K ROM and checks the screen rendered.
 # SKIPs cleanly when spec48.rom is absent (the ROM is not in the repo).
 add_executable(spectrum_boot_test tests/spectrum_boot_test.cpp)

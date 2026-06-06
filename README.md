@@ -11,6 +11,19 @@ make
 ./gcd_example 48 18
 ```
 
+## 📚 Project status & documentation
+
+Beyond the core CPU, the project now includes an **ImGui debugger** (disassembler,
+breakpoints, execution-coverage and self-modifying-code detection) and is growing
+**machine emulation** (a ZX Spectrum ULA). It's one engine specialised per use
+case via compile-time policies (mass IoT twin · debugger · machine emulator).
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — the platform: core engine ← capabilities ← frontends, and the memory/I-O policy model.
+- [STATUS.md](STATUS.md) — what's built and working right now.
+- [DEBUGGER_DESIGN.md](DEBUGGER_DESIGN.md) — the debugger design.
+- [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md) — the reverse-engineering-lab vision (coverage → SMC → annotated, reassemblable source).
+- [SPECTRUM_DESIGN.md](SPECTRUM_DESIGN.md) — the ZX Spectrum machine + ULA/PAL timing (in design).
+
 ## 🎯 What This Demonstrates
 
 - **Accurate Hardware Emulation**: Cycle-accurate Z80 CPU implementation
@@ -108,11 +121,7 @@ This demonstrates the emulator running actual Z80 machine code with complete vis
 - ⚠️ **Community needed**: Windows compatibility (no test environment available)
 
 The codebase uses standard C++23 and CMake, so it should be highly portable across platforms. Any platform-specific issues will be addressed as they're discovered.
-=======
-### Tested Platforms
 
-- **Linux 6.14.0-15-generic (Ubuntu)** with GCC 14.2.0 - tested fine ✅
-- **macOS 15.5 (Sequioa)** with Apple Silicon (M4) - tested fine ✅
 ### Build Commands
 
 **Option 1: Using CMake (Recommended)**

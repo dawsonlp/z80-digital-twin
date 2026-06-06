@@ -42,6 +42,7 @@ struct Instruction {
     std::string operands;              ///< Operands, e.g. "A, (IX+0x05)" ("" if none).
     std::string text;                  ///< Rendered line: mnemonic [+ ' ' + operands].
     std::vector<std::string> symbols_used;  ///< Symbol names substituted into operands.
+    std::optional<uint16_t> branch_target;  ///< Static target of a direct JP/JR/CALL/DJNZ/RST.
 };
 
 class Disassembler {

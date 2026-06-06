@@ -11,6 +11,8 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <format>
 #include <optional>
 #include <string>
@@ -19,10 +21,21 @@
 namespace z80::dbg {
 namespace {
 
-// Render an operand string, colouring substituted symbol names by type and
-// showing a description tooltip when hovered.
-void draw_operands(UiContext& ctx, const Instruction& ins) {
+bool parse_hex16(const char* s, uint16_t& out) {
+    try {
+        out = static_cast<uint16_t>(std::stoul(s, nullptr, 16) & 0xFFFF);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+// Render an operand string, colouring substituted symbol names by type, showing
+// a description tooltip on hover, and a "Go to" right-click menu. Returns an
+// address to jump the view to if the user picked one this frame.
+std::optional<uint16_t> draw_operands(UiContext& ctx, const Instruction& ins) {
     const std::string& ops = ins.operands;
+    std::optional<uint16_t> goto_addr;
 
     struct Hit { size_t pos; size_t len; Symbol sym; };
     std::vector<Hit> hits;
@@ -46,6 +59,7 @@ void draw_operands(UiContext& ctx, const Instruction& ins) {
     };
 
     size_t cursor = 0;
+    int hit_id = 0;
     for (const auto& h : hits) {
         if (h.pos < cursor) continue;   // overlapping match: skip
         plain(ops.substr(cursor, h.pos - cursor));
@@ -53,10 +67,20 @@ void draw_operands(UiContext& ctx, const Instruction& ins) {
         first = false;
         ImGui::TextColored(SymbolColor(h.sym.type), "%s", ops.substr(h.pos, h.len).c_str());
         SymbolTooltipIfHovered(h.sym);
+        ImGui::PushID(hit_id++);
+        if (ImGui::BeginPopupContextItem("opmenu")) {
+            char label[64];
+            std::snprintf(label, sizeof(label), "Go to %s (0x%04X)",
+                          h.sym.name.c_str(), h.sym.address);
+            if (ImGui::MenuItem(label)) goto_addr = h.sym.address;
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
         cursor = h.pos + h.len;
     }
     plain(ops.substr(cursor));
     if (first) ImGui::TextUnformatted("");   // ensure the row has content
+    return goto_addr;
 }
 
 } // namespace
@@ -66,9 +90,24 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
     ImGui::SetNextWindowSize(ImVec2(520, 614), ImGuiCond_FirstUseEver);
     ImGui::Begin("Disassembly");
 
+    // -- Toolbar: go-to-address, Follow PC -----------------------------------
+    auto go_to = [&](uint16_t addr) { top_ = addr; follow_pc_ = false; };
+
+    ImGui::TextUnformatted("Addr");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(70);
+    uint16_t typed = 0;
+    if (ImGui::InputTextWithHint("##disgoto", "hex", goto_buf_, sizeof(goto_buf_),
+                                 ImGuiInputTextFlags_CharsHexadecimal |
+                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
+        if (parse_hex16(goto_buf_, typed)) go_to(typed);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Go") && parse_hex16(goto_buf_, typed)) go_to(typed);
+    ImGui::SameLine();
     ImGui::Checkbox("Follow PC", &follow_pc_);
     ImGui::SameLine();
-    ImGui::TextDisabled("(gutter = breakpoint; right-click an address to label it)");
+    ImGui::TextDisabled("(right-click an address or target to act)");
 
     DebugSession& session = ctx.session;
     if (follow_pc_ && session.State() != RunState::Running) {
@@ -78,6 +117,8 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
     const ByteReader read = ctx.reader();
     const SymbolResolver resolve = ctx.resolver();
     const uint16_t pc = ctx.cpu().PC();
+
+    std::optional<uint16_t> jump_request;   // applied after the table is built
 
     if (ImGui::BeginTable("disasm", 5,
                           ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
@@ -116,10 +157,24 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
                 SymbolTooltipIfHovered(*sym);
             }
 
-            // Address (right-click to label this address)
+            // Address: right-click for line actions (go to target, BP, label).
             ImGui::TableSetColumnIndex(2);
             ImGui::Text("%04X", addr);
-            if (ImGui::BeginPopupContextItem("lbl")) {
+            if (ImGui::BeginPopupContextItem("rowmenu")) {
+                if (ins.branch_target) {
+                    const uint16_t t = *ins.branch_target;
+                    char label[64];
+                    if (auto name = ctx.symbols.ResolveName(t))
+                        std::snprintf(label, sizeof(label), "Go to target  0x%04X (%s)", t, name->c_str());
+                    else
+                        std::snprintf(label, sizeof(label), "Go to target  0x%04X", t);
+                    if (ImGui::MenuItem(label)) jump_request = t;
+                }
+                if (ImGui::MenuItem(has_bp ? "Remove breakpoint" : "Add breakpoint")) {
+                    if (has_bp) session.RemoveBreakpoint(addr);
+                    else        session.AddBreakpoint(addr);
+                }
+                ImGui::Separator();
                 if (ImGui::IsWindowAppearing()) PrimeSymbolEdit(edit_, addr, ctx.symbols);
                 DrawSymbolEditForm(ctx, edit_);
                 ImGui::EndPopup();
@@ -132,16 +187,13 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
                 hexbytes += std::format("{:02X} ", ins.bytes[b]);
             ImGui::TextUnformatted(hexbytes.c_str());
 
-            // Instruction: mnemonic + colour-coded operand symbols (with tooltips).
+            // Instruction: mnemonic + colour-coded operand symbols (with tooltips
+            // and a "Go to" right-click on the target name).
             ImGui::TableSetColumnIndex(4);
-            if (addr == pc) {
-                ImGui::TextColored(ImVec4(1, 1, 0.6f, 1), "%s", ins.text.c_str());
-            } else {
-                ImGui::TextUnformatted(ins.mnemonic.c_str());
-                if (!ins.operands.empty()) {
-                    ImGui::SameLine();
-                    draw_operands(ctx, ins);
-                }
+            ImGui::TextUnformatted(ins.mnemonic.c_str());
+            if (!ins.operands.empty()) {
+                ImGui::SameLine();
+                if (auto g = draw_operands(ctx, ins)) jump_request = g;
             }
 
             ImGui::PopID();
@@ -152,6 +204,8 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
         }
         ImGui::EndTable();
     }
+
+    if (jump_request) go_to(*jump_request);
     ImGui::End();
 }
 

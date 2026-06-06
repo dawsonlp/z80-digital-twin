@@ -202,12 +202,15 @@ void decode_base(uint8_t op, Cursor& cur, Index ix,
                         case 0: finish(out, "NOP"); return;
                         case 1: finish(out, "EX", "AF, AF'"); return;
                         case 2: { int8_t d = cur.disp();
-                                  finish(out, "DJNZ", addr(static_cast<uint16_t>(out.address + 2 + d), resolve)); return; }
+                                  out.branch_target = static_cast<uint16_t>(out.address + 2 + d);
+                                  finish(out, "DJNZ", addr(*out.branch_target, resolve)); return; }
                         case 3: { int8_t d = cur.disp();
-                                  finish(out, "JR", addr(static_cast<uint16_t>(out.address + 2 + d), resolve)); return; }
+                                  out.branch_target = static_cast<uint16_t>(out.address + 2 + d);
+                                  finish(out, "JR", addr(*out.branch_target, resolve)); return; }
                         default: { int8_t d = cur.disp();
+                                   out.branch_target = static_cast<uint16_t>(out.address + 2 + d);
                                    finish(out, "JR", std::format("{}, {}", kCC[y - 4],
-                                          addr(static_cast<uint16_t>(out.address + 2 + d), resolve))); return; }
+                                          addr(*out.branch_target, resolve))); return; }
                     }
                 case 1:
                     if (q == 0) finish(out, "LD", std::format("{}, {}", rp(p, ix), hex16(cur.imm16())));
@@ -272,10 +275,12 @@ void decode_base(uint8_t op, Cursor& cur, Index ix,
                         case 2: finish(out, "JP", std::format("({})", names_for(ix).full)); return;
                         default: finish(out, "LD", std::format("SP, {}", names_for(ix).full)); return;
                     }
-                case 2: finish(out, "JP", std::format("{}, {}", kCC[y], addr(cur.imm16(), resolve))); return;
+                case 2: { const uint16_t t = cur.imm16(); out.branch_target = t;
+                          finish(out, "JP", std::format("{}, {}", kCC[y], addr(t, resolve))); return; }
                 case 3:
                     switch (y) {
-                        case 0: finish(out, "JP", addr(cur.imm16(), resolve)); return;
+                        case 0: { const uint16_t t = cur.imm16(); out.branch_target = t;
+                                  finish(out, "JP", addr(t, resolve)); return; }
                         case 1: finish(out, "NOP"); return;   // CB handled by caller
                         case 2: finish(out, "OUT", std::format("({}), A", hex8(cur.imm8()))); return;
                         case 3: finish(out, "IN", std::format("A, ({})", hex8(cur.imm8()))); return;
@@ -284,10 +289,12 @@ void decode_base(uint8_t op, Cursor& cur, Index ix,
                         case 6: finish(out, "DI"); return;
                         default: finish(out, "EI"); return;
                     }
-                case 4: finish(out, "CALL", std::format("{}, {}", kCC[y], addr(cur.imm16(), resolve))); return;
+                case 4: { const uint16_t t = cur.imm16(); out.branch_target = t;
+                          finish(out, "CALL", std::format("{}, {}", kCC[y], addr(t, resolve))); return; }
                 case 5:
                     if (q == 0) { finish(out, "PUSH", rp2(p, ix)); return; }
-                    if (p == 0) { finish(out, "CALL", addr(cur.imm16(), resolve)); return; }
+                    if (p == 0) { const uint16_t t = cur.imm16(); out.branch_target = t;
+                                  finish(out, "CALL", addr(t, resolve)); return; }
                     finish(out, "NOP");  // DD/ED/FD handled by caller
                     return;
                 case 6: {
@@ -297,6 +304,7 @@ void decode_base(uint8_t op, Cursor& cur, Index ix,
                     return;
                 }
                 default: // z == 7
+                    out.branch_target = static_cast<uint16_t>(y * 8);
                     finish(out, "RST", hex8(static_cast<uint8_t>(y * 8))); return;
             }
     }

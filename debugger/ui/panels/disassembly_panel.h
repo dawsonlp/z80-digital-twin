@@ -23,6 +23,7 @@ public:
 private:
     bool follow_pc_ = true;
     uint16_t top_ = 0x0000;
+    char goto_buf_[8] = "0000";
     SymbolEditState edit_;
 };
 

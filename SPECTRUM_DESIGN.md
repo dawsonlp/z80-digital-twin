@@ -32,9 +32,9 @@ and tape are deferred** to later milestones (§8).
    "run as Spectrum" mode over the *same* CPU/memory. You debug a live Spectrum.
 2. **Multi-observer memory write hook.** Generalize the memory plug from a single
    write hook to a small observer list; the debugger *and* the ULA both
-   subscribe. The ULA marks dirty screen cells on writes to `0x4000–0x5AFF` and
-   re-decodes only those — "update the screen only when a screen/attr byte
-   changes."
+   subscribe. The ULA marks dirty **scanlines** on writes to `0x4000–0x5AFF`
+   (§6.1) and re-decodes only those — "update the screen only when a screen/attr
+   byte changes," at the granularity the ULA itself uses.
 3. **Milestone 1 = CPU prereqs + screen + border + 50 Hz INT** (keyboard/sound
    next).
 
@@ -98,8 +98,10 @@ void RemoveWriteObserver(int id);
 ```
 
 - The **DebugSession** registers its existing dirty/SMC/watch handler.
-- The **ULA** registers a handler that, for `0x4000–0x57FF` (bitmap) or
-  `0x5800–0x5AFF` (attributes), marks the corresponding **8×8 cell** dirty.
+- The **ULA** registers a handler that marks dirty **scanlines** (not cells —
+  see §6.1): a bitmap write (`0x4000–0x57FF`) dirties exactly one scanline; an
+  attribute write (`0x5800–0x5AFF`) dirties the 8 scanlines of that character
+  row.
 - Cost: the write path iterates 1–2 observers; still far above Spectrum speed
   (only writes are hooked). The non-screen early-out in the ULA handler is a
   cheap range check.
@@ -129,13 +131,39 @@ ULA is the first Device (video, border, keyboard, ear/mic/speaker, 50Hz INT).
   attributes `0x5800–0x5AFF` (768 B, 32×24 cells). Attribute byte =
   `FLASH(1) BRIGHT(1) PAPER(3) INK(3)`; palette is 8 colours × bright.
 - **FLASH:** every 16 frames, cells with the FLASH bit swap ink/paper (~0.32 s
-  period). Drives a global re-decode of flashing cells only.
-- **Dirty-cell flow:** write observer → mark 8×8 cell dirty → renderer
-  re-decodes only dirty cells (plus flashing cells on the flash toggle) into an
-  RGBA buffer → upload to a GL texture → **Screen panel** draws it; the
-  **border** is drawn around it from the last `OUT 0xFE` (bits 0–2).
+  period); on the toggle frame, dirty all scanlines whose attribute row has the
+  FLASH bit set (or simply all 192 — a full redraw is cheap, see §6.1).
+- **Dirty-scanline flow:** write observer → mark dirty scanline(s) → renderer
+  re-decodes only dirty scanlines into an RGBA buffer → upload to a GL texture →
+  **Screen panel** draws it; the **border** is drawn around it from the last
+  `OUT 0xFE` (bits 0–2).
 - **Decoder:** *pending the user's existing screen-byte decoder* — we'll adapt
   the renderer to its interface rather than reinvent the byte→pixel mapping.
+  Conveniently, that decoder's `unpack_line(32 bmp, 32 attrs, 256 out)` already
+  *is* a scanline decoder (a display scanline's 32 bitmap bytes are contiguous
+  in storage), so an `unpack_scanline(y)` wrapper is the natural entry point.
+
+### 6.1 Tracking granularity: scanline, not 8×8 cell
+
+We track dirty **scanlines**, because the scanline is the ULA's natural temporal
+unit and the cell is a purely spatial convenience with no hardware meaning:
+
+- The ULA draws line by line (~224 T-states/line; ~128 of active display) and
+  **contends** CPU access to `0x4000–0x7FFF` *during each line's fetch*. Memory
+  contention, border, and raster effects are all per-line / per-T-state. A cell
+  spans 8 lines drawn at 8 different times, so it cannot express "this line was
+  drawn before the CPU's write, that one after." The scanline can.
+- This is the granularity that **survives** the move to a cycle-accurate ULA,
+  which renders each scanline at its T-state from current memory (raster effects
+  and contention then come for free). A cell-based path would be discarded.
+- Address → scanline is a clean inversion of the interleave:
+  - bitmap `a`: `o=a-0x4000; y=(o/2048)*64 + ((o%256)/32)*8 + (o%2048)/256`
+  - attribute `a`: `row=(a-0x5800)/32; dirty y = row*8 .. row*8+7`
+- State is just `dirty[192]`.
+
+Note: a full-screen redraw is only 49,152 pixels, so dirty-scanline tracking is
+a *modest* optimization — its real value is the timing seam above, not redraw
+savings.
 
 ## 7. I/O map (Spectrum 48K, relevant bits)
 
@@ -178,7 +206,7 @@ ULA is the first Device (video, border, keyboard, ear/mic/speaker, 50Hz INT).
    unit test that two observers both fire. *(headless)*
 4. **Device + Machine scaffolding** — frame loop, INT per frame, "run as
    Spectrum" mode wired through DebugSession (breakpoints still apply).
-5. **ULA video** — border + dirty-cell screen tracking + decode (user's decoder)
+5. **ULA video** — border + dirty-scanline screen tracking + decode (user's decoder)
    → texture → **Screen panel** + FLASH. Verify by booting the 48K ROM to its
    copyright screen (screenshot).
 6. **Milestone 2+**: keyboard → beeper → tape.

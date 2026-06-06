@@ -9,8 +9,8 @@
 //     change is timestamped with its frame-relative T-state, so per-scanline
 //     border effects (loading stripes, rainbows) reconstruct correctly. The
 //     timeline is resolved to a per-line colour once per frame.
-//   * IN from an even port returns the keyboard half-rows + EAR (currently
-//     "no keys"); other ports float.
+//   * IN from an even port returns the keyboard matrix + EAR — the port's high
+//     byte selects half-rows (active low); other ports float.
 //   * end_frame() advances the FLASH phase (every 16 frames) and starts a fresh
 //     border timeline carrying the last colour forward.
 //   * As a FrameSource it answers border_for_line() from the resolved timeline
@@ -53,11 +53,17 @@ public:
         current_border_ = colour;
     }
 
-    /// @brief IN handler. Even ports read the keyboard half-rows + EAR; the
-    ///        keyboard is currently "all up". Other ports float (0xFF).
+    /// @brief IN handler. Even ports read the keyboard matrix + EAR; other ports
+    ///        float (0xFF). The port's high byte selects half-rows (active low):
+    ///        A(8+r) low selects half-row r; the result is the AND of every
+    ///        selected row, so a pressed key in any of them pulls its bit low.
     [[nodiscard]] uint8_t read_port(uint16_t port) const {
         if ((port & 1) != 0) return 0xFF;
-        return static_cast<uint8_t>(keyboard_ | 0xE0);   // bits 5..7 high (EAR high)
+        uint8_t result = 0x1F;                       // D0..D4 high = no key
+        for (int row = 0; row < 8; ++row)
+            if (((port >> (8 + row)) & 1) == 0)      // address line low -> row selected
+                result &= key_rows_[static_cast<std::size_t>(row)];
+        return static_cast<uint8_t>(result | 0xE0);  // D5..D7 high (EAR high, no tape)
     }
 
     // -- Frame advance -------------------------------------------------------
@@ -91,9 +97,22 @@ public:
     [[nodiscard]] uint64_t frame_counter() const noexcept { return frame_counter_; }
     [[nodiscard]] uint8_t border() const noexcept { return current_border_; }
 
-    /// @brief Set keyboard half-row bits (bits 0..4; 0 = pressed). Full matrix
-    ///        decode by address half lands with input handling.
-    void set_keyboard(uint8_t bits) noexcept { keyboard_ = static_cast<uint8_t>(bits & 0x1F); }
+    // -- Keyboard input (host -> matrix) -------------------------------------
+
+    /// @brief Press a key: clear its data bit in the half-row (0 = pressed).
+    void key_down(uint8_t half_row, uint8_t bit) noexcept {
+        if (half_row < 8 && bit < 5)
+            key_rows_[half_row] = static_cast<uint8_t>(key_rows_[half_row] & ~(1u << bit));
+    }
+
+    /// @brief Release a key: set its data bit back to 1.
+    void key_up(uint8_t half_row, uint8_t bit) noexcept {
+        if (half_row < 8 && bit < 5)
+            key_rows_[half_row] = static_cast<uint8_t>(key_rows_[half_row] | (1u << bit));
+    }
+
+    /// @brief Release every key (call before re-applying the host key state).
+    void release_all_keys() noexcept { key_rows_.fill(0x1F); }
 
 private:
     struct BorderEvent {
@@ -129,7 +148,7 @@ private:
     std::vector<BorderEvent> border_events_{{0, 0}};   // always non-empty (baseline)
     std::array<uint8_t, video::kFrameHeight> border_per_line_{};
     uint8_t current_border_ = 0;
-    uint8_t keyboard_ = 0x1F;          // bits 0..4 = 1 -> no keys pressed
+    std::array<uint8_t, 8> key_rows_{0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F};
     uint64_t frame_start_ = 0;
     uint64_t frame_counter_ = 0;
 };

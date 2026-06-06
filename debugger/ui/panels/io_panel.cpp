@@ -1,5 +1,5 @@
 //
-// Z80 Digital Twin Debugger - I/O ports panel implementation
+// Z80 Digital Twin Debugger - I/O bus panel implementation
 // Copyright (c) 2025 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
@@ -14,29 +14,51 @@ namespace z80::dbg {
 void IoPanel::Draw(UiContext& ctx) {
     ImGui::SetNextWindowPos(ImVec2(1290, 120), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(310, 868), ImGuiCond_FirstUseEver);
-    ImGui::Begin("I/O Ports");
+    ImGui::Begin("I/O Bus");
 
-    if (ImGui::BeginTable("io", 3,
+    // I/O is a sequence of bus transactions, not a table of stored values:
+    // OUT is a transient write, IN reads a device's live state, and reading a
+    // port can have side effects — so we show what the *program* did and never
+    // poll ports ourselves. The transaction log comes from ObservableIo.
+    auto& io = ctx.cpu().GetIo();
+    const auto& transactions = io.Transactions();
+
+    ImGui::Text("transactions: %llu", static_cast<unsigned long long>(io.TransactionCount()));
+    ImGui::SameLine();
+    if (ImGui::Button("Clear")) io.ClearTransactions();
+    ImGui::SameLine();
+    ImGui::TextDisabled("(bus activity; not stored port values)");
+
+    if (transactions.empty()) {
+        ImGui::TextDisabled("No I/O performed yet.");
+        ImGui::End();
+        return;
+    }
+
+    if (ImGui::BeginTable("io", 4,
                           ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY |
-                          ImGuiTableFlags_SizingFixedFit)) {
+                          ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("Seq");
+        ImGui::TableSetupColumn("Dir");
         ImGui::TableSetupColumn("Port");
-        ImGui::TableSetupColumn("Hex");
-        ImGui::TableSetupColumn("Dec");
+        ImGui::TableSetupColumn("Value");
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
 
-        ImGuiListClipper clipper;
-        clipper.Begin(256);
-        while (clipper.Step()) {
-            for (int p = clipper.DisplayStart; p < clipper.DisplayEnd; ++p) {
-                const uint8_t v = ctx.cpu().ReadPort(static_cast<uint8_t>(p));
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0); ImGui::Text("%02X", p);
-                ImGui::TableSetColumnIndex(1); ImGui::Text("%02X", v);
-                ImGui::TableSetColumnIndex(2); ImGui::Text("%u", v);
-            }
+        // Most recent first.
+        for (std::size_t i = transactions.size(); i-- > 0;) {
+            const auto& t = transactions[i];
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Text("%llu", static_cast<unsigned long long>(t.seq));
+            ImGui::TableSetColumnIndex(1);
+            if (t.is_out) ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.4f, 1.0f), "OUT");
+            else          ImGui::TextColored(ImVec4(0.5f, 0.85f, 1.0f, 1.0f), "IN");
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Text("0x%04X", t.port);
+            ImGui::TableSetColumnIndex(3);
+            ImGui::Text("0x%02X (%u)", t.value, t.value);
         }
-        clipper.End();
         ImGui::EndTable();
     }
     ImGui::End();

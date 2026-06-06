@@ -19,6 +19,8 @@
 
 #include "z80_cpu.h"
 #include "memory/observable_memory.h"
+#include "io/latched_io.h"
+#include "io/observable_io.h"
 #include "disassembler.h"
 
 #include <array>
@@ -30,8 +32,10 @@
 
 namespace z80::dbg {
 
-/// @brief The CPU configuration the debugger drives: observable memory plug.
-using DebugCPU = CPUImpl<ObservableMemory>;
+/// @brief The CPU configuration the debugger drives: observable memory + an
+///        observable I/O device (latched ports, with a transaction log for the
+///        UI). A running machine config will substitute its own device later.
+using DebugCPU = CPUImpl<ObservableMemory, ObservableIo<LatchedIo>>;
 
 /// @brief High-level run state of the session.
 enum class RunState {

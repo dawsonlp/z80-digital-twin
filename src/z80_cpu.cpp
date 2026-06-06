@@ -5,6 +5,8 @@
 
 #include "z80_cpu.h"
 #include "memory/observable_memory.h"
+#include "io/latched_io.h"
+#include "io/observable_io.h"
 #include <algorithm>
 
 namespace z80 {
@@ -13,17 +15,17 @@ namespace z80 {
 // Construction/Destruction
 // =============================================================================
 
-template <class Memory>
-CPUImpl<Memory>::CPUImpl() {
+template <class Memory, class Io>
+CPUImpl<Memory, Io>::CPUImpl() {
     Reset();
     InitializeInstructionTables();
 }
 
-template <class Memory>
-CPUImpl<Memory>::~CPUImpl() = default;
+template <class Memory, class Io>
+CPUImpl<Memory, Io>::~CPUImpl() = default;
 
-template <class Memory>
-void CPUImpl<Memory>::Reset() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::Reset() {
     // Initialize CPU state
     t_cycle = 0;
     _PC = 0;
@@ -56,24 +58,22 @@ void CPUImpl<Memory>::Reset() {
     // Initialize prefix state
     current_state = CPUState::NORMAL;
     
-    // Clear memory and I/O - Skip for now to avoid potential stack issues
-    // memory.fill(0);
-    // io_ports.fill(0);
+    // Memory and I/O devices manage their own initial state (the policies).
 }
 
 // =============================================================================
 // Core Execution
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::RunUntilCycle(uint64_t target_cycle) {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RunUntilCycle(uint64_t target_cycle) {
     while (t_cycle < target_cycle && !_halted) {
         Step();
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::Step() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::Step() {
     // Fetch instruction opcode
     uint8_t opcode = memory[PC()++];
     
@@ -189,8 +189,8 @@ void CPUImpl<Memory>::Step() {
 // Memory and I/O Access
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::LoadProgram(const std::vector<uint8_t>& program, uint16_t start_address) {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LoadProgram(const std::vector<uint8_t>& program, uint16_t start_address) {
     for (size_t i = 0; i < program.size() && (start_address + i) < Constants::MEMORY_SIZE; ++i) {
         memory[start_address + i] = program[i];
     }
@@ -200,8 +200,8 @@ void CPUImpl<Memory>::LoadProgram(const std::vector<uint8_t>& program, uint16_t 
 // Instruction Table Initialization
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::InitializeInstructionTables() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::InitializeInstructionTables() {
     // Initialize all tables to NOP
     basic_opcodes.fill(&CPUImpl::NOP);
     ED_opcodes.fill(&CPUImpl::ED_NOP);
@@ -565,8 +565,8 @@ void CPUImpl<Memory>::InitializeInstructionTables() {
 // Helper Functions
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::SetCarryFlag(bool value) {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetCarryFlag(bool value) {
     if (value) {
         F() |= Constants::Flags::CARRY;
     } else {
@@ -574,8 +574,8 @@ void CPUImpl<Memory>::SetCarryFlag(bool value) {
     }
 }
 
-template <class Memory>
-bool CPUImpl<Memory>::GetCarryFlag() const {
+template <class Memory, class Io>
+bool CPUImpl<Memory, Io>::GetCarryFlag() const {
     return (_AF.r8.lo & Constants::Flags::CARRY) != 0;
 }
 
@@ -583,34 +583,34 @@ bool CPUImpl<Memory>::GetCarryFlag() const {
 // Basic Instructions (0x00-0x3F)
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::NOP() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::NOP() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_BC_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_BC_nn() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     BC() = WZ();
     PC() += 2;
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mBC_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mBC_A() {
     WZ() = BC();
     memory[WZ()] = A();
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INC_BC() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INC_BC() {
     BC()++;
     t_cycle += 6;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INC_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INC_B() {
     uint8_t old_b = B();
     B()++;
     F() &= 0x01; // Preserve carry
@@ -621,8 +621,8 @@ void CPUImpl<Memory>::INC_B() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DEC_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DEC_B() {
     uint8_t old_b = B();
     B()--;
     F() &= 0x01; // Preserve carry
@@ -634,30 +634,30 @@ void CPUImpl<Memory>::DEC_B() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_B_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_B_n() {
     B() = memory[PC()++];
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RLCA() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RLCA() {
     uint8_t old_bit7 = (A() & 0x80) ? 1 : 0;
     A() = (A() << 1) | old_bit7;
     F() = (F() & 0xEC) | old_bit7;
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::EX_AF_AF() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::EX_AF_AF() {
     uint16_t temp = AF();
     AF() = _AF1.r16;
     _AF1.r16 = temp;
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_HL_BC() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_HL_BC() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
     uint32_t result = hl_reg + BC();
     F() &= 0xC4; // Preserve S, Z, P/V
@@ -669,21 +669,21 @@ void CPUImpl<Memory>::ADD_HL_BC() {
     t_cycle += (current_state == CPUState::NORMAL) ? 11 : 15;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_mBC() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_mBC() {
     WZ() = BC();
     A() = memory[WZ()];
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DEC_BC() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DEC_BC() {
     BC()--;
     t_cycle += 6;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INC_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INC_C() {
     uint8_t old_c = C();
     C()++;
     F() &= 0x01; // Preserve carry
@@ -694,8 +694,8 @@ void CPUImpl<Memory>::INC_C() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DEC_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DEC_C() {
     uint8_t old_c = C();
     C()--;
     F() &= 0x01; // Preserve carry
@@ -707,22 +707,22 @@ void CPUImpl<Memory>::DEC_C() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_C_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_C_n() {
     C() = memory[PC()++];
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RRCA() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RRCA() {
     uint8_t old_bit0 = A() & 0x01;
     A() = (A() >> 1) | (old_bit0 << 7);
     F() = (F() & 0xEC) | old_bit0;
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DJNZ() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DJNZ() {
     int8_t displacement = memory[PC()++];
     B()--;
     if (B() != 0) {
@@ -734,29 +734,29 @@ void CPUImpl<Memory>::DJNZ() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_DE_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_DE_nn() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     DE() = WZ();
     PC() += 2;
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mDE_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mDE_A() {
     WZ() = DE();
     memory[WZ()] = A();
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INC_DE() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INC_DE() {
     DE()++;
     t_cycle += 6;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INC_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INC_D() {
     uint8_t old_d = D();
     D()++;
     F() &= 0x01; // Preserve carry
@@ -767,8 +767,8 @@ void CPUImpl<Memory>::INC_D() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DEC_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DEC_D() {
     uint8_t old_d = D();
     D()--;
     F() &= 0x01; // Preserve carry
@@ -780,14 +780,14 @@ void CPUImpl<Memory>::DEC_D() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_D_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_D_n() {
     D() = memory[PC()++];
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RLA() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RLA() {
     uint8_t old_carry = F() & 0x01;
     uint8_t new_carry = (A() & 0x80) ? 1 : 0;
     A() = (A() << 1) | old_carry;
@@ -795,16 +795,16 @@ void CPUImpl<Memory>::RLA() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JR() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JR() {
     int8_t displacement = memory[PC()++];
     WZ() = PC() + displacement;
     PC() = WZ();
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_HL_DE() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_HL_DE() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
     uint32_t result = hl_reg + DE();
     F() &= 0xC4; // Preserve S, Z, P/V
@@ -816,21 +816,21 @@ void CPUImpl<Memory>::ADD_HL_DE() {
     t_cycle += (current_state == CPUState::NORMAL) ? 11 : 15;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_mDE() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_mDE() {
     WZ() = DE();
     A() = memory[WZ()];
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DEC_DE() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DEC_DE() {
     DE()--;
     t_cycle += 6;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INC_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INC_E() {
     uint8_t old_e = E();
     E()++;
     F() &= 0x01; // Preserve carry
@@ -841,8 +841,8 @@ void CPUImpl<Memory>::INC_E() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DEC_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DEC_E() {
     uint8_t old_e = E();
     E()--;
     F() &= 0x01; // Preserve carry
@@ -854,14 +854,14 @@ void CPUImpl<Memory>::DEC_E() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_E_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_E_n() {
     E() = memory[PC()++];
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RRA() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RRA() {
     uint8_t old_carry = F() & 0x01;
     uint8_t new_carry = A() & 0x01;
     A() = (A() >> 1) | (old_carry << 7);
@@ -869,8 +869,8 @@ void CPUImpl<Memory>::RRA() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JR_NZ() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JR_NZ() {
     int8_t displacement = memory[PC()++];
     if (!(F() & 0x40)) { // Zero flag not set
         WZ() = PC() + displacement;
@@ -881,16 +881,16 @@ void CPUImpl<Memory>::JR_NZ() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_HL_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_HL_nn() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     GetEffectiveHL_Register() = WZ();
     PC() += 2;
     t_cycle += 10; // Base instruction timing - prefix adds its own 4 cycles
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mnn_HL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mnn_HL() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     PC() += 2;
     uint16_t& hl_reg = GetEffectiveHL_Register();
@@ -899,14 +899,14 @@ void CPUImpl<Memory>::LD_mnn_HL() {
     t_cycle += 16;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INC_HL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INC_HL() {
     GetEffectiveHL_Register()++;
     t_cycle += GetRegisterOpCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INC_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INC_H() {
     uint8_t& h_reg = GetEffectiveH();
     uint8_t old_h = h_reg;
     h_reg++;
@@ -918,8 +918,8 @@ void CPUImpl<Memory>::INC_H() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DEC_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DEC_H() {
     uint8_t& h_reg = GetEffectiveH();
     uint8_t old_h = h_reg;
     h_reg--;
@@ -932,14 +932,14 @@ void CPUImpl<Memory>::DEC_H() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_H_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_H_n() {
     GetEffectiveH() = memory[PC()++];
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DAA() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DAA() {
     uint8_t correction = 0;
     bool carry = F() & 0x01;
     
@@ -967,8 +967,8 @@ void CPUImpl<Memory>::DAA() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JR_Z() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JR_Z() {
     int8_t displacement = memory[PC()++];
     if (F() & 0x40) { // Zero flag set
         WZ() = PC() + displacement;
@@ -979,8 +979,8 @@ void CPUImpl<Memory>::JR_Z() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_HL_HL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_HL_HL() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
     uint32_t result = hl_reg + hl_reg;
     F() &= 0xC4; // Preserve S, Z, P/V
@@ -992,8 +992,8 @@ void CPUImpl<Memory>::ADD_HL_HL() {
     t_cycle += (current_state == CPUState::NORMAL) ? 11 : 15;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_HL_mnn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_HL_mnn() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     PC() += 2;
     uint16_t& hl_reg = GetEffectiveHL_Register();
@@ -1001,14 +1001,14 @@ void CPUImpl<Memory>::LD_HL_mnn() {
     t_cycle += 16;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DEC_HL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DEC_HL() {
     GetEffectiveHL_Register()--;
     t_cycle += GetRegisterOpCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INC_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INC_L() {
     uint8_t& l_reg = GetEffectiveL();
     uint8_t old_l = l_reg;
     l_reg++;
@@ -1020,8 +1020,8 @@ void CPUImpl<Memory>::INC_L() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DEC_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DEC_L() {
     uint8_t& l_reg = GetEffectiveL();
     uint8_t old_l = l_reg;
     l_reg--;
@@ -1034,21 +1034,21 @@ void CPUImpl<Memory>::DEC_L() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_L_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_L_n() {
     GetEffectiveL() = memory[PC()++];
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CPL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CPL() {
     A() = ~A();
     F() |= 0x12; // Set N and H flags
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JR_NC() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JR_NC() {
     int8_t displacement = memory[PC()++];
     if (!(F() & 0x01)) { // Carry flag not set
         WZ() = PC() + displacement;
@@ -1059,30 +1059,30 @@ void CPUImpl<Memory>::JR_NC() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_SP_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_SP_nn() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     SP() = WZ();
     PC() += 2;
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mnn_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mnn_A() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     PC() += 2;
     memory[WZ()] = A();
     t_cycle += 13;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INC_SP() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INC_SP() {
     SP()++;
     t_cycle += 6;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INC_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INC_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
     uint8_t old_value = value;
@@ -1096,8 +1096,8 @@ void CPUImpl<Memory>::INC_mHL() {
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DEC_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DEC_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
     uint8_t old_value = value;
@@ -1112,22 +1112,22 @@ void CPUImpl<Memory>::DEC_mHL() {
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mHL_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mHL_n() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = memory[PC()++];
     t_cycle += GetMemoryAccessCycles() + 3; // Base 7 cycles + 3 for immediate byte
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SCF() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SCF() {
     F() |= 0x01; // Set carry
     F() &= 0xED; // Clear N and H
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JR_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JR_C() {
     int8_t displacement = memory[PC()++];
     if (F() & 0x01) { // Carry flag set
         WZ() = PC() + displacement;
@@ -1138,8 +1138,8 @@ void CPUImpl<Memory>::JR_C() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_HL_SP() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_HL_SP() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
     uint32_t result = hl_reg + SP();
     F() &= 0xC4; // Preserve S, Z, P/V
@@ -1151,22 +1151,22 @@ void CPUImpl<Memory>::ADD_HL_SP() {
     t_cycle += (current_state == CPUState::NORMAL) ? 11 : 15;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_mnn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_mnn() {
     WZ() = memory[PC()] | (memory[PC()+1] << 8);
     PC() += 2;
     A() = memory[WZ()];
     t_cycle += 13;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DEC_SP() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DEC_SP() {
     SP()--;
     t_cycle += 6;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INC_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INC_A() {
     uint8_t old_a = A();
     A()++;
     F() &= 0x01; // Preserve carry
@@ -1177,8 +1177,8 @@ void CPUImpl<Memory>::INC_A() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DEC_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DEC_A() {
     uint8_t old_a = A();
     A()--;
     F() &= 0x01; // Preserve carry
@@ -1190,64 +1190,64 @@ void CPUImpl<Memory>::DEC_A() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_n() {
     A() = memory[PC()++];
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CCF() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CCF() {
     F() ^= 0x01; // Flip carry
     F() &= 0xED; // Clear N and H
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_B_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_B_B() {
     // B = B (NOP equivalent)
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_B_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_B_C() {
     B() = C();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_B_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_B_D() {
     B() = D();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_B_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_B_E() {
     B() = E();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_B_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_B_H() {
     B() = GetEffectiveH();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_B_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_B_L() {
     B() = GetEffectiveL();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_B_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_B_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     B() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_B_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_B_A() {
     B() = A();
     t_cycle += 4;
 }
@@ -1256,352 +1256,352 @@ void CPUImpl<Memory>::LD_B_A() {
 // Load Instructions (0x48-0x7F) - Remaining register-to-register transfers
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::LD_C_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_C_B() {
     C() = B();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_C_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_C_C() {
     // C = C (NOP equivalent)
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_C_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_C_D() {
     C() = D();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_C_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_C_E() {
     C() = E();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_C_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_C_H() {
     C() = GetEffectiveH();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_C_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_C_L() {
     C() = GetEffectiveL();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_C_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_C_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     C() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_C_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_C_A() {
     C() = A();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_D_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_D_B() {
     D() = B();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_D_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_D_C() {
     D() = C();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_D_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_D_D() {
     // D = D (NOP equivalent)
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_D_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_D_E() {
     D() = E();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_D_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_D_H() {
     D() = GetEffectiveH();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_D_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_D_L() {
     D() = GetEffectiveL();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_D_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_D_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     D() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_D_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_D_A() {
     D() = A();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_E_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_E_B() {
     E() = B();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_E_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_E_C() {
     E() = C();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_E_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_E_D() {
     E() = D();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_E_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_E_E() {
     // E = E (NOP equivalent)
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_E_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_E_H() {
     E() = GetEffectiveH();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_E_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_E_L() {
     E() = GetEffectiveL();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_E_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_E_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     E() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_E_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_E_A() {
     E() = A();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_H_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_H_B() {
     GetEffectiveH() = B();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_H_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_H_C() {
     GetEffectiveH() = C();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_H_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_H_D() {
     GetEffectiveH() = D();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_H_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_H_E() {
     GetEffectiveH() = E();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_H_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_H_H() {
     // H = H (NOP equivalent)
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_H_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_H_L() {
     GetEffectiveH() = GetEffectiveL();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_H_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_H_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     H() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_H_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_H_A() {
     GetEffectiveH() = A();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_L_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_L_B() {
     GetEffectiveL() = B();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_L_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_L_C() {
     GetEffectiveL() = C();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_L_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_L_D() {
     GetEffectiveL() = D();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_L_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_L_E() {
     GetEffectiveL() = E();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_L_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_L_H() {
     GetEffectiveL() = GetEffectiveH();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_L_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_L_L() {
     // L = L (NOP equivalent)
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_L_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_L_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     L() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_L_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_L_A() {
     GetEffectiveL() = A();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mHL_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mHL_B() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = B();
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mHL_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mHL_C() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = C();
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mHL_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mHL_D() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = D();
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mHL_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mHL_E() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = E();
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mHL_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mHL_H() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = H();
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mHL_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mHL_L() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = L();
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::HALT() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::HALT() {
     // HALT instruction - processor stops until interrupt
     _halted = true;
     t_cycle += 4;  // HALT instruction takes 4 cycles
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mHL_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mHL_A() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = A();
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_B() {
     A() = B();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_C() {
     A() = C();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_D() {
     A() = D();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_E() {
     A() = E();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_H() {
     A() = GetEffectiveH();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_L() {
     A() = GetEffectiveL();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     A() = memory[address];
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_A() {
     // A = A (NOP equivalent)
     t_cycle += 4;
 }
@@ -1610,8 +1610,8 @@ void CPUImpl<Memory>::LD_A_A() {
 // Flag Helper Functions
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::SetFlags_ADD(uint8_t result, uint8_t operand1, uint8_t operand2) {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetFlags_ADD(uint8_t result, uint8_t operand1, uint8_t operand2) {
     F() = 0; // Clear all flags
     
     // Sign flag (bit 7)
@@ -1632,8 +1632,8 @@ void CPUImpl<Memory>::SetFlags_ADD(uint8_t result, uint8_t operand1, uint8_t ope
     // N flag is cleared for addition
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SetFlags_SUB(uint8_t result, uint8_t operand1, uint8_t operand2) {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetFlags_SUB(uint8_t result, uint8_t operand1, uint8_t operand2) {
     F() = Constants::Flags::SUBTRACT; // Set N flag for subtraction
     
     // Sign flag (bit 7)
@@ -1652,8 +1652,8 @@ void CPUImpl<Memory>::SetFlags_SUB(uint8_t result, uint8_t operand1, uint8_t ope
     if (operand1 < operand2) F() |= Constants::Flags::CARRY;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SetFlags_LOGIC(uint8_t result) {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetFlags_LOGIC(uint8_t result) {
     F() = 0; // Clear all flags
     
     // Sign flag (bit 7)
@@ -1672,8 +1672,8 @@ void CPUImpl<Memory>::SetFlags_LOGIC(uint8_t result) {
     // N flag is cleared for logical operations
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::CalculateParity(uint8_t value) {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::CalculateParity(uint8_t value) {
     uint8_t parity = 0;
     for (int i = 0; i < 8; ++i) {
         if (value & (1 << i)) parity++;
@@ -1685,40 +1685,40 @@ uint8_t CPUImpl<Memory>::CalculateParity(uint8_t value) {
 // Arithmetic and Logic Instructions (0x80-0xBF)
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_A_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_A_B() {
     uint8_t old_a = A();
     A() += B();
     SetFlags_ADD(A(), old_a, B());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_A_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_A_C() {
     uint8_t old_a = A();
     A() += C();
     SetFlags_ADD(A(), old_a, C());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_A_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_A_D() {
     uint8_t old_a = A();
     A() += D();
     SetFlags_ADD(A(), old_a, D());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_A_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_A_E() {
     uint8_t old_a = A();
     A() += E();
     SetFlags_ADD(A(), old_a, E());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_A_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_A_H() {
     uint8_t old_a = A();
     uint8_t h_val = GetEffectiveH();
     A() += h_val;
@@ -1726,8 +1726,8 @@ void CPUImpl<Memory>::ADD_A_H() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_A_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_A_L() {
     uint8_t old_a = A();
     uint8_t l_val = GetEffectiveL();
     A() += l_val;
@@ -1735,8 +1735,8 @@ void CPUImpl<Memory>::ADD_A_L() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_A_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_A_mHL() {
     uint8_t old_a = A();
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
@@ -1745,16 +1745,16 @@ void CPUImpl<Memory>::ADD_A_mHL() {
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_A_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_A_A() {
     uint8_t old_a = A();
     A() += A();
     SetFlags_ADD(A(), old_a, old_a);
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_A_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_A_B() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(B()) + carry;
@@ -1770,8 +1770,8 @@ void CPUImpl<Memory>::ADC_A_B() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_A_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_A_C() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(C()) + carry;
@@ -1787,8 +1787,8 @@ void CPUImpl<Memory>::ADC_A_C() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_A_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_A_D() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(D()) + carry;
@@ -1804,8 +1804,8 @@ void CPUImpl<Memory>::ADC_A_D() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_A_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_A_E() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(E()) + carry;
@@ -1821,8 +1821,8 @@ void CPUImpl<Memory>::ADC_A_E() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_A_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_A_H() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint8_t h_val = GetEffectiveH();
@@ -1839,8 +1839,8 @@ void CPUImpl<Memory>::ADC_A_H() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_A_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_A_L() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint8_t l_val = GetEffectiveL();
@@ -1857,8 +1857,8 @@ void CPUImpl<Memory>::ADC_A_L() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_A_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_A_mHL() {
     uint8_t old_a = A();
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
@@ -1876,8 +1876,8 @@ void CPUImpl<Memory>::ADC_A_mHL() {
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_A_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_A_A() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(A()) + carry;
@@ -1893,40 +1893,40 @@ void CPUImpl<Memory>::ADC_A_A() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SUB_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SUB_B() {
     uint8_t old_a = A();
     A() -= B();
     SetFlags_SUB(A(), old_a, B());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SUB_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SUB_C() {
     uint8_t old_a = A();
     A() -= C();
     SetFlags_SUB(A(), old_a, C());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SUB_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SUB_D() {
     uint8_t old_a = A();
     A() -= D();
     SetFlags_SUB(A(), old_a, D());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SUB_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SUB_E() {
     uint8_t old_a = A();
     A() -= E();
     SetFlags_SUB(A(), old_a, E());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SUB_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SUB_H() {
     uint8_t old_a = A();
     uint8_t h_val = GetEffectiveH();
     A() -= h_val;
@@ -1934,8 +1934,8 @@ void CPUImpl<Memory>::SUB_H() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SUB_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SUB_L() {
     uint8_t old_a = A();
     uint8_t l_val = GetEffectiveL();
     A() -= l_val;
@@ -1943,8 +1943,8 @@ void CPUImpl<Memory>::SUB_L() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SUB_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SUB_mHL() {
     uint8_t old_a = A();
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
@@ -1953,16 +1953,16 @@ void CPUImpl<Memory>::SUB_mHL() {
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SUB_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SUB_A() {
     uint8_t old_a = A();
     A() -= A(); // Result is always 0
     SetFlags_SUB(A(), old_a, old_a);
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_A_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_A_B() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(B()) - carry;
@@ -1978,8 +1978,8 @@ void CPUImpl<Memory>::SBC_A_B() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_A_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_A_C() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(C()) - carry;
@@ -1995,8 +1995,8 @@ void CPUImpl<Memory>::SBC_A_C() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_A_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_A_D() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(D()) - carry;
@@ -2012,8 +2012,8 @@ void CPUImpl<Memory>::SBC_A_D() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_A_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_A_E() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(E()) - carry;
@@ -2029,8 +2029,8 @@ void CPUImpl<Memory>::SBC_A_E() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_A_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_A_H() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint8_t h_val = GetEffectiveH();
@@ -2047,8 +2047,8 @@ void CPUImpl<Memory>::SBC_A_H() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_A_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_A_L() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint8_t l_val = GetEffectiveL();
@@ -2065,8 +2065,8 @@ void CPUImpl<Memory>::SBC_A_L() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_A_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_A_mHL() {
     uint8_t old_a = A();
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
@@ -2084,8 +2084,8 @@ void CPUImpl<Memory>::SBC_A_mHL() {
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_A_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_A_A() {
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(A()) - carry;
@@ -2101,223 +2101,223 @@ void CPUImpl<Memory>::SBC_A_A() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::AND_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::AND_B() {
     A() &= B();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::AND_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::AND_C() {
     A() &= C();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::AND_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::AND_D() {
     A() &= D();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::AND_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::AND_E() {
     A() &= E();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::AND_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::AND_H() {
     A() &= GetEffectiveH();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::AND_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::AND_L() {
     A() &= GetEffectiveL();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::AND_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::AND_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     A() &= memory[address];
     SetFlags_LOGIC(A());
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::AND_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::AND_A() {
     A() &= A();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::XOR_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::XOR_B() {
     A() ^= B();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::XOR_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::XOR_C() {
     A() ^= C();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::XOR_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::XOR_D() {
     A() ^= D();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::XOR_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::XOR_E() {
     A() ^= E();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::XOR_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::XOR_H() {
     A() ^= GetEffectiveH();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::XOR_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::XOR_L() {
     A() ^= GetEffectiveL();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::XOR_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::XOR_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     A() ^= memory[address];
     SetFlags_LOGIC(A());
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::XOR_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::XOR_A() {
     A() ^= A(); // Result is always 0
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OR_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OR_B() {
     A() |= B();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OR_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OR_C() {
     A() |= C();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OR_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OR_D() {
     A() |= D();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OR_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OR_E() {
     A() |= E();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OR_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OR_H() {
     A() |= GetEffectiveH();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OR_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OR_L() {
     A() |= GetEffectiveL();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OR_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OR_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     A() |= memory[address];
     SetFlags_LOGIC(A());
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OR_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OR_A() {
     A() |= A();
     SetFlags_LOGIC(A());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CP_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CP_B() {
     uint8_t result = A() - B();
     SetFlags_SUB(result, A(), B());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CP_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CP_C() {
     uint8_t result = A() - C();
     SetFlags_SUB(result, A(), C());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CP_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CP_D() {
     uint8_t result = A() - D();
     SetFlags_SUB(result, A(), D());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CP_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CP_E() {
     uint8_t result = A() - E();
     SetFlags_SUB(result, A(), E());
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CP_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CP_H() {
     uint8_t h_val = GetEffectiveH();
     uint8_t result = A() - h_val;
     SetFlags_SUB(result, A(), h_val);
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CP_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CP_L() {
     uint8_t l_val = GetEffectiveL();
     uint8_t result = A() - l_val;
     SetFlags_SUB(result, A(), l_val);
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CP_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CP_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
     uint8_t result = A() - value;
@@ -2325,8 +2325,8 @@ void CPUImpl<Memory>::CP_mHL() {
     t_cycle += GetMemoryAccessCycles();
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CP_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CP_A() {
     uint8_t result = A() - A();
     SetFlags_SUB(result, A(), A());
     t_cycle += 4;
@@ -2336,22 +2336,22 @@ void CPUImpl<Memory>::CP_A() {
 // Stack and Condition Helper Functions
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::PushWord(uint16_t value) {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::PushWord(uint16_t value) {
     SP() -= 2;
     memory[SP()] = value & 0xFF;        // Low byte
     memory[SP() + 1] = (value >> 8);    // High byte
 }
 
-template <class Memory>
-uint16_t CPUImpl<Memory>::PopWord() {
+template <class Memory, class Io>
+uint16_t CPUImpl<Memory, Io>::PopWord() {
     uint16_t value = memory[SP()] | (memory[SP() + 1] << 8);
     SP() += 2;
     return value;
 }
 
-template <class Memory>
-bool CPUImpl<Memory>::CheckCondition(uint8_t condition) {
+template <class Memory, class Io>
+bool CPUImpl<Memory, Io>::CheckCondition(uint8_t condition) {
     switch (condition) {
         case 0: return !(F() & Constants::Flags::ZERO);     // NZ - not zero
         case 1: return (F() & Constants::Flags::ZERO);      // Z - zero
@@ -2369,8 +2369,8 @@ bool CPUImpl<Memory>::CheckCondition(uint8_t condition) {
 // State-Aware IX/IY Helper Functions
 // =============================================================================
 
-template <class Memory>
-uint16_t CPUImpl<Memory>::GetEffectiveHL_Memory() {
+template <class Memory, class Io>
+uint16_t CPUImpl<Memory, Io>::GetEffectiveHL_Memory() {
     switch (current_state) {
         case CPUState::NORMAL:
             return HL();
@@ -2391,8 +2391,8 @@ uint16_t CPUImpl<Memory>::GetEffectiveHL_Memory() {
     }
 }
 
-template <class Memory>
-uint16_t& CPUImpl<Memory>::GetEffectiveHL_Register() {
+template <class Memory, class Io>
+uint16_t& CPUImpl<Memory, Io>::GetEffectiveHL_Register() {
     switch (current_state) {
         case CPUState::DD_PREFIX:
             return IX();
@@ -2403,8 +2403,8 @@ uint16_t& CPUImpl<Memory>::GetEffectiveHL_Register() {
     }
 }
 
-template <class Memory>
-uint8_t& CPUImpl<Memory>::GetEffectiveH() {
+template <class Memory, class Io>
+uint8_t& CPUImpl<Memory, Io>::GetEffectiveH() {
     switch (current_state) {
         case CPUState::DD_PREFIX:
             return _IX.r8.hi; // IXH
@@ -2415,8 +2415,8 @@ uint8_t& CPUImpl<Memory>::GetEffectiveH() {
     }
 }
 
-template <class Memory>
-uint8_t& CPUImpl<Memory>::GetEffectiveL() {
+template <class Memory, class Io>
+uint8_t& CPUImpl<Memory, Io>::GetEffectiveL() {
     switch (current_state) {
         case CPUState::DD_PREFIX:
             return _IX.r8.lo; // IXL
@@ -2427,20 +2427,20 @@ uint8_t& CPUImpl<Memory>::GetEffectiveL() {
     }
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::GetMemoryAccessCycles() {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::GetMemoryAccessCycles() {
     // Memory operations: HL=7 cycles, IX/IY=19 cycles (+12 for displacement calculation)
     return (current_state == CPUState::NORMAL) ? 7 : 19;
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::GetRegisterOpCycles() {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::GetRegisterOpCycles() {
     // Register operations: HL=6 cycles, IX/IY=6 cycles (prefix adds its own 4 cycles)
     return 6;
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::GetArithmeticMemCycles() {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::GetArithmeticMemCycles() {
     // Arithmetic with memory: HL=7 cycles, IX/IY=19 cycles (+12 for displacement)
     return (current_state == CPUState::NORMAL) ? 7 : 19;
 }
@@ -2449,8 +2449,8 @@ uint8_t CPUImpl<Memory>::GetArithmeticMemCycles() {
 // Control Flow, Stack, and I/O Instructions (0xC0-0xFF)
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::RET_NZ() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RET_NZ() {
     if (CheckCondition(0)) { // NZ
         PC() = PopWord();
         t_cycle += 11;
@@ -2459,14 +2459,14 @@ void CPUImpl<Memory>::RET_NZ() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::POP_BC() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::POP_BC() {
     BC() = PopWord();
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JP_NZ_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JP_NZ_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(0)) { // NZ
@@ -2475,15 +2475,15 @@ void CPUImpl<Memory>::JP_NZ_nn() {
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JP_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JP_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() = address;
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CALL_NZ_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CALL_NZ_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(0)) { // NZ
@@ -2495,14 +2495,14 @@ void CPUImpl<Memory>::CALL_NZ_nn() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::PUSH_BC() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::PUSH_BC() {
     PushWord(BC());
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADD_A_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADD_A_n() {
     uint8_t value = memory[PC()++];
     uint8_t old_a = A();
     A() += value;
@@ -2510,15 +2510,15 @@ void CPUImpl<Memory>::ADD_A_n() {
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RST_00() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RST_00() {
     PushWord(PC());
     PC() = 0x00;
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RET_Z() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RET_Z() {
     if (CheckCondition(1)) { // Z
         PC() = PopWord();
         t_cycle += 11;
@@ -2527,14 +2527,14 @@ void CPUImpl<Memory>::RET_Z() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RET() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RET() {
     PC() = PopWord();
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JP_Z_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JP_Z_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(1)) { // Z
@@ -2543,15 +2543,15 @@ void CPUImpl<Memory>::JP_Z_nn() {
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::PREFIX_CB() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::PREFIX_CB() {
     // This should never be called - CB prefix is handled in Step()
     // If we reach here, it means the state machine has a bug
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CALL_Z_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CALL_Z_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(1)) { // Z
@@ -2563,8 +2563,8 @@ void CPUImpl<Memory>::CALL_Z_nn() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CALL_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CALL_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     PushWord(PC());
@@ -2572,8 +2572,8 @@ void CPUImpl<Memory>::CALL_nn() {
     t_cycle += 17;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_A_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_A_n() {
     uint8_t value = memory[PC()++];
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -2590,15 +2590,15 @@ void CPUImpl<Memory>::ADC_A_n() {
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RST_08() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RST_08() {
     PushWord(PC());
     PC() = 0x08;
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RET_NC() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RET_NC() {
     if (CheckCondition(2)) { // NC
         PC() = PopWord();
         t_cycle += 11;
@@ -2607,14 +2607,14 @@ void CPUImpl<Memory>::RET_NC() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::POP_DE() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::POP_DE() {
     DE() = PopWord();
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JP_NC_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JP_NC_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(2)) { // NC
@@ -2623,15 +2623,16 @@ void CPUImpl<Memory>::JP_NC_nn() {
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OUT_n_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OUT_n_A() {
     uint8_t port = memory[PC()++];
-    WritePort(port, A());
+    // OUT (n),A drives A onto the high address byte (full 16-bit port).
+    io.Out((static_cast<uint16_t>(A()) << 8) | port, A());
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CALL_NC_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CALL_NC_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(2)) { // NC
@@ -2643,14 +2644,14 @@ void CPUImpl<Memory>::CALL_NC_nn() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::PUSH_DE() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::PUSH_DE() {
     PushWord(DE());
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SUB_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SUB_n() {
     uint8_t value = memory[PC()++];
     uint8_t old_a = A();
     A() -= value;
@@ -2658,15 +2659,15 @@ void CPUImpl<Memory>::SUB_n() {
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RST_10() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RST_10() {
     PushWord(PC());
     PC() = 0x10;
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RET_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RET_C() {
     if (CheckCondition(3)) { // C
         PC() = PopWord();
         t_cycle += 11;
@@ -2675,8 +2676,8 @@ void CPUImpl<Memory>::RET_C() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::EXX() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::EXX() {
     // Exchange BC, DE, HL with BC', DE', HL'
     uint16_t temp;
     temp = BC(); BC() = _BC1.r16; _BC1.r16 = temp;
@@ -2685,8 +2686,8 @@ void CPUImpl<Memory>::EXX() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JP_C_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JP_C_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(3)) { // C
@@ -2695,15 +2696,16 @@ void CPUImpl<Memory>::JP_C_nn() {
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::IN_A_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IN_A_n() {
     uint8_t port = memory[PC()++];
-    A() = ReadPort(port);
+    // IN A,(n) drives A onto the high address byte; A's old value forms the port.
+    A() = io.In((static_cast<uint16_t>(A()) << 8) | port);
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CALL_C_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CALL_C_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(3)) { // C
@@ -2715,14 +2717,14 @@ void CPUImpl<Memory>::CALL_C_nn() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::PREFIX_DD() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::PREFIX_DD() {
     // DD prefix handling is implemented in the main Step() state machine
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_A_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_A_n() {
     uint8_t value = memory[PC()++];
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -2739,15 +2741,15 @@ void CPUImpl<Memory>::SBC_A_n() {
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RST_18() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RST_18() {
     PushWord(PC());
     PC() = 0x18;
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RET_PO() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RET_PO() {
     if (CheckCondition(4)) { // PO
         PC() = PopWord();
         t_cycle += 11;
@@ -2756,14 +2758,14 @@ void CPUImpl<Memory>::RET_PO() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::POP_HL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::POP_HL() {
     GetEffectiveHL_Register() = PopWord();
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JP_PO_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JP_PO_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(4)) { // PO
@@ -2772,8 +2774,8 @@ void CPUImpl<Memory>::JP_PO_nn() {
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::EX_mSP_HL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::EX_mSP_HL() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
     uint16_t temp = memory[SP()] | (memory[SP() + 1] << 8);
     memory[SP()] = hl_reg & 0xFF;        // Low byte
@@ -2782,8 +2784,8 @@ void CPUImpl<Memory>::EX_mSP_HL() {
     t_cycle += 19;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CALL_PO_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CALL_PO_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(4)) { // PO
@@ -2795,29 +2797,29 @@ void CPUImpl<Memory>::CALL_PO_nn() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::PUSH_HL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::PUSH_HL() {
     PushWord(GetEffectiveHL_Register());
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::AND_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::AND_n() {
     uint8_t value = memory[PC()++];
     A() &= value;
     SetFlags_LOGIC(A());
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RST_20() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RST_20() {
     PushWord(PC());
     PC() = 0x20;
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RET_PE() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RET_PE() {
     if (CheckCondition(5)) { // PE
         PC() = PopWord();
         t_cycle += 11;
@@ -2826,14 +2828,14 @@ void CPUImpl<Memory>::RET_PE() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JP_HL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JP_HL() {
     PC() = GetEffectiveHL_Register();
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JP_PE_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JP_PE_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(5)) { // PE
@@ -2842,8 +2844,8 @@ void CPUImpl<Memory>::JP_PE_nn() {
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::EX_DE_HL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::EX_DE_HL() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
     uint16_t temp = DE();
     DE() = hl_reg;
@@ -2851,8 +2853,8 @@ void CPUImpl<Memory>::EX_DE_HL() {
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CALL_PE_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CALL_PE_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(5)) { // PE
@@ -2864,29 +2866,29 @@ void CPUImpl<Memory>::CALL_PE_nn() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::PREFIX_ED() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::PREFIX_ED() {
     // ED prefix handling is implemented in the main Step() state machine
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::XOR_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::XOR_n() {
     uint8_t value = memory[PC()++];
     A() ^= value;
     SetFlags_LOGIC(A());
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RST_28() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RST_28() {
     PushWord(PC());
     PC() = 0x28;
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RET_P() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RET_P() {
     if (CheckCondition(6)) { // P
         PC() = PopWord();
         t_cycle += 11;
@@ -2895,14 +2897,14 @@ void CPUImpl<Memory>::RET_P() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::POP_AF() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::POP_AF() {
     AF() = PopWord();
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JP_P_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JP_P_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(6)) { // P
@@ -2911,15 +2913,15 @@ void CPUImpl<Memory>::JP_P_nn() {
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::DI() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::DI() {
     IFF1() = false;
     IFF2() = false;
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CALL_P_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CALL_P_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(6)) { // P
@@ -2931,29 +2933,29 @@ void CPUImpl<Memory>::CALL_P_nn() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::PUSH_AF() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::PUSH_AF() {
     PushWord(AF());
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OR_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OR_n() {
     uint8_t value = memory[PC()++];
     A() |= value;
     SetFlags_LOGIC(A());
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RST_30() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RST_30() {
     PushWord(PC());
     PC() = 0x30;
     t_cycle += 11;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RET_M() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RET_M() {
     if (CheckCondition(7)) { // M
         PC() = PopWord();
         t_cycle += 11;
@@ -2962,14 +2964,14 @@ void CPUImpl<Memory>::RET_M() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_SP_HL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_SP_HL() {
     SP() = GetEffectiveHL_Register();
     t_cycle += 6;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::JP_M_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::JP_M_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(7)) { // M
@@ -2978,15 +2980,15 @@ void CPUImpl<Memory>::JP_M_nn() {
     t_cycle += 10;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::EI() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::EI() {
     IFF1() = true;
     IFF2() = true;
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CALL_M_nn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CALL_M_nn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     if (CheckCondition(7)) { // M
@@ -2998,22 +3000,22 @@ void CPUImpl<Memory>::CALL_M_nn() {
     }
 }
 
-template <class Memory>
-void CPUImpl<Memory>::PREFIX_FD() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::PREFIX_FD() {
     // FD prefix handling is implemented in the main Step() state machine
     t_cycle += 4;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CP_n() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CP_n() {
     uint8_t value = memory[PC()++];
     uint8_t result = A() - value;
     SetFlags_SUB(result, A(), value);
     t_cycle += 7;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RST_38() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RST_38() {
     PushWord(PC());
     PC() = 0x38;
     t_cycle += 11;
@@ -3023,8 +3025,8 @@ void CPUImpl<Memory>::RST_38() {
 // CB Instruction Implementation - Compact Decoder
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::ExecuteCBInstruction(uint8_t opcode) {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ExecuteCBInstruction(uint8_t opcode) {
     // Decode CB instruction structure: OOORRRRR
     // OOO = Operation (bits 7-6-5 or 7-6 for bit operations)
     // RRR = Register/Memory target (bits 2-1-0)
@@ -3160,8 +3162,8 @@ void CPUImpl<Memory>::ExecuteCBInstruction(uint8_t opcode) {
     }
 }
 
-template <class Memory>
-uint8_t& CPUImpl<Memory>::GetCBRegister(uint8_t reg_code) {
+template <class Memory, class Io>
+uint8_t& CPUImpl<Memory, Io>::GetCBRegister(uint8_t reg_code) {
     switch (reg_code) {
         case 0: return B();
         case 1: return C();
@@ -3186,8 +3188,8 @@ uint8_t& CPUImpl<Memory>::GetCBRegister(uint8_t reg_code) {
     }
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::GetCBMemory(uint8_t reg_code) {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::GetCBMemory(uint8_t reg_code) {
     if (reg_code == 6) {
         uint16_t address = GetEffectiveHL_Memory();
         return memory[address];
@@ -3195,8 +3197,8 @@ uint8_t CPUImpl<Memory>::GetCBMemory(uint8_t reg_code) {
     return 0; // Should never happen
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SetCBMemory(uint8_t reg_code, uint8_t value) {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetCBMemory(uint8_t reg_code, uint8_t value) {
     if (reg_code == 6) {
         uint16_t address = GetEffectiveHL_Memory();
         memory[address] = value;
@@ -3207,8 +3209,8 @@ void CPUImpl<Memory>::SetCBMemory(uint8_t reg_code, uint8_t value) {
 // CB Instruction Helper Functions
 // =============================================================================
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::RotateLeftCircular(uint8_t value) {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::RotateLeftCircular(uint8_t value) {
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = (value << 1) | bit7;
     
@@ -3221,8 +3223,8 @@ uint8_t CPUImpl<Memory>::RotateLeftCircular(uint8_t value) {
     return result;
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::RotateRightCircular(uint8_t value) {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::RotateRightCircular(uint8_t value) {
     uint8_t bit0 = value & 0x01;
     uint8_t result = (value >> 1) | (bit0 << 7);
     
@@ -3235,8 +3237,8 @@ uint8_t CPUImpl<Memory>::RotateRightCircular(uint8_t value) {
     return result;
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::RotateLeft(uint8_t value) {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::RotateLeft(uint8_t value) {
     uint8_t old_carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = (value << 1) | old_carry;
@@ -3250,8 +3252,8 @@ uint8_t CPUImpl<Memory>::RotateLeft(uint8_t value) {
     return result;
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::RotateRight(uint8_t value) {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::RotateRight(uint8_t value) {
     uint8_t old_carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint8_t bit0 = value & 0x01;
     uint8_t result = (value >> 1) | (old_carry << 7);
@@ -3265,8 +3267,8 @@ uint8_t CPUImpl<Memory>::RotateRight(uint8_t value) {
     return result;
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::ShiftLeftArithmetic(uint8_t value) {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::ShiftLeftArithmetic(uint8_t value) {
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = value << 1;
     
@@ -3279,8 +3281,8 @@ uint8_t CPUImpl<Memory>::ShiftLeftArithmetic(uint8_t value) {
     return result;
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::ShiftRightArithmetic(uint8_t value) {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::ShiftRightArithmetic(uint8_t value) {
     uint8_t bit0 = value & 0x01;
     uint8_t bit7 = value & 0x80; // Preserve sign bit
     uint8_t result = (value >> 1) | bit7;
@@ -3294,8 +3296,8 @@ uint8_t CPUImpl<Memory>::ShiftRightArithmetic(uint8_t value) {
     return result;
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::ShiftLeftLogical(uint8_t value) {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::ShiftLeftLogical(uint8_t value) {
     // Undocumented instruction - same as SLA but sets bit 0
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = (value << 1) | 0x01;
@@ -3309,8 +3311,8 @@ uint8_t CPUImpl<Memory>::ShiftLeftLogical(uint8_t value) {
     return result;
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::ShiftRightLogical(uint8_t value) {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::ShiftRightLogical(uint8_t value) {
     uint8_t bit0 = value & 0x01;
     uint8_t result = value >> 1; // Logical shift - bit 7 becomes 0
     
@@ -3323,8 +3325,8 @@ uint8_t CPUImpl<Memory>::ShiftRightLogical(uint8_t value) {
     return result;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::TestBit(uint8_t value, uint8_t bit) {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::TestBit(uint8_t value, uint8_t bit) {
     uint8_t bit_mask = 1 << bit;
     bool bit_set = (value & bit_mask) != 0;
     
@@ -3336,14 +3338,14 @@ void CPUImpl<Memory>::TestBit(uint8_t value, uint8_t bit) {
     if (!bit_set) F() |= Constants::Flags::PARITY; // P/V flag = Z flag for BIT
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::ResetBit(uint8_t value, uint8_t bit) {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::ResetBit(uint8_t value, uint8_t bit) {
     uint8_t bit_mask = ~(1 << bit);
     return value & bit_mask;
 }
 
-template <class Memory>
-uint8_t CPUImpl<Memory>::SetBit(uint8_t value, uint8_t bit) {
+template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::SetBit(uint8_t value, uint8_t bit) {
     uint8_t bit_mask = 1 << bit;
     return value | bit_mask;
 }
@@ -3352,14 +3354,14 @@ uint8_t CPUImpl<Memory>::SetBit(uint8_t value, uint8_t bit) {
 // ED Instruction Implementations
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::ED_NOP() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ED_NOP() {
     // Default handler for undefined ED instructions
     t_cycle += 8; // Most ED instructions take 8 cycles minimum
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_HL_DE() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_HL_DE() {
     // ED 52 - Subtract DE from HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3377,8 +3379,8 @@ void CPUImpl<Memory>::SBC_HL_DE() {
     t_cycle += 15;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_HL_DE() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_HL_DE() {
     // ED 5A - Add DE to HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3400,8 +3402,8 @@ void CPUImpl<Memory>::ADC_HL_DE() {
 // Additional 16-bit Arithmetic ED Instructions
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_HL_BC() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_HL_BC() {
     // ED 42 - Subtract BC from HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3419,8 +3421,8 @@ void CPUImpl<Memory>::SBC_HL_BC() {
     t_cycle += 15;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_HL_BC() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_HL_BC() {
     // ED 4A - Add BC to HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3438,8 +3440,8 @@ void CPUImpl<Memory>::ADC_HL_BC() {
     t_cycle += 15;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_HL_HL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_HL_HL() {
     // ED 62 - Subtract HL from HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3457,8 +3459,8 @@ void CPUImpl<Memory>::SBC_HL_HL() {
     t_cycle += 15;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_HL_HL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_HL_HL() {
     // ED 6A - Add HL to HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3476,8 +3478,8 @@ void CPUImpl<Memory>::ADC_HL_HL() {
     t_cycle += 15;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::SBC_HL_SP() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SBC_HL_SP() {
     // ED 72 - Subtract SP from HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3495,8 +3497,8 @@ void CPUImpl<Memory>::SBC_HL_SP() {
     t_cycle += 15;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::ADC_HL_SP() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::ADC_HL_SP() {
     // ED 7A - Add SP to HL with carry
     uint16_t old_hl = HL();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
@@ -3518,8 +3520,8 @@ void CPUImpl<Memory>::ADC_HL_SP() {
 // 16-bit Load/Store ED Instructions
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mnn_BC() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mnn_BC() {
     // ED 43 - Load BC to memory at 16-bit address
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3528,8 +3530,8 @@ void CPUImpl<Memory>::LD_mnn_BC() {
     t_cycle += 20;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_BC_mnn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_BC_mnn() {
     // ED 4B - Load memory at 16-bit address to BC
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3537,8 +3539,8 @@ void CPUImpl<Memory>::LD_BC_mnn() {
     t_cycle += 20;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mnn_DE() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mnn_DE() {
     // ED 53 - Load DE to memory at 16-bit address
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3547,8 +3549,8 @@ void CPUImpl<Memory>::LD_mnn_DE() {
     t_cycle += 20;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_DE_mnn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_DE_mnn() {
     // ED 5B - Load memory at 16-bit address to DE
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3556,8 +3558,8 @@ void CPUImpl<Memory>::LD_DE_mnn() {
     t_cycle += 20;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mnn_HL_ED() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mnn_HL_ED() {
     // ED 63 - Load HL to memory at 16-bit address (ED version)
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3566,8 +3568,8 @@ void CPUImpl<Memory>::LD_mnn_HL_ED() {
     t_cycle += 20;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_HL_mnn_ED() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_HL_mnn_ED() {
     // ED 6B - Load memory at 16-bit address to HL (ED version)
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3575,8 +3577,8 @@ void CPUImpl<Memory>::LD_HL_mnn_ED() {
     t_cycle += 20;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_mnn_SP() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_mnn_SP() {
     // ED 73 - Load SP to memory at 16-bit address
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3585,8 +3587,8 @@ void CPUImpl<Memory>::LD_mnn_SP() {
     t_cycle += 20;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_SP_mnn() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_SP_mnn() {
     // ED 7B - Load memory at 16-bit address to SP
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
@@ -3598,8 +3600,8 @@ void CPUImpl<Memory>::LD_SP_mnn() {
 // Special Operations and Register Transfer ED Instructions
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::NEG() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::NEG() {
     // ED 44 - Negate A (2's complement)
     uint8_t old_a = A();
     A() = (~A()) + 1;  // 2's complement negation
@@ -3615,52 +3617,52 @@ void CPUImpl<Memory>::NEG() {
     t_cycle += 8;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RETN() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RETN() {
     // ED 45 - Return from non-maskable interrupt
     PC() = PopWord();
     IFF1() = IFF2(); // Restore interrupt state
     t_cycle += 14;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::IM_0() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IM_0() {
     // ED 46 - Set interrupt mode 0
     _interrupt_mode = 0;
     t_cycle += 8;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_I_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_I_A() {
     // ED 47 - Load A to I register
     I() = A();
     t_cycle += 9;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RETI() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RETI() {
     // ED 4D - Return from interrupt
     PC() = PopWord();
     IFF1() = IFF2(); // Restore interrupt state
     t_cycle += 14;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_R_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_R_A() {
     // ED 4F - Load A to R register
     R() = A();
     t_cycle += 9;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::IM_1() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IM_1() {
     // ED 56 - Set interrupt mode 1
     _interrupt_mode = 1;
     t_cycle += 8;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_I() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_I() {
     // ED 57 - Load I register to A
     A() = I();
     
@@ -3673,15 +3675,15 @@ void CPUImpl<Memory>::LD_A_I() {
     t_cycle += 9;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::IM_2() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IM_2() {
     // ED 5E - Set interrupt mode 2
     _interrupt_mode = 2;
     t_cycle += 8;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LD_A_R() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LD_A_R() {
     // ED 5F - Load R register to A
     A() = R();
     
@@ -3694,8 +3696,8 @@ void CPUImpl<Memory>::LD_A_R() {
     t_cycle += 9;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RRD() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RRD() {
     // ED 67 - Rotate right decimal (4-bit)
     uint8_t mem_val = memory[HL()];
     uint8_t a_low = A() & 0x0F;
@@ -3715,8 +3717,8 @@ void CPUImpl<Memory>::RRD() {
     t_cycle += 18;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::RLD() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::RLD() {
     // ED 6F - Rotate left decimal (4-bit)
     uint8_t mem_val = memory[HL()];
     uint8_t a_low = A() & 0x0F;
@@ -3740,8 +3742,8 @@ void CPUImpl<Memory>::RLD() {
 // Block Operation ED Instructions
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::LDI() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LDI() {
     // ED A0 - Load and increment
     memory[DE()] = memory[HL()];
     HL()++;
@@ -3755,8 +3757,8 @@ void CPUImpl<Memory>::LDI() {
     t_cycle += 16;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CPI() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CPI() {
     // ED A1 - Compare and increment
     uint8_t result = A() - memory[HL()];
     HL()++;
@@ -3773,10 +3775,10 @@ void CPUImpl<Memory>::CPI() {
     t_cycle += 16;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INI() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INI() {
     // ED A2 - Input and increment
-    memory[HL()] = ReadPort(C());
+    memory[HL()] = io.In(BC());
     HL()++;
     B()--;
     
@@ -3788,10 +3790,10 @@ void CPUImpl<Memory>::INI() {
     t_cycle += 16;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OUTI() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OUTI() {
     // ED A3 - Output and increment
-    WritePort(C(), memory[HL()]);
+    io.Out(BC(), memory[HL()]);
     HL()++;
     B()--;
     
@@ -3803,8 +3805,8 @@ void CPUImpl<Memory>::OUTI() {
     t_cycle += 16;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LDD() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LDD() {
     // ED A8 - Load and decrement
     memory[DE()] = memory[HL()];
     HL()--;
@@ -3818,8 +3820,8 @@ void CPUImpl<Memory>::LDD() {
     t_cycle += 16;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CPD() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CPD() {
     // ED A9 - Compare and decrement
     uint8_t result = A() - memory[HL()];
     HL()--;
@@ -3836,10 +3838,10 @@ void CPUImpl<Memory>::CPD() {
     t_cycle += 16;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::IND() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IND() {
     // ED AA - Input and decrement
-    memory[HL()] = ReadPort(C());
+    memory[HL()] = io.In(BC());
     HL()--;
     B()--;
     
@@ -3851,10 +3853,10 @@ void CPUImpl<Memory>::IND() {
     t_cycle += 16;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OUTD() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OUTD() {
     // ED AB - Output and decrement
-    WritePort(C(), memory[HL()]);
+    io.Out(BC(), memory[HL()]);
     HL()--;
     B()--;
     
@@ -3866,8 +3868,8 @@ void CPUImpl<Memory>::OUTD() {
     t_cycle += 16;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LDIR() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LDIR() {
     // ED B0 - Load, increment and repeat
     do {
         memory[DE()] = memory[HL()];
@@ -3885,8 +3887,8 @@ void CPUImpl<Memory>::LDIR() {
     // P/V is reset (BC = 0)
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CPIR() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CPIR() {
     // ED B1 - Compare, increment and repeat
     uint8_t result;
     do {
@@ -3907,11 +3909,11 @@ void CPUImpl<Memory>::CPIR() {
     if (BC() != 0) F() |= Constants::Flags::PARITY; // P/V = (BC != 0)
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INIR() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INIR() {
     // ED B2 - Input, increment and repeat
     do {
-        memory[HL()] = ReadPort(C());
+        memory[HL()] = io.In(BC());
         HL()++;
         B()--;
         t_cycle += 21; // 21 cycles per iteration
@@ -3924,11 +3926,11 @@ void CPUImpl<Memory>::INIR() {
     F() = Constants::Flags::SUBTRACT | Constants::Flags::ZERO; // N=1, Z=1 (B=0)
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OTIR() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OTIR() {
     // ED B3 - Output, increment and repeat
     do {
-        WritePort(C(), memory[HL()]);
+        io.Out(BC(), memory[HL()]);
         HL()++;
         B()--;
         t_cycle += 21; // 21 cycles per iteration
@@ -3941,8 +3943,8 @@ void CPUImpl<Memory>::OTIR() {
     F() = Constants::Flags::SUBTRACT | Constants::Flags::ZERO; // N=1, Z=1 (B=0)
 }
 
-template <class Memory>
-void CPUImpl<Memory>::LDDR() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::LDDR() {
     // ED B8 - Load, decrement and repeat
     do {
         memory[DE()] = memory[HL()];
@@ -3960,8 +3962,8 @@ void CPUImpl<Memory>::LDDR() {
     // P/V is reset (BC = 0)
 }
 
-template <class Memory>
-void CPUImpl<Memory>::CPDR() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::CPDR() {
     // ED B9 - Compare, decrement and repeat
     uint8_t result;
     do {
@@ -3982,11 +3984,11 @@ void CPUImpl<Memory>::CPDR() {
     if (BC() != 0) F() |= Constants::Flags::PARITY; // P/V = (BC != 0)
 }
 
-template <class Memory>
-void CPUImpl<Memory>::INDR() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::INDR() {
     // ED BA - Input, decrement and repeat
     do {
-        memory[HL()] = ReadPort(C());
+        memory[HL()] = io.In(BC());
         HL()--;
         B()--;
         t_cycle += 21; // 21 cycles per iteration
@@ -3999,11 +4001,11 @@ void CPUImpl<Memory>::INDR() {
     F() = Constants::Flags::SUBTRACT | Constants::Flags::ZERO; // N=1, Z=1 (B=0)
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OTDR() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OTDR() {
     // ED BB - Output, decrement and repeat
     do {
-        WritePort(C(), memory[HL()]);
+        io.Out(BC(), memory[HL()]);
         HL()--;
         B()--;
         t_cycle += 21; // 21 cycles per iteration
@@ -4020,10 +4022,10 @@ void CPUImpl<Memory>::OTDR() {
 // Individual I/O ED Instructions
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::IN_B_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IN_B_C() {
     // ED 40 - Input from port C to B
-    B() = ReadPort(C());
+    B() = io.In(BC());
     
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
@@ -4034,17 +4036,17 @@ void CPUImpl<Memory>::IN_B_C() {
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OUT_C_B() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OUT_C_B() {
     // ED 41 - Output B to port C
-    WritePort(C(), B());
+    io.Out(BC(), B());
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::IN_C_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IN_C_C() {
     // ED 48 - Input from port C to C
-    C() = ReadPort(C());
+    C() = io.In(BC());
     
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
@@ -4055,17 +4057,17 @@ void CPUImpl<Memory>::IN_C_C() {
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OUT_C_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OUT_C_C() {
     // ED 49 - Output C to port C
-    WritePort(C(), C());
+    io.Out(BC(), C());
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::IN_D_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IN_D_C() {
     // ED 50 - Input from port C to D
-    D() = ReadPort(C());
+    D() = io.In(BC());
     
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
@@ -4076,17 +4078,17 @@ void CPUImpl<Memory>::IN_D_C() {
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OUT_C_D() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OUT_C_D() {
     // ED 51 - Output D to port C
-    WritePort(C(), D());
+    io.Out(BC(), D());
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::IN_E_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IN_E_C() {
     // ED 58 - Input from port C to E
-    E() = ReadPort(C());
+    E() = io.In(BC());
     
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
@@ -4097,17 +4099,17 @@ void CPUImpl<Memory>::IN_E_C() {
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OUT_C_E() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OUT_C_E() {
     // ED 59 - Output E to port C
-    WritePort(C(), E());
+    io.Out(BC(), E());
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::IN_H_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IN_H_C() {
     // ED 60 - Input from port C to H
-    H() = ReadPort(C());
+    H() = io.In(BC());
     
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
@@ -4118,17 +4120,17 @@ void CPUImpl<Memory>::IN_H_C() {
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OUT_C_H() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OUT_C_H() {
     // ED 61 - Output H to port C
-    WritePort(C(), H());
+    io.Out(BC(), H());
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::IN_L_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IN_L_C() {
     // ED 68 - Input from port C to L
-    L() = ReadPort(C());
+    L() = io.In(BC());
     
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
@@ -4139,17 +4141,17 @@ void CPUImpl<Memory>::IN_L_C() {
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OUT_C_L() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OUT_C_L() {
     // ED 69 - Output L to port C
-    WritePort(C(), L());
+    io.Out(BC(), L());
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::IN_F_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IN_F_C() {
     // ED 70 - Input from port C (undocumented - sets flags only, doesn't store value)
-    uint8_t value = ReadPort(C());
+    uint8_t value = io.In(BC());
     
     // Set flags based on input value but don't store it anywhere
     F() &= Constants::Flags::CARRY; // Preserve carry only
@@ -4160,17 +4162,17 @@ void CPUImpl<Memory>::IN_F_C() {
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OUT_C_0() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OUT_C_0() {
     // ED 71 - Output 0 to port C (undocumented)
-    WritePort(C(), 0);
+    io.Out(BC(), 0);
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::IN_A_C() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::IN_A_C() {
     // ED 78 - Input from port C to A
-    A() = ReadPort(C());
+    A() = io.In(BC());
     
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
@@ -4181,10 +4183,10 @@ void CPUImpl<Memory>::IN_A_C() {
     t_cycle += 12;
 }
 
-template <class Memory>
-void CPUImpl<Memory>::OUT_C_A() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::OUT_C_A() {
     // ED 79 - Output A to port C
-    WritePort(C(), A());
+    io.Out(BC(), A());
     t_cycle += 12;
 }
 
@@ -4192,8 +4194,8 @@ void CPUImpl<Memory>::OUT_C_A() {
 // Undocumented ED Instructions
 // =============================================================================
 
-template <class Memory>
-void CPUImpl<Memory>::SLL_mHL() {
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SLL_mHL() {
     // ED 76 - Shift Left Logical (HL) - undocumented instruction
     // This is like SLA but always sets bit 0 to 1
     uint8_t value = memory[HL()];
@@ -4216,11 +4218,14 @@ void CPUImpl<Memory>::SLL_mHL() {
 // =============================================================================
 // Explicit Template Instantiations
 // =============================================================================
-// Emit the full CPU for each supported memory plug so translation units that
-// only see the declarations in z80_cpu.h link against these definitions.
-//  - CPUImpl<FastMemory>       : production / benchmark (aliased as z80::CPU)
-//  - CPUImpl<ObservableMemory> : tooling build with multi-observer write events
-template class CPUImpl<FastMemory>;
-template class CPUImpl<ObservableMemory>;
+// Emit the full CPU for each <Memory, Io> configuration used across the project
+// so translation units that only see the declarations in z80_cpu.h link against
+// these definitions. (Add a line here when a new configuration is introduced.)
+//  - <FastMemory, OpenBusIo>                   : z80::CPU — production / benchmark
+//  - <ObservableMemory, OpenBusIo>             : memory-observer tests
+//  - <ObservableMemory, ObservableIo<LatchedIo>> : the debugger (DebugCPU)
+template class CPUImpl<FastMemory, OpenBusIo>;
+template class CPUImpl<ObservableMemory, OpenBusIo>;
+template class CPUImpl<ObservableMemory, ObservableIo<LatchedIo>>;
 
 } // namespace z80

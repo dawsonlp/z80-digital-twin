@@ -14,17 +14,19 @@ see [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md); for the debugger architecture se
 
 - **Z80 CPU** — full instruction set incl. CB/ED/DD/FD/DDCB/FDCB; cycle-accurate
   T-state counting. ([src/z80_cpu.h](src/z80_cpu.h), [src/z80_cpu.cpp](src/z80_cpu.cpp))
-- **Pluggable memory (compile-time policy)** — `CPUImpl<Memory>` with
-  `using CPU = CPUImpl<FastMemory>`:
-  - `FastMemory` — zero-overhead production/benchmark plug (~2 GHz-equivalent,
-    unchanged from before the refactor).
+- **Pluggable memory + I/O (compile-time policies)** — `CPUImpl<Memory, Io>`
+  with `using CPU = CPUImpl<FastMemory, OpenBusIo>`:
+  - `FastMemory` — zero-overhead production/benchmark plug (~2 GHz-equivalent).
   - `ObservableMemory` — write-intercepting `operator[]` proxy fanning exact
     `(address, old, new)` events to a list of observers (debugger + future
     devices can attach at once); reads stay cheap.
-- I/O still flows through `ReadPort`/`WritePort` (a stored 256-byte array).
-- **Direction** ([ARCHITECTURE.md](ARCHITECTURE.md)): I/O becomes a second
-  compile-time policy (honest devices — `OpenBusIo`/`SpectrumIo`/… — not a stored
-  array).
+  - `OpenBusIo` — honest default (`Out` discarded, `In` → `0xFF`); `LatchedIo` —
+    256 read/write latches (opt-in); `ObservableIo<Inner>` — decorator that logs
+    bus transactions. `IN`/`OUT` carry the **full 16-bit port** (A or BC on the
+    high byte).
+- **Direction** ([ARCHITECTURE.md](ARCHITECTURE.md)): next foundation piece is
+  CPU maskable-interrupt injection; then the Spectrum devices (`SpectrumIo`,
+  ULA) built on these policies.
 
 ## Debugger core (UI-free, unit-tested) — `z80_debugger_core`
 
@@ -57,7 +59,8 @@ Modular panels over a shared `UiContext`; each panel is a `Panel` subclass.
 - **Memory** — hex/ASCII, jump-to-address, change highlight, per-byte hover
   tooltip (which symbol/region), coverage tint (green/magenta/red), right-click
   to label an address.
-- **I/O Ports** — 256 ports, live values.
+- **I/O Bus** — passive bus-transaction log (OUT/IN with the full port); never
+  polls ports (a real `IN` can have side effects).
 - **Self-Modifying Code** — event log (writer/target/`old→new`/cycle),
   click-to-jump, count, Break-on-SMC.
 - Symbol editor popup (create/edit/remove; byte/word/label/function/jump-target)

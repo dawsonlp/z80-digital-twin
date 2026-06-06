@@ -45,6 +45,9 @@ set(CORE_HEADERS
     src/z80_cpu.h
     src/memory/fast_memory.h
     src/memory/observable_memory.h
+    src/io/open_bus_io.h
+    src/io/latched_io.h
+    src/io/observable_io.h
 )
 
 # =============================================================================
@@ -95,6 +98,10 @@ target_link_libraries(cpu_test PRIVATE z80_cpu)
 # ObservableMemory plug verification (multi-observer + plug parity)
 add_executable(observable_memory_test tests/observable_memory_test.cpp)
 target_link_libraries(observable_memory_test PRIVATE z80_cpu)
+
+# I/O policy verification (devices + 16-bit port reaching the device)
+add_executable(io_policy_test tests/io_policy_test.cpp)
+target_link_libraries(io_policy_test PRIVATE z80_cpu)
 
 # Debugger execution core (stepping, breakpoints, watchpoints)
 add_executable(debug_session_test tests/debug_session_test.cpp)

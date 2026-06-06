@@ -12,6 +12,7 @@
 #include <array>
 
 #include "memory/fast_memory.h"
+#include "io/open_bus_io.h"
 
 namespace z80 {
 
@@ -32,7 +33,7 @@ union RegisterPair {
 };
 
 // Forward declaration of the CPU class template.
-template <class Memory> class CPUImpl;
+template <class Memory, class Io> class CPUImpl;
 
 /// @brief Z80 CPU execution states for prefix instruction handling
 enum class CPUState : uint8_t {
@@ -51,7 +52,6 @@ enum class CPUState : uint8_t {
 
 namespace Constants {
     constexpr uint32_t MEMORY_SIZE = 65536;
-    constexpr uint16_t IO_PORTS = 256;
     constexpr uint16_t STACK_TOP = 0xFFFF;
     
     // Flag bit positions
@@ -69,7 +69,7 @@ namespace Constants {
 // Z80 CPU Class
 // =============================================================================
 
-template <class Memory = FastMemory>
+template <class Memory = FastMemory, class Io = OpenBusIo>
 class CPUImpl {
 public:
     // -------------------------------------------------------------------------
@@ -180,15 +180,11 @@ public:
     /// @param start_address Starting address to load the program (default: 0)
     void LoadProgram(const std::vector<uint8_t>& program, uint16_t start_address = 0);
     
-    /// @brief Writes a byte to an I/O port
-    /// @param port Port number to write to
-    /// @param value Byte value to write
-    void WritePort(uint8_t port, uint8_t value) { io_ports[port] = value; }
-    
-    /// @brief Reads a byte from an I/O port
-    /// @param port Port number to read from
-    /// @return Byte value from the specified port
-    uint8_t ReadPort(uint8_t port) const { return io_ports[port]; }
+    /// @brief Access the I/O device (the policy plug).
+    /// @details Instructions use it internally for IN/OUT (with the full 16-bit
+    ///          port); tooling reads device state or transaction logs through it.
+    Io& GetIo() noexcept { return io; }
+    const Io& GetIo() const noexcept { return io; }
     
     // -------------------------------------------------------------------------
     // State Information
@@ -244,9 +240,9 @@ private:
     CPUState current_state;     ///< Current CPU execution state for prefix handling
     int8_t current_displacement; ///< Displacement for DD CB/FD CB instructions
     
-    // Memory and I/O
-    Memory memory;                                         ///< Pluggable memory device (policy)
-    std::array<uint8_t, Constants::IO_PORTS> io_ports;     ///< 256 I/O ports
+    // Memory and I/O (pluggable compile-time policies)
+    Memory memory;   ///< Memory device (policy)
+    Io io;           ///< I/O device (policy)
     
     // -------------------------------------------------------------------------
     // Instruction Dispatch Tables

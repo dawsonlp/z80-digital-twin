@@ -21,7 +21,9 @@ see [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md); for the debugger architecture se
   - `FastMemory` — zero-overhead production/benchmark plug (~2 GHz-equivalent).
   - `ObservableMemory` — write-intercepting `operator[]` proxy fanning exact
     `(address, old, new)` events to a list of observers (debugger + future
-    devices can attach at once); reads stay cheap.
+    devices can attach at once); reads stay cheap. Optional `SetWriteProtect(lo,hi)`
+    makes a region read-only (a refused write fires a separate **blocked-write**
+    observer — the byte is unchanged, distinct from a committed write).
   - `OpenBusIo` — honest default (`Out` discarded, `In` → `0xFF`); `LatchedIo` —
     256 read/write latches (opt-in); `ObservableIo<Inner>` — decorator that logs
     bus transactions; `CallbackIo` — generic bridge forwarding `IN`/`OUT` to
@@ -111,9 +113,8 @@ debugger; the app composes them).
   Ctrl→SYM SHIFT, Backspace→DELETE) and **beeper sound**. Paced to real Spectrum
   speed via a 50.08 Hz fixed timestep (decoupled from the display's vsync;
   `--turbo` runs uncapped; fps shown in the title). `--tape file.tap` (F5 plays);
-  `--protect-rom` makes 0x0000–0x3FFF read-only (off by default, so stray ROM
-  writes stay visible for diagnosis); `--shot FILE` renders headless to a PPM.
-  `spectrum spec48.rom`.
+  ROM is read-only by default (real hardware); `--writable-rom` lets writes land;
+  `--shot FILE` renders headless to a PPM. `spectrum spec48.rom`.
 
 ## Debugger UI — `z80_debugger` (ImGui + GLFW + OpenGL via FetchContent)
 
@@ -130,12 +131,18 @@ Modular panels over a shared `UiContext`; each panel is a `Panel` subclass.
   to label an address.
 - **I/O Bus** — passive bus-transaction log (OUT/IN with the full port); never
   polls ports (a real `IN` can have side effects).
-- **Self-Modifying Code** — event log (writer/target/`old→new`/cycle),
-  click-to-jump, count, Break-on-SMC.
+- **Self-Modifying Code** — SMC event log (writer/target/`old→new`/cycle),
+  click-to-jump, count, Break-on-SMC; **plus a distinct "Blocked ROM writes"
+  section** — refused writes to read-only memory (value unchanged), which look
+  like SMC but aren't.
+- **Memory** colouring distinguishes executed (green), SMC (magenta),
+  **blocked-write attempts (amber)**, and **write-protected/ROM (blue)**.
 - **Spectrum mode** (`--spectrum <rom>`) — drives the real ZX Spectrum under the
   debugger: a **Spectrum Screen** panel (live border+display), 50 Hz frames run
   through `RunForTStates` so breakpoints apply (a breakpoint *mid-frame* resumes
   the same frame), host keyboard → matrix, ULA ports visible in the I/O panel.
+  ROM is read-only by default (refused writes tracked as blocked writes);
+  `--writable-rom` lets them land (corrupting ROM, flagged as SMC) for what-if.
 - Symbol editor popup (create/edit/remove; byte/word/label/function/jump-target)
   + File ▸ Save Symbols.
 
@@ -144,7 +151,7 @@ Modular panels over a shared `UiContext`; each panel is a `Panel` subclass.
 - `examples/gcd.sym`, `examples/spectrum48k.sym` (full ZX system-variable table).
 - Built-in demos: `--demo gcd` (default), `--demo smc` (self-modifying loop).
 - CLI: `[prog.bin] [--org A] [--sym f] [--bp HEX] [--demo gcd|smc]
-  [--spectrum rom.rom] [--run N] [--smoke] [--shot FILE]`.
+  [--spectrum rom.rom] [--tape t.tap] [--writable-rom] [--run N] [--smoke] [--shot FILE]`.
 
 ## Tests (headless, run on every build)
 

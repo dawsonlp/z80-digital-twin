@@ -64,6 +64,7 @@ enum CoverageFlag : uint8_t {
     kExecOpcode   = 1u << 0,  ///< Was executed as an instruction's first byte.
     kExecOperand  = 1u << 1,  ///< Was an operand byte of an executed instruction.
     kSelfModified = 1u << 2,  ///< Written after having executed as code (SMC).
+    kBlockedWrite = 1u << 3,  ///< A write here was refused (write-protected, e.g. ROM).
 };
 
 /// @brief A recorded self-modifying-code event.
@@ -73,6 +74,16 @@ struct SmcEvent {
     uint8_t new_value = 0;    ///< Byte written.
     uint16_t writer_pc = 0;   ///< Instruction that performed the write.
     uint64_t cycle = 0;       ///< T-state count when it happened.
+};
+
+/// @brief A refused write to write-protected memory (e.g. ROM). Looks like SMC
+///        but isn't: the byte is unchanged because a real bus ignores the write.
+struct BlockedWrite {
+    uint16_t address = 0;         ///< Protected address that was written to.
+    uint8_t current_value = 0;    ///< The byte, unchanged (read-only).
+    uint8_t attempted_value = 0;  ///< What the CPU tried to write.
+    uint16_t writer_pc = 0;       ///< Instruction that attempted the write.
+    uint64_t cycle = 0;           ///< T-state count when it happened.
 };
 
 /// @brief A program-counter breakpoint with metadata.
@@ -195,6 +206,15 @@ public:
     /// @brief Total SMC writes detected (may exceed SmcEvents().size()).
     [[nodiscard]] uint64_t SmcCount() const noexcept { return smc_total_; }
 
+    // -- Blocked writes (refused writes to write-protected memory, e.g. ROM) --
+
+    /// @brief Recorded blocked-write attempts (capped; BlockedWriteCount() total).
+    [[nodiscard]] const std::vector<BlockedWrite>& BlockedWrites() const noexcept {
+        return blocked_writes_;
+    }
+    /// @brief Total refused writes to protected memory.
+    [[nodiscard]] uint64_t BlockedWriteCount() const noexcept { return blocked_total_; }
+
     /// @brief Pause the run when code is overwritten.
     void SetBreakOnSmc(bool on) noexcept { break_on_smc_ = on; }
     [[nodiscard]] bool BreakOnSmc() const noexcept { return break_on_smc_; }
@@ -222,6 +242,9 @@ private:
     /// @brief Hook target: record dirty cell and detect watchpoint hits.
     void OnMemoryWrite(uint16_t address, uint8_t old_value, uint8_t new_value);
 
+    /// @brief Hook target: a write to write-protected memory was refused.
+    void OnBlockedWrite(uint16_t address, uint8_t current_value, uint8_t attempted_value);
+
     // Bound generously above the longest Z80 prefix chain (DD CB d op = 3
     // Step() calls); guards against a non-advancing step loop.
     static constexpr int kStepByteGuard = 8;
@@ -230,6 +253,7 @@ private:
     Disassembler disasm_;
     ByteReader reader_;            ///< Reads CPU memory for the disassembler.
     int write_observer_id_ = -1;   ///< Our registration on the memory plug.
+    int blocked_observer_id_ = -1; ///< Our blocked-write registration.
 
     RunState state_ = RunState::Paused;
 
@@ -249,6 +273,8 @@ private:
     uint32_t covered_bytes_ = 0;              ///< Count of bytes seen as code.
     std::vector<SmcEvent> smc_events_;        ///< Recorded SMC events (capped).
     uint64_t smc_total_ = 0;                  ///< Total SMC writes detected.
+    std::vector<BlockedWrite> blocked_writes_;///< Refused writes to protected memory (capped).
+    uint64_t blocked_total_ = 0;              ///< Total refused writes detected.
     uint16_t current_instruction_pc_ = 0;     ///< PC of the instruction now executing.
     bool break_on_smc_ = false;
     bool smc_break_pending_ = false;          ///< Set by the hook to stop a slice.

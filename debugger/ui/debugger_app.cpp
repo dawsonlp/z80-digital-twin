@@ -160,6 +160,11 @@ bool DebuggerApp::LoadSpectrumRom(const std::string& path) {
     cpu_.GetIo().inner().OnIn([this](uint16_t p) { return ula_.read_port(p); });
     cpu_.GetMemory().AddWriteObserver(
         [this](uint16_t a, uint8_t o, uint8_t n) { ula_.on_write(a, o, n); });
+
+    // ROM is read-only by default (real hardware): refused writes are tracked as
+    // BlockedWrite events and shown distinctly from SMC. --writable-rom lets them
+    // land instead (corrupting ROM, flagged as SMC) for "what-if" diagnosis.
+    cpu_.GetMemory().SetWriteProtect(0x0000, 0x3FFF);
     cpu_.GetIo().SetRecording(false);   // I/O panel is quiet until the user opts in
 
     spectrum_mode_ = true;

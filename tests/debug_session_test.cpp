@@ -315,6 +315,35 @@ int main() {
         check(r.cycles < 1'000'000, "did not burn the whole budget");
     }
 
+    // --- Blocked writes to write-protected memory (not SMC) -----------------
+    std::cout << "\n[11] Blocked writes to write-protected memory\n";
+    {
+        // Code in RAM writes to a protected low address.
+        //   0x8000 3E AA     LD A, 0xAA
+        //   0x8002 32 00 00  LD (0x0000), A   ; protected -> refused
+        //   0x8005 76        HALT
+        DebugCPU cpu;
+        cpu.GetMemory()[0x0000] = 0x11;            // seed (still writable)
+        cpu.LoadProgram({0x3E, 0xAA, 0x32, 0x00, 0x00, 0x76}, 0x8000);
+        cpu.PC() = 0x8000;
+        DebugSession s(cpu);
+        cpu.GetMemory().SetWriteProtect(0x0000, 0x00FF);
+
+        s.Run();
+        s.RunSlice(100);   // runs to HALT
+
+        check(cpu.ReadMemory(0x0000) == 0x11, "protected byte unchanged");
+        check(s.BlockedWriteCount() == 1, "one blocked write recorded");
+        check(s.SmcCount() == 0, "blocked write is NOT counted as SMC");
+        check((s.CoverageFlags(0x0000) & kBlockedWrite) != 0, "0x0000 flagged kBlockedWrite");
+        check((s.CoverageFlags(0x0000) & kSelfModified) == 0, "0x0000 NOT flagged kSelfModified");
+        const auto& bw = s.BlockedWrites();
+        check(!bw.empty() && bw[0].address == 0x0000, "event target 0x0000");
+        check(!bw.empty() && bw[0].attempted_value == 0xAA && bw[0].current_value == 0x11,
+              "event records attempted 0xAA, current 0x11");
+        check(!bw.empty() && bw[0].writer_pc == 0x8002, "writer PC is the LD (nn),A");
+    }
+
     std::cout << "\n=======================\n";
     if (failures == 0) {
         std::cout << "✅ ALL DEBUG-SESSION CHECKS PASSED\n";

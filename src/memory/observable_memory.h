@@ -35,6 +35,14 @@ public:
                                              uint8_t old_value,
                                              uint8_t new_value)>;
 
+    /// @brief Called when a write to a write-protected address is refused. The
+    ///        stored value is unchanged; @p attempted is what the CPU tried to
+    ///        write. This is *not* a committed write (and not self-modifying
+    ///        code) — it's a write to read-only memory that a real bus ignores.
+    using BlockedWriteObserver = std::function<void(uint16_t address,
+                                                    uint8_t current_value,
+                                                    uint8_t attempted_value)>;
+
     /// @brief Write-intercepting proxy returned by non-const operator[].
     class Reference {
     public:
@@ -44,10 +52,13 @@ public:
         operator uint8_t() const noexcept { return owner_.data_[address_]; }
 
         Reference& operator=(uint8_t value) {
-            // Write-protected region (e.g. ROM): a real bus ignores the write —
-            // drop it silently, observers don't fire. Off by default so writes
-            // stay visible (the SMC panel flags stray ROM writes for diagnosis).
-            if (owner_.WriteProtected(address_)) return *this;
+            // Write-protected region (e.g. ROM): a real bus ignores the write, so
+            // the byte is left unchanged — but report the *attempt* via the
+            // blocked-write observers (it looks like SMC but isn't: read-only).
+            if (owner_.WriteProtected(address_)) {
+                owner_.NotifyBlocked(address_, owner_.data_[address_], value);
+                return *this;
+            }
             const uint8_t old_value = owner_.data_[address_];
             owner_.data_[address_] = value;
             owner_.Notify(address_, old_value, value);
@@ -95,6 +106,19 @@ public:
     [[nodiscard]] bool HasObservers() const noexcept { return !observers_.empty(); }
     [[nodiscard]] std::size_t ObserverCount() const noexcept { return observers_.size(); }
 
+    /// @brief Register a blocked-write observer (fires on refused writes to a
+    ///        write-protected region). Returns an id for removal.
+    int AddBlockedWriteObserver(BlockedWriteObserver observer) {
+        const int id = next_id_++;
+        blocked_observers_.emplace_back(id, std::move(observer));
+        return id;
+    }
+    void RemoveBlockedWriteObserver(int id) {
+        for (auto it = blocked_observers_.begin(); it != blocked_observers_.end(); ++it) {
+            if (it->first == id) { blocked_observers_.erase(it); return; }
+        }
+    }
+
     // -- Write protection (opt-in; e.g. ROM) ---------------------------------
 
     /// @brief Make writes in [lo, hi] no-ops (a real bus ignores writes to ROM).
@@ -113,8 +137,15 @@ private:
         }
     }
 
+    void NotifyBlocked(uint16_t address, uint8_t current_value, uint8_t attempted_value) {
+        for (auto& [id, observer] : blocked_observers_) {
+            if (observer) observer(address, current_value, attempted_value);
+        }
+    }
+
     std::array<uint8_t, SIZE> data_{};
     std::vector<std::pair<int, WriteObserver>> observers_;
+    std::vector<std::pair<int, BlockedWriteObserver>> blocked_observers_;
     int next_id_ = 0;
     bool protect_enabled_ = false;
     uint16_t protect_lo_ = 0;

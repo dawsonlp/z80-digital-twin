@@ -135,6 +135,36 @@ int main() {
         check(mem_equal, "equal full 64 KB memory image");
     }
 
+    // --- 4. Write protection + blocked-write events ------------------------
+    std::cout << "\n[4] Write protection refuses writes and reports the attempt\n";
+    {
+        ObservableMemory mem;
+        mem[0x0000] = 0xF3;                 // seed (writable: no protection yet)
+        int blocked = 0; uint16_t b_addr = 0; uint8_t b_cur = 0, b_try = 0;
+        mem.AddBlockedWriteObserver([&](uint16_t a, uint8_t cur, uint8_t att) {
+            ++blocked; b_addr = a; b_cur = cur; b_try = att;
+        });
+        int committed = 0;
+        mem.AddWriteObserver([&](uint16_t, uint8_t, uint8_t) { ++committed; });
+
+        mem.SetWriteProtect(0x0000, 0x3FFF);
+        mem[0x0000] = 0xAA;                 // refused
+        check(static_cast<uint8_t>(mem[0x0000]) == 0xF3, "protected byte unchanged");
+        check(blocked == 1, "blocked-write observer fired once");
+        check(committed == 0, "committed-write observer did NOT fire");
+        check(b_addr == 0x0000 && b_cur == 0xF3 && b_try == 0xAA,
+              "blocked event reports addr/current/attempted");
+
+        mem[0x4000] = 0x55;                 // outside the protected range
+        check(static_cast<uint8_t>(mem[0x4000]) == 0x55, "RAM still writable");
+        check(committed == 1 && blocked == 1, "RAM write commits, no new block");
+
+        mem.ClearWriteProtect();
+        mem[0x0000] = 0x77;                 // now writable
+        check(static_cast<uint8_t>(mem[0x0000]) == 0x77, "ClearWriteProtect re-enables writes");
+        check(committed == 2, "previously-protected write now commits");
+    }
+
     std::cout << "\n==================================\n";
     if (failures == 0) {
         std::cout << "✅ ALL OBSERVABLE-MEMORY CHECKS PASSED\n";

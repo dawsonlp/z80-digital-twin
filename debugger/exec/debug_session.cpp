@@ -16,11 +16,29 @@ DebugSession::DebugSession(DebugCPU& cpu) : cpu_(cpu) {
         [this](uint16_t address, uint8_t old_value, uint8_t new_value) {
             OnMemoryWrite(address, old_value, new_value);
         });
+    blocked_observer_id_ = cpu_.GetMemory().AddBlockedWriteObserver(
+        [this](uint16_t address, uint8_t current_value, uint8_t attempted_value) {
+            OnBlockedWrite(address, current_value, attempted_value);
+        });
     state_ = cpu_.IsHalted() ? RunState::Halted : RunState::Paused;
 }
 
 DebugSession::~DebugSession() {
     cpu_.GetMemory().RemoveWriteObserver(write_observer_id_);
+    cpu_.GetMemory().RemoveBlockedWriteObserver(blocked_observer_id_);
+}
+
+void DebugSession::OnBlockedWrite(uint16_t address, uint8_t current_value,
+                                  uint8_t attempted_value) {
+    // A write to write-protected memory (ROM) was refused: the byte is unchanged.
+    // Record it as its own category — it resembles SMC but is semantically
+    // different (read-only memory, not self-modifying code).
+    coverage_[address] |= kBlockedWrite;
+    ++blocked_total_;
+    if (blocked_writes_.size() < kMaxSmcEvents) {
+        blocked_writes_.push_back({address, current_value, attempted_value,
+                                   current_instruction_pc_, cpu_.GetCycleCount()});
+    }
 }
 
 void DebugSession::OnMemoryWrite(uint16_t address, uint8_t old_value,
@@ -270,6 +288,8 @@ void DebugSession::Reset() {
     covered_bytes_ = 0;
     smc_events_.clear();
     smc_total_ = 0;
+    blocked_writes_.clear();
+    blocked_total_ = 0;
     smc_break_pending_ = false;
 }
 

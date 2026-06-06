@@ -23,12 +23,41 @@ DebugSession::~DebugSession() {
     cpu_.GetMemory().ClearWriteHook();
 }
 
-void DebugSession::OnMemoryWrite(uint16_t address, uint8_t /*old_value*/,
-                                 uint8_t /*new_value*/) {
+void DebugSession::OnMemoryWrite(uint16_t address, uint8_t old_value,
+                                 uint8_t new_value) {
     dirty_.insert(address);
     if (watchpoints_.find(address) != watchpoints_.end()) {
         watch_hit_ = address;
     }
+
+    // Self-modifying code: a write to a byte that has executed as code (L2).
+    if (coverage_[address] & (kExecOpcode | kExecOperand)) {
+        coverage_[address] |= kSelfModified;
+        ++smc_total_;
+        if (smc_events_.size() < kMaxSmcEvents) {
+            smc_events_.push_back({address, old_value, new_value,
+                                   current_instruction_pc_, cpu_.GetCycleCount()});
+        }
+        if (break_on_smc_) smc_break_pending_ = true;
+    }
+}
+
+void DebugSession::RecordCoverage(uint16_t start) {
+    if (coverage_[start] & kExecOpcode) return;   // this start is already mapped
+    const Instruction ins = disasm_.Decode(reader_, start);
+    auto mark = [&](uint16_t a, uint8_t flag) {
+        if ((coverage_[a] & (kExecOpcode | kExecOperand)) == 0) ++covered_bytes_;
+        coverage_[a] |= flag;
+    };
+    mark(start, kExecOpcode);
+    for (uint8_t i = 1; i < ins.length; ++i)
+        mark(static_cast<uint16_t>(start + i), kExecOperand);
+}
+
+void DebugSession::ExecuteOneInstruction() {
+    current_instruction_pc_ = cpu_.PC();
+    RecordCoverage(current_instruction_pc_);
+    StepRaw();
 }
 
 void DebugSession::StepRaw() {
@@ -52,14 +81,17 @@ StepResult DebugSession::StepInstruction() {
 
     watch_hit_.reset();
     skip_breakpoint_once_.reset();
+    smc_break_pending_ = false;
 
     const uint64_t before = cpu_.GetCycleCount();
-    StepRaw();
+    ExecuteOneInstruction();
     const uint64_t cycles = cpu_.GetCycleCount() - before;
 
     StopReason reason;
     if (watch_hit_) {
         reason = StopReason::Watchpoint;
+    } else if (smc_break_pending_) {
+        reason = StopReason::SelfModified;
     } else if (cpu_.IsHalted()) {
         reason = StopReason::Halted;
     } else {
@@ -119,6 +151,7 @@ StepResult DebugSession::RunSlice(uint64_t max_instructions) {
         state_ = RunState::Running;
     }
     watch_hit_.reset();
+    smc_break_pending_ = false;
 
     const uint64_t before = cpu_.GetCycleCount();
     StopReason reason = StopReason::BudgetExhausted;
@@ -146,11 +179,16 @@ StepResult DebugSession::RunSlice(uint64_t max_instructions) {
         // The skip applies to at most the first instruction of the slice.
         skip_breakpoint_once_.reset();
 
-        StepRaw();
+        ExecuteOneInstruction();
 
         if (watch_hit_) {
             state_ = RunState::Paused;
             reason = StopReason::Watchpoint;
+            break;
+        }
+        if (smc_break_pending_) {
+            state_ = RunState::Paused;
+            reason = StopReason::SelfModified;
             break;
         }
         if (cpu_.IsHalted()) {
@@ -169,6 +207,12 @@ void DebugSession::Reset() {
     dirty_.clear();
     watch_hit_.reset();
     skip_breakpoint_once_.reset();
+    // A reset is a fresh run: discard the execution coverage and SMC history.
+    coverage_.fill(0);
+    covered_bytes_ = 0;
+    smc_events_.clear();
+    smc_total_ = 0;
+    smc_break_pending_ = false;
 }
 
 void DebugSession::AddBreakpoint(uint16_t address, bool temporary) {

@@ -45,9 +45,15 @@ void MemoryPanel::Draw(UiContext& ctx) {
     ImGui::SameLine();
     ImGui::TextDisabled("changed bytes are highlighted");
 
+    ImGui::SameLine();
+    ImGui::TextDisabled("| green=executed  magenta=self-modified");
+
     DebugCPU& cpu = ctx.cpu();
-    const auto& dirty = ctx.session.DirtyAddresses();
-    const ImVec4 dirty_col(1.0f, 0.5f, 0.4f, 1.0f);
+    DebugSession& session = ctx.session;
+    const auto& dirty = session.DirtyAddresses();
+    const ImVec4 dirty_col(1.00f, 0.50f, 0.40f, 1.0f);   // recently written
+    const ImVec4 smc_col(1.00f, 0.40f, 1.00f, 1.0f);     // self-modified code
+    const ImVec4 exec_col(0.45f, 0.85f, 0.50f, 1.0f);    // executed as code
 
     if (ImGui::BeginChild("memscroll", ImVec2(0, 0), false,
                           ImGuiWindowFlags_HorizontalScrollbar)) {
@@ -74,8 +80,11 @@ void MemoryPanel::Draw(UiContext& ctx) {
                 for (int c = 0; c < 16; ++c) {
                     const uint16_t a = static_cast<uint16_t>(base + c);
                     const uint8_t v = cpu.ReadMemory(a);
-                    if (dirty.count(a)) ImGui::TextColored(dirty_col, "%02X", v);
-                    else                ImGui::Text("%02X", v);
+                    const uint8_t cov = session.CoverageFlags(a);
+                    if (cov & kSelfModified)                  ImGui::TextColored(smc_col, "%02X", v);
+                    else if (dirty.count(a))                  ImGui::TextColored(dirty_col, "%02X", v);
+                    else if (cov & (kExecOpcode | kExecOperand)) ImGui::TextColored(exec_col, "%02X", v);
+                    else                                      ImGui::Text("%02X", v);
                     // Hover a byte to see which symbol/region it belongs to.
                     if (ImGui::IsItemHovered())
                         if (auto sym = ctx.symbols.FindContaining(a))

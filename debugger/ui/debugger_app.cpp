@@ -11,6 +11,7 @@
 #include "panels/disassembly_panel.h"
 #include "panels/memory_panel.h"
 #include "panels/io_panel.h"
+#include "panels/smc_panel.h"
 
 #define GL_SILENCE_DEPRECATION
 #include "imgui.h"
@@ -36,6 +37,7 @@ const char* reason_text(StopReason r) {
         case StopReason::Halted:          return "halted";
         case StopReason::BudgetExhausted: return "running";
         case StopReason::AlreadyHalted:   return "already halted";
+        case StopReason::SelfModified:    return "self-modifying code!";
     }
     return "?";
 }
@@ -52,10 +54,11 @@ DebuggerApp::DebuggerApp() {
     panels_.push_back(std::make_unique<DisassemblyPanel>());
     panels_.push_back(std::make_unique<MemoryPanel>());
     panels_.push_back(std::make_unique<IoPanel>());
+    panels_.push_back(std::make_unique<SmcPanel>());
 }
 
 UiContext DebuggerApp::MakeContext() {
-    return UiContext{session_, symbols_, disasm_, commands_, status_};
+    return UiContext{session_, symbols_, disasm_, commands_, status_, disasm_goto_};
 }
 
 bool DebuggerApp::LoadProgramFile(const std::string& path, uint16_t start_address) {
@@ -110,8 +113,33 @@ void DebuggerApp::LoadDemo() {
     status_ = "Loaded built-in GCD demo (HL=1071, DE=462)";
 }
 
+void DebuggerApp::LoadSmcDemo() {
+    // Self-incrementing operand loop — modifies its own LD A,n operand each pass.
+    //   0x0000 3E 00     LD A, 0x00      (operand at 0x0001 is rewritten)
+    //   0x0002 21 01 00  LD HL, 0x0001
+    //   0x0005 34        INC (HL)        -> writes 0x0001 (executed code = SMC)
+    //   0x0006 18 F8     JR 0x0000
+    const std::vector<uint8_t> program = {
+        0x3E, 0x00, 0x21, 0x01, 0x00, 0x34, 0x18, 0xF8};
+    cpu_.Reset();
+    session_.Reset();
+    cpu_.LoadProgram(program, 0x0000);
+    session_.ClearDirty();
+
+    symbols_.DefineLabel(0x0000, "LOOP",    SymbolType::Function,     "self-modifying loop");
+    symbols_.DefineLabel(0x0001, "COUNTER", SymbolType::ByteVariable, "operand patched each pass");
+    status_ = "Loaded self-modifying demo (INC (HL) rewrites its own operand)";
+}
+
 void DebuggerApp::AddBreakpoint(uint16_t address) {
     session_.AddBreakpoint(address);
+}
+
+void DebuggerApp::RunInstructions(uint64_t count) {
+    for (uint64_t i = 0; i < count; ++i) {
+        const StepResult r = session_.StepInstruction();
+        if (r.reason == StopReason::Halted || r.reason == StopReason::AlreadyHalted) break;
+    }
 }
 
 void DebuggerApp::ExecuteCommands() {

@@ -17,6 +17,7 @@
 #include "symbol_table.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace z80::dbg {
@@ -40,6 +41,10 @@ struct UiContext {
     const Disassembler& disasm;
     DebugCommands& commands;
     std::string& status;
+
+    /// @brief Cross-panel request: jump the disassembly view to this address.
+    ///        Set by any panel; consumed and cleared by the disassembly panel.
+    std::optional<uint16_t>& disasm_goto;
 
     [[nodiscard]] DebugCPU& cpu() const { return session.Cpu(); }
 

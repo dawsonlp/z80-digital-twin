@@ -130,6 +130,10 @@ target_link_libraries(machine_test PRIVATE z80_machine)
 add_executable(screen_decode_test tests/screen_decode_test.cpp)
 target_link_libraries(screen_decode_test PRIVATE z80_machine)
 
+# Spectrum frame render (border + display, address mapping, FrameSource seam)
+add_executable(video_test tests/video_test.cpp)
+target_link_libraries(video_test PRIVATE z80_machine)
+
 # Debugger execution core (stepping, breakpoints, watchpoints)
 add_executable(debug_session_test tests/debug_session_test.cpp)
 target_link_libraries(debug_session_test PRIVATE z80_debugger_core)

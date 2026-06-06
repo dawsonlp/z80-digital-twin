@@ -62,6 +62,14 @@ public:
         cpu_.Reset();
     }
 
+    /// @brief Write-protect the 16 KB ROM region (0x0000–0x3FFF), matching real
+    ///        hardware. Off by default so stray ROM writes stay visible for
+    ///        diagnosis (the debugger's SMC panel flags them).
+    void set_rom_write_protect(bool on) {
+        if (on) cpu_.GetMemory().SetWriteProtect(0x0000, 0x3FFF);
+        else cpu_.GetMemory().ClearWriteProtect();
+    }
+
     /// @brief Load a ROM image (≤16 KB) at 0x0000 and reset the CPU.
     bool load_rom(std::span<const uint8_t> rom) {
         if (rom.empty() || rom.size() > 0x4000) return false;

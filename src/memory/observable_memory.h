@@ -44,6 +44,10 @@ public:
         operator uint8_t() const noexcept { return owner_.data_[address_]; }
 
         Reference& operator=(uint8_t value) {
+            // Write-protected region (e.g. ROM): a real bus ignores the write —
+            // drop it silently, observers don't fire. Off by default so writes
+            // stay visible (the SMC panel flags stray ROM writes for diagnosis).
+            if (owner_.WriteProtected(address_)) return *this;
             const uint8_t old_value = owner_.data_[address_];
             owner_.data_[address_] = value;
             owner_.Notify(address_, old_value, value);
@@ -91,6 +95,17 @@ public:
     [[nodiscard]] bool HasObservers() const noexcept { return !observers_.empty(); }
     [[nodiscard]] std::size_t ObserverCount() const noexcept { return observers_.size(); }
 
+    // -- Write protection (opt-in; e.g. ROM) ---------------------------------
+
+    /// @brief Make writes in [lo, hi] no-ops (a real bus ignores writes to ROM).
+    void SetWriteProtect(uint16_t lo, uint16_t hi) noexcept {
+        protect_enabled_ = true; protect_lo_ = lo; protect_hi_ = hi;
+    }
+    void ClearWriteProtect() noexcept { protect_enabled_ = false; }
+    [[nodiscard]] bool WriteProtected(uint16_t address) const noexcept {
+        return protect_enabled_ && address >= protect_lo_ && address <= protect_hi_;
+    }
+
 private:
     void Notify(uint16_t address, uint8_t old_value, uint8_t new_value) {
         for (auto& [id, observer] : observers_) {
@@ -101,6 +116,9 @@ private:
     std::array<uint8_t, SIZE> data_{};
     std::vector<std::pair<int, WriteObserver>> observers_;
     int next_id_ = 0;
+    bool protect_enabled_ = false;
+    uint16_t protect_lo_ = 0;
+    uint16_t protect_hi_ = 0;
 };
 
 } // namespace z80

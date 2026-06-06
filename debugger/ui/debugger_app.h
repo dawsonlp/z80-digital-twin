@@ -54,6 +54,10 @@ public:
     /// @brief Load a `.tap` for the Spectrum (press F5 in the window to play).
     bool LoadTape(const std::string& path);
 
+    /// @brief Write-protect the ROM (0x0000–0x3FFF). Off by default so the SMC
+    ///        panel can flag stray ROM writes during diagnosis.
+    void SetRomWriteProtect(bool on);
+
     /// @brief Set a breakpoint at an address (e.g. from the command line).
     void AddBreakpoint(uint16_t address);
 

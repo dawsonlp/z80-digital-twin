@@ -279,6 +279,42 @@ int main() {
         check(s2.State() == RunState::Paused, "paused after SMC break");
     }
 
+    // --- T-state-budgeted run (the machine frame primitive) -----------------
+    std::cout << "\n[10] RunForTStates (frame primitive)\n";
+    {
+        // Spin forever: JR $  (12 T-states per iteration).
+        DebugCPU cpu;
+        cpu.LoadProgram({0x18, 0xFE}, 0x0000);
+        DebugSession s(cpu);
+        s.Run();
+        StepResult r = s.RunForTStates(500);
+        check(r.reason == StopReason::BudgetExhausted, "stops once the T-state budget is met");
+        check(r.cycles >= 500, "ran at least the budget");
+        check(r.cycles < 500 + 16, "overran by at most one instruction");
+        check(s.State() == RunState::Running, "still Running after a full frame");
+    }
+    {
+        // HALT ends a frame early.
+        DebugCPU cpu = make_cpu();
+        DebugSession s(cpu);
+        s.Run();
+        StepResult r = s.RunForTStates(1'000'000);
+        check(r.reason == StopReason::Halted, "HALT stops a frame before the budget");
+        check(s.State() == RunState::Halted, "state Halted");
+    }
+    {
+        // A breakpoint stops a frame early (and only burns the elapsed T-states).
+        DebugCPU cpu;
+        cpu.LoadProgram({0x18, 0xFE}, 0x0000);   // JR $
+        DebugSession s(cpu);
+        s.AddBreakpoint(0x0000);
+        s.Run();
+        StepResult r = s.RunForTStates(1'000'000);
+        check(r.reason == StopReason::Breakpoint, "breakpoint stops a frame");
+        check(cpu.PC() == 0x0000, "paused at the breakpoint");
+        check(r.cycles < 1'000'000, "did not burn the whole budget");
+    }
+
     std::cout << "\n=======================\n";
     if (failures == 0) {
         std::cout << "✅ ALL DEBUG-SESSION CHECKS PASSED\n";

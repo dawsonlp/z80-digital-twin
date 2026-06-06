@@ -83,6 +83,17 @@ target_link_libraries(z80_debugger_core PUBLIC z80_cpu)
 target_compile_features(z80_debugger_core PUBLIC cxx_std_23)
 
 # =============================================================================
+# Machine Library (devices + frame clock) — header-only, no UI deps
+# =============================================================================
+
+# Drives the CPU in PAL frame quanta and asserts the frame interrupt. Templated
+# on the CPU config and decoupled from the debugger via a stepper callback, so it
+# depends only on z80_cpu. The Spectrum is its first machine.
+add_library(z80_machine INTERFACE)
+target_include_directories(z80_machine INTERFACE machine)
+target_link_libraries(z80_machine INTERFACE z80_cpu)
+
+# =============================================================================
 # Main Executable
 # =============================================================================
 # Executable Targets (Commented out - files not yet created)
@@ -106,6 +117,14 @@ target_link_libraries(io_policy_test PRIVATE z80_cpu)
 # Maskable interrupt verification (IM0/1/2, masking, HALT wake, EI deferral)
 add_executable(interrupt_test tests/interrupt_test.cpp)
 target_link_libraries(interrupt_test PRIVATE z80_cpu)
+
+# Spectrum timing constants (clock tree + frame/scanline geometry)
+add_executable(timing_test tests/timing_test.cpp)
+target_link_libraries(timing_test PRIVATE z80_machine)
+
+# Machine frame clock (frame budget, device ticks, interrupt-per-frame)
+add_executable(machine_test tests/machine_test.cpp)
+target_link_libraries(machine_test PRIVATE z80_machine)
 
 # Debugger execution core (stepping, breakpoints, watchpoints)
 add_executable(debug_session_test tests/debug_session_test.cpp)

@@ -201,6 +201,64 @@ StepResult DebugSession::RunSlice(uint64_t max_instructions) {
     return {reason, cpu_.GetCycleCount() - before, cpu_.PC()};
 }
 
+StepResult DebugSession::RunForTStates(uint64_t tstate_budget) {
+    if (cpu_.IsHalted()) {
+        state_ = RunState::Halted;
+        return {StopReason::Halted, 0, cpu_.PC()};
+    }
+    if (state_ != RunState::Running) {
+        state_ = RunState::Running;
+    }
+    watch_hit_.reset();
+    smc_break_pending_ = false;
+
+    const uint64_t before = cpu_.GetCycleCount();
+    StopReason reason = StopReason::BudgetExhausted;
+
+    // Mirrors RunSlice's per-instruction body, but bounds by elapsed T-states
+    // rather than an instruction count (the natural unit for a frame quantum).
+    while (cpu_.GetCycleCount() - before < tstate_budget) {
+        const uint16_t pc = cpu_.PC();
+
+        if (BreakpointStopsAt(pc)) {
+            const bool resuming_here =
+                skip_breakpoint_once_ && *skip_breakpoint_once_ == pc;
+            if (!resuming_here) {
+                Breakpoint& bp = breakpoints_[pc];
+                ++bp.hit_count;
+                if (bp.temporary) {
+                    breakpoints_.erase(pc);
+                }
+                skip_breakpoint_once_ = pc;
+                state_ = RunState::Paused;
+                reason = StopReason::Breakpoint;
+                break;
+            }
+        }
+        skip_breakpoint_once_.reset();
+
+        ExecuteOneInstruction();
+
+        if (watch_hit_) {
+            state_ = RunState::Paused;
+            reason = StopReason::Watchpoint;
+            break;
+        }
+        if (smc_break_pending_) {
+            state_ = RunState::Paused;
+            reason = StopReason::SelfModified;
+            break;
+        }
+        if (cpu_.IsHalted()) {
+            state_ = RunState::Halted;
+            reason = StopReason::Halted;
+            break;
+        }
+    }
+
+    return {reason, cpu_.GetCycleCount() - before, cpu_.PC()};
+}
+
 void DebugSession::Reset() {
     cpu_.Reset();
     state_ = RunState::Paused;

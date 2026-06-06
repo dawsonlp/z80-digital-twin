@@ -54,7 +54,7 @@ void SpectrumScreenPanel::Draw(UiContext& /*ctx*/) {
     ImGui::Begin("Spectrum Screen");
     ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(texture_)),
                  ImVec2(v::kFrameWidth * 2.0f, v::kFrameHeight * 2.0f));
-    ImGui::TextDisabled("type here when focused (Shift=CAPS, Ctrl=SYM, Bksp=DELETE)");
+    ImGui::TextDisabled("Run, then just type (Shift=CAPS, Ctrl=SYM, Bksp=DELETE)");
     ImGui::End();
 }
 

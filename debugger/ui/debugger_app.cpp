@@ -347,7 +347,11 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    // In Spectrum mode the host keyboard drives the machine, so leave ImGui's
+    // keyboard navigation off — otherwise it holds WantCaptureKeyboard and eats
+    // every keystroke before it reaches the ULA. (Text fields still grab focus,
+    // so typing a symbol path etc. is unaffected.)
+    if (!spectrum_mode_) ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     if (smoke) ImGui::GetIO().IniFilename = nullptr;  // deterministic screenshots
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window_, true);

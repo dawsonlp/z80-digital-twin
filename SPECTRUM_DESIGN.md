@@ -192,8 +192,6 @@ non-interlaced picture.) Our model uses a single repeating 312-line frame.
 
 ## 10. Open questions / pending
 
-- **Debugger templating** — confirm decision (a) in ARCHITECTURE §7 (template
-  `DebugSession` on the config) vs the runtime-routing alternative.
 - **Screen decoder** — final port/interface (logic reviewed; awaiting the file).
 - **`/INT` hold width** and exact within-line phase / contention pattern — verify
   against Chris Smith's ULA book when timing accuracy is implemented.

@@ -107,19 +107,30 @@ shared across the I/O *and* memory seams (the ULA needs both).
 
 ## 7. The debugger over policy configurations
 
-The disassembler and symbol table are already CPU-agnostic (they use a
-byte-reader callback). Only `DebugSession` references the concrete CPU. So:
+**Decided (a):** the whole stack is parameterized on **one** config, threaded
+through consistently. The config is named once as a type alias; everything that
+touches the CPU uses it:
 
-- **Decision (recommended, pending final confirmation): template `DebugSession`
-  on the CPU configuration**, constrained to an `ObservableMemory` plug, and
-  explicitly instantiate it for each shipped config (e.g. the Spectrum config
-  and a generic `CPUImpl<ObservableMemory, FastIo>`). Disassembler/symbols stay
-  compiled and shared.
-- This lets the debugger operate on the **real** compile-time config it ships —
-  you debug exactly what runs — while keeping the twin on bare policies.
-- (Considered alternative: fix the debugger to one instrumented config with a
-  runtime-routing I/O. Simpler lib, but then the debugged machine uses runtime
-  I/O routing rather than its real `SpectrumIo`. Rejected for losing fidelity.)
+```cpp
+using AppCpu     = CPUImpl<ObservableMemory, SpectrumIo>;   // this build's config
+using AppSession = DebugSession<AppCpu>;                    // Machine<AppCpu> too
+```
+
+- `DebugSession` and `Machine` are **templates on the config** (constrained to an
+  `ObservableMemory` plug); they are explicitly instantiated for each shipped
+  config.
+- The **disassembler and symbol table stay non-templated and shared** — they are
+  config-agnostic (byte-reader callback / address maps). Only code that touches
+  the CPU is parameterized; that *is* the consistent rule, not an exception.
+- The **UI binds the alias** (`UiContext`/panels reference `AppSession`), so
+  panels aren't templated per-config — the single config choice lives at the
+  alias.
+- **Consequence:** the integrated app is built as one config — the Spectrum
+  config — which also serves generic-Z80 debugging (arbitrary code simply
+  doesn't exercise the Spectrum ports). The mass twin is a separate build on
+  bare policies (`CPUImpl<FastMemory, FastIo>` etc.), with no debugger or UI.
+- (Rejected alternative (b): fixing the debugger to a runtime-routing I/O — it
+  would debug a proxy rather than the real `SpectrumIo`, losing fidelity.)
 
 ## 8. The performance invariant (sacred)
 

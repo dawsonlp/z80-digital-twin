@@ -55,9 +55,19 @@ public:
         // next instruction (declined if interrupts are masked or in an EI shadow).
         cpu_.Interrupt(int_bus_);
 
-        const uint64_t target = frame_tstates_ - carry_;
-        const uint64_t ran = step(target);
-        carry_ = ran > target ? ran - target : 0;
+        uint64_t ran = 0;
+        if (carry_ >= frame_tstates_) {
+            // A single instruction overran by more than a whole frame (e.g. a big
+            // LDIR, which the CPU executes atomically). Don't step this frame —
+            // pay the debt down by one frame's worth. This keeps the long-run
+            // average at frame_tstates_ and, crucially, avoids underflowing the
+            // unsigned `target` below (which would run the CPU ~forever).
+            carry_ -= frame_tstates_;
+        } else {
+            const uint64_t target = frame_tstates_ - carry_;
+            ran = step(target);
+            carry_ = ran > target ? ran - target : 0;
+        }
 
         for (Device* device : devices_) device->OnFrame();
         ++frames_;

@@ -102,6 +102,37 @@ int main() {
         check(serviced == m.Frames() - 1, "one serviced interrupt per frame");
     }
 
+    // --- 3. A single instruction overrunning by more than a frame ----------
+    // The fast stepper runs LDIR atomically, so one instruction can exceed a
+    // whole frame's T-states. The carry must not underflow the next frame's
+    // unsigned budget (which would run the CPU ~forever — this was the JetPac
+    // load freeze: the game's init LDIR overran ~1.7 frames).
+    std::cout << "\n[3] Overrun by > one frame (atomic LDIR) doesn't underflow/hang\n";
+    {
+        CPU cpu;
+        cpu.Reset();
+        cpu.LoadProgram({
+            0x21, 0x00, 0x80,   // LD HL, 0x8000
+            0x11, 0x00, 0xA0,   // LD DE, 0xA000
+            0x01, 0x20, 0x4E,   // LD BC, 20000
+            0xED, 0xB0,         // LDIR  (~420000 T in one atomic instruction)
+            0x18, 0xFE          // JR $
+        }, 0x0000);
+
+        Machine<CPU> m(cpu, t::kTPerFrame);
+        auto step = make_fast_stepper(cpu);
+
+        const uint64_t first = m.RunFrame(step);
+        check(first > 2 * t::kTPerFrame, "one frame ran several frames' worth (atomic LDIR)");
+        check(m.Carry() >= t::kTPerFrame, "carry exceeds a whole frame after the overrun");
+
+        // The follow-up frames must TERMINATE (no underflow-hang) and drain the
+        // carry back below a frame. (If this hangs, the bug has regressed.)
+        for (int i = 0; i < 10; ++i) m.RunFrame(step);
+        check(m.Carry() < t::kTPerFrame, "carry drained below one frame (no underflow)");
+        check(m.Frames() == 11, "all frames completed without hanging");
+    }
+
     std::cout << "\n================================\n";
     if (failures == 0) {
         std::cout << "✅ ALL MACHINE CHECKS PASSED\n";

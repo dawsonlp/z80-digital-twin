@@ -140,9 +140,11 @@ Modular panels over a shared `UiContext`; each panel is a `Panel` subclass.
 - **Spectrum mode** (`--spectrum <rom>`) — drives the real ZX Spectrum under the
   debugger: a **Spectrum Screen** panel (live border+display), 50 Hz frames run
   through `RunForTStates` so breakpoints apply (a breakpoint *mid-frame* resumes
-  the same frame), host keyboard → matrix, ULA ports visible in the I/O panel.
-  ROM is read-only by default (refused writes tracked as blocked writes);
-  `--writable-rom` lets them land (corrupting ROM, flagged as SMC) for what-if.
+  the same frame), host keyboard → matrix, ULA ports visible in the I/O panel,
+  **beeper sound** (the free-run is paced to 50 Hz so audio plays at ~44.1 kHz),
+  and a live **Keyboard (matrix)** panel. ROM is read-only by default (refused
+  writes tracked as blocked writes); `--writable-rom` lets them land (corrupting
+  ROM, flagged as SMC) for what-if.
 - Symbol editor popup (create/edit/remove; byte/word/label/function/jump-target)
   + File ▸ Save Symbols.
 

@@ -19,6 +19,10 @@
 #include "panel.h"
 #include "spectrum/ula.h"
 #include "spectrum/tape.h"
+#include "spectrum/beeper.h"
+#include "audio_output.h"
+
+#include <chrono>
 
 #include <cstdint>
 #include <memory>
@@ -82,6 +86,7 @@ private:
     void DriveSpectrumFrame();      // one PAL frame via the session (breakpoint-aware)
     void PollSpectrumKeyboard();    // host keys -> ULA matrix (when ImGui isn't typing)
     void ResetSpectrum();           // cold boot: reload ROM, zero RAM, reset CPU+ULA, run
+    void PumpAudio();               // drain this frame's beeper edges -> PCM -> device
 
     // -- State ---------------------------------------------------------------
     DebugCPU cpu_;
@@ -108,6 +113,16 @@ private:
     bool spectrum_running_ = false;  ///< free-running the machine at 50 Hz
     bool frame_active_ = false;      ///< mid-frame (a breakpoint may have paused us)
     uint64_t frame_budget_ = 0;      ///< T-states left in the current frame
+
+    // Audio (beeper). 50 Hz wall-clock pacing keeps sample production ≈ 44.1 kHz.
+    static constexpr uint32_t kAudioRate = 44100;
+    audio::AudioOutput audio_;
+    machine::spectrum::BeeperResampler beeper_{machine::spectrum::timing::kCpuHz, kAudioRate};
+    std::vector<int16_t> audio_samples_;
+    bool sound_ = false;
+    std::chrono::steady_clock::time_point last_frame_time_;
+    double frame_accum_ = 0.0;       ///< wall-clock time owed in 50 Hz frames
+    bool paced_ = false;             ///< pacing clock initialised
 };
 
 } // namespace z80::dbg

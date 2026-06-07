@@ -129,6 +129,10 @@ target_link_libraries(rotate_flags_test PRIVATE z80_cpu)
 add_executable(daa_test tests/daa_test.cpp)
 target_link_libraries(daa_test PRIVATE z80_cpu)
 
+# Instruction T-state timing (per-category: base/CB/ED/DD-FD/DDCB-FDCB)
+add_executable(instruction_timing_test tests/instruction_timing_test.cpp)
+target_link_libraries(instruction_timing_test PRIVATE z80_cpu)
+
 # Spectrum timing constants (clock tree + frame/scanline geometry)
 add_executable(timing_test tests/timing_test.cpp)
 target_link_libraries(timing_test PRIVATE z80_machine)
@@ -200,7 +204,8 @@ target_link_libraries(gcd_stress_test PRIVATE z80_cpu)
 # =============================================================================
 foreach(test
         cpu_test observable_memory_test io_policy_test interrupt_test
-        rotate_flags_test daa_test timing_test machine_test screen_decode_test
+        rotate_flags_test daa_test instruction_timing_test timing_test
+        machine_test screen_decode_test
         video_test keyboard_test raster_test tape_test beeper_test
         spectrum_boot_test spectrum_debug_test debug_session_test
         disassembler_test symbol_table_test)

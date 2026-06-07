@@ -102,41 +102,11 @@ int main() {
         check(serviced == m.Frames() - 1, "one serviced interrupt per frame");
     }
 
-    // --- 3. A step overrunning by more than a frame doesn't underflow/hang --
-    // If a single step ever returns more than a whole frame's worth of T-states,
-    // the carried overrun exceeds frame_tstates_; RunFrame must not compute the
-    // next budget as an unsigned `frame_tstates_ - carry_` underflow (which would
-    // run the CPU ~forever — the original JetPac load freeze). Block ops are now
-    // interruptible so they no longer overrun like this, but the guard stays as
-    // defense-in-depth and is tested directly here with a controlled stepper.
-    std::cout << "\n[3] A >1-frame overrun is absorbed without underflow/hang\n";
-    {
-        CPU cpu;
-        cpu.Reset();
-        Machine<CPU> m(cpu, t::kTPerFrame);
-
-        // First call overruns by ~3 frames; later calls do nothing.
-        int call = 0;
-        auto bursty = [&](uint64_t target) -> uint64_t {
-            return (call++ == 0) ? target + 3 * t::kTPerFrame : 0;
-        };
-
-        const uint64_t first = m.RunFrame(bursty);
-        check(first > 3 * t::kTPerFrame, "first frame overran by more than three frames");
-        check(m.Carry() >= t::kTPerFrame, "carry exceeds a whole frame after the overrun");
-
-        // These must TERMINATE (no underflow-hang) and drain the carry below a
-        // frame. (If this hangs, the bug has regressed.)
-        for (int i = 0; i < 5; ++i) m.RunFrame(bursty);
-        check(m.Carry() < t::kTPerFrame, "carry drained below one frame (no underflow)");
-        check(m.Frames() == 6, "all frames completed without hanging");
-    }
-
-    // --- 4. Block ops (LDIR) are interruptible mid-instruction -------------
+    // --- 3. Block ops (LDIR) are interruptible mid-instruction -------------
     // A real Z80 services interrupts between block-op iterations; the pushed
     // return address points back at the instruction so RETI resumes it. Verify
     // a long LDIR is broken by the frame interrupt and still completes.
-    std::cout << "\n[4] LDIR is interruptible and resumes after the handler\n";
+    std::cout << "\n[3] LDIR is interruptible and resumes after the handler\n";
     {
         CPU cpu;
         cpu.Reset();

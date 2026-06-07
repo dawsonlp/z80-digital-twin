@@ -23,6 +23,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
+#include "portable-file-dialogs.h"
 
 #include <cstdint>
 #include <fstream>
@@ -372,6 +373,15 @@ void DebuggerApp::DrawMenuBar() {
             else
                 status_ = std::format("Failed to save symbols to {}", sym_path_buf_);
         }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Open tape…", nullptr, false, spectrum_mode_)) {
+            auto sel = pfd::open_file("Open tape", ".",
+                                      {"ZX Spectrum tapes (.tap .tzx)", "*.tap *.tzx",
+                                       "All files", "*"}).result();
+            if (!sel.empty()) LoadTape(sel.front());
+        }
+        if (!spectrum_mode_)
+            ImGui::TextDisabled("(load a Spectrum ROM with --spectrum to use tapes)");
         ImGui::Separator();
         if (ImGui::MenuItem("Quit")) {
             glfwSetWindowShouldClose(window_, GLFW_TRUE);

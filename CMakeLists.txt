@@ -266,6 +266,18 @@ if(Z80_BUILD_UI)
         FetchContent_Populate(miniaudio)   # header only; don't build its CMake project
     endif()
 
+    # --- portable-file-dialogs (native open/save dialogs; single header) ----
+    FetchContent_Declare(portable_file_dialogs
+        GIT_REPOSITORY https://github.com/samhocevar/portable-file-dialogs.git
+        GIT_TAG        0.1.0
+        GIT_SHALLOW    TRUE)
+    FetchContent_GetProperties(portable_file_dialogs)
+    if(NOT portable_file_dialogs_POPULATED)
+        FetchContent_Populate(portable_file_dialogs)   # header only
+    endif()
+    add_library(pfd INTERFACE)
+    target_include_directories(pfd SYSTEM INTERFACE ${portable_file_dialogs_SOURCE_DIR})
+
     add_library(z80_audio STATIC apps/audio/audio_output.cpp apps/audio/audio_output.h)
     target_include_directories(z80_audio PUBLIC apps/audio)
     target_include_directories(z80_audio SYSTEM PRIVATE ${miniaudio_SOURCE_DIR})
@@ -297,12 +309,12 @@ if(Z80_BUILD_UI)
         debugger/ui/panels/screen_panel.cpp
         debugger/ui/panels/keyboard_panel.cpp)
     target_include_directories(z80_debugger PRIVATE debugger/ui debugger/ui/panels)
-    target_link_libraries(z80_debugger PRIVATE z80_debugger_core z80_machine z80_audio imgui)
+    target_link_libraries(z80_debugger PRIVATE z80_debugger_core z80_machine z80_audio imgui pfd)
     target_compile_features(z80_debugger PRIVATE cxx_std_23)
 
     # --- The ZX Spectrum viewer --------------------------------------------
     add_executable(spectrum apps/spectrum/main.cpp)
-    target_link_libraries(spectrum PRIVATE z80_machine z80_audio imgui)
+    target_link_libraries(spectrum PRIVATE z80_machine z80_audio imgui pfd)
     target_compile_features(spectrum PRIVATE cxx_std_23)
 endif()
 

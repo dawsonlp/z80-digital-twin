@@ -23,6 +23,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
+#include "portable-file-dialogs.h"
 
 #include <array>
 #include <chrono>
@@ -45,6 +46,28 @@ std::vector<uint8_t> read_file(const std::string& path) {
     if (!f) return {};
     return std::vector<uint8_t>((std::istreambuf_iterator<char>(f)),
                                 std::istreambuf_iterator<char>());
+}
+
+// Read @p path and load it as the machine's tape (.tap/.tzx auto-detected).
+// Logs the outcome; returns true on success.
+bool load_tape_file(sm::SpectrumMachine& machine, const std::string& path) {
+    const std::vector<uint8_t> data = read_file(path);
+    if (data.empty() || !machine.load_tape(data)) {
+        std::cerr << "Failed to load tape: " << path << "\n";
+        return false;
+    }
+    std::cout << "Tape: " << path << " (" << machine.tape().block_count()
+              << " blocks). Type LOAD\"\" then press F5 to play.\n";
+    return true;
+}
+
+// Open the native file picker for a tape image. Returns the chosen path, or ""
+// if cancelled or no backend is available.
+std::string pick_tape_file() {
+    auto sel = pfd::open_file("Open tape", ".",
+                              {"ZX Spectrum tapes (.tap .tzx)", "*.tap *.tzx",
+                               "All files", "*"}).result();
+    return sel.empty() ? std::string{} : sel.front();
 }
 
 std::vector<uint8_t> find_rom(const std::string& explicit_path) {
@@ -109,6 +132,7 @@ void print_usage(const char* prog) {
         "  -h, --help           Show this help and exit.\n"
         "\n"
         "In-window keys:\n"
+        "  F3                   Open a tape file (native picker)\n"
         "  F5                   Play the tape    F6   Stop the tape\n"
         "  (keyboard)           Letters/digits/ENTER/SPACE; Shift=CAPS SHIFT,\n"
         "                       Ctrl=SYMBOL SHIFT, Backspace=DELETE.\n"
@@ -177,15 +201,7 @@ int main(int argc, char** argv) {
     machine.set_rom_write_protect(!writable_rom);   // ROM is read-only by default
     if (writable_rom) std::cout << "ROM writable (writes land; --writable-rom)\n";
 
-    if (!tape_path.empty()) {
-        const std::vector<uint8_t> tap = read_file(tape_path);
-        if (tap.empty() || !machine.load_tape(tap)) {
-            std::cerr << "Failed to load tape: " << tape_path << "\n";
-        } else {
-            std::cout << "Tape: " << tape_path << " (" << machine.tape().block_count()
-                      << " blocks). Type LOAD\"\" then press F5 to play.\n";
-        }
-    }
+    if (!tape_path.empty()) load_tape_file(machine, tape_path);
 
     // -- Headless screenshot: no display needed ------------------------------
     if (!shot_path.empty()) {
@@ -250,7 +266,7 @@ int main(int argc, char** argv) {
     auto fps_mark = last;
     double accumulator = 0.0;
     int emulated = 0;
-    bool f5_prev = false, f6_prev = false;   // tape transport edge detection
+    bool f3_prev = false, f5_prev = false, f6_prev = false;   // tape transport edge detection
 
     // Audio: the beeper edge timeline resampled to PCM and played via miniaudio.
     // Only fed on the real-time (non-turbo) path, where one frame == 1/50 s of
@@ -275,11 +291,19 @@ int main(int argc, char** argv) {
         glfwPollEvents();
         poll_keyboard(window, machine.ula());
 
-        // Tape transport: F5 = play, F6 = stop (on key-down edge).
+        // Tape transport: F3 = open a tape (native picker), F5 = play, F6 = stop
+        // (on key-down edge).
+        const bool f3 = glfwGetKey(window, GLFW_KEY_F3) == GLFW_PRESS;
         const bool f5 = glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS;
         const bool f6 = glfwGetKey(window, GLFW_KEY_F6) == GLFW_PRESS;
+        if (f3 && !f3_prev) {
+            const std::string path = pick_tape_file();   // modal; pauses the game
+            if (!path.empty()) load_tape_file(machine, path);
+            last = clock::now();                          // don't catch up the dialog's wall-time
+        }
         if (f5 && !f5_prev) { machine.play_tape(); std::cout << "tape: play\n"; }
         if (f6 && !f6_prev) { machine.stop_tape(); std::cout << "tape: stop\n"; }
+        f3_prev = f3;
         f5_prev = f5;
         f6_prev = f6;
 

@@ -130,6 +130,10 @@ public:
         return protect_enabled_ && address >= protect_lo_ && address <= protect_hi_;
     }
 
+    /// @brief Tooling-only direct write: bypasses observers AND write protection
+    ///        (for loading ROM images / resetting RAM, not for emulated writes).
+    void RawWrite(uint16_t address, uint8_t value) noexcept { data_[address] = value; }
+
 private:
     void Notify(uint16_t address, uint8_t old_value, uint8_t new_value) {
         for (auto& [id, observer] : observers_) {

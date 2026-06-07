@@ -81,6 +81,7 @@ private:
     // -- Spectrum mode -------------------------------------------------------
     void DriveSpectrumFrame();      // one PAL frame via the session (breakpoint-aware)
     void PollSpectrumKeyboard();    // host keys -> ULA matrix (when ImGui isn't typing)
+    void ResetSpectrum();           // cold boot: reload ROM, zero RAM, reset CPU+ULA, run
 
     // -- State ---------------------------------------------------------------
     DebugCPU cpu_;
@@ -101,6 +102,7 @@ private:
     // Spectrum machine (active only after LoadSpectrumRom).
     machine::spectrum::Ula ula_;
     machine::spectrum::Tape tape_;
+    std::vector<uint8_t> rom_image_;   ///< the loaded ROM, for cold-boot reset
     bool tape_play_prev_ = false;    ///< F5 edge detection
     bool spectrum_mode_ = false;     ///< driving a Spectrum (screen panel + frame run)
     bool spectrum_running_ = false;  ///< free-running the machine at 50 Hz

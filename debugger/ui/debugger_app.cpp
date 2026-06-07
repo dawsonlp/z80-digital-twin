@@ -227,6 +227,15 @@ void DebuggerApp::ResetSpectrum() {
     status_ = "Reset (cold boot)";
 }
 
+void DebuggerApp::PumpAudio() {
+    if (!sound_) return;
+    audio_samples_.clear();
+    for (const auto& e : ula_.beeper_edges())
+        beeper_.edge(e.cycle, e.level, audio_samples_);
+    beeper_.advance(cpu_.GetCycleCount(), audio_samples_);
+    audio_.push(audio_samples_);
+}
+
 void DebuggerApp::DriveSpectrumFrame() {
     using machine::spectrum::timing::kTPerFrame;
 
@@ -316,8 +325,25 @@ void DebuggerApp::ExecuteCommands() {
     commands_.Clear();
 
     if (spectrum_mode_) {
-        // Free-run the machine one PAL frame per UI tick (breakpoint-aware).
-        if (spectrum_running_) DriveSpectrumFrame();
+        // Free-run paced to 50 Hz wall-clock (so it runs at real speed and the
+        // beeper feeds the sound card at ≈44.1 kHz), breakpoint-aware.
+        if (spectrum_running_) {
+            const auto now = std::chrono::steady_clock::now();
+            if (!paced_) { last_frame_time_ = now; paced_ = true; }
+            frame_accum_ += std::chrono::duration<double>(now - last_frame_time_).count();
+            last_frame_time_ = now;
+            if (frame_accum_ > 0.25) frame_accum_ = 0.25;   // don't burst after a stall
+            const double period = 1.0 / machine::spectrum::timing::kFrameRateHz;
+            int ran = 0;
+            while (frame_accum_ >= period && ran < 4 && spectrum_running_) {
+                DriveSpectrumFrame();
+                PumpAudio();
+                frame_accum_ -= period;
+                ++ran;
+            }
+        } else {
+            paced_ = false;   // reset pacing while paused so resume doesn't catch up
+        }
     } else if (session_.State() == RunState::Running) {
         // While running, advance a bounded slice per frame.
         const StepResult r = session_.RunSlice(run_budget_);
@@ -403,6 +429,13 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(window_, true);
     ImGui_ImplOpenGL3_Init(glsl_version);
+
+    // Beeper audio (Spectrum mode only; harmless if no device is available).
+    if (spectrum_mode_ && !smoke) {
+        sound_ = audio_.start(kAudioRate);
+        std::cout << (sound_ ? "sound: on (beeper, 44100 Hz)\n"
+                             : "sound: no audio device\n") << std::flush;
+    }
 
     int frame = 0;
     while (!glfwWindowShouldClose(window_)) {

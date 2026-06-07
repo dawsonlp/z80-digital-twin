@@ -102,35 +102,63 @@ int main() {
         check(serviced == m.Frames() - 1, "one serviced interrupt per frame");
     }
 
-    // --- 3. A single instruction overrunning by more than a frame ----------
-    // The fast stepper runs LDIR atomically, so one instruction can exceed a
-    // whole frame's T-states. The carry must not underflow the next frame's
-    // unsigned budget (which would run the CPU ~forever — this was the JetPac
-    // load freeze: the game's init LDIR overran ~1.7 frames).
-    std::cout << "\n[3] Overrun by > one frame (atomic LDIR) doesn't underflow/hang\n";
+    // --- 3. A step overrunning by more than a frame doesn't underflow/hang --
+    // If a single step ever returns more than a whole frame's worth of T-states,
+    // the carried overrun exceeds frame_tstates_; RunFrame must not compute the
+    // next budget as an unsigned `frame_tstates_ - carry_` underflow (which would
+    // run the CPU ~forever — the original JetPac load freeze). Block ops are now
+    // interruptible so they no longer overrun like this, but the guard stays as
+    // defense-in-depth and is tested directly here with a controlled stepper.
+    std::cout << "\n[3] A >1-frame overrun is absorbed without underflow/hang\n";
     {
         CPU cpu;
         cpu.Reset();
-        cpu.LoadProgram({
-            0x21, 0x00, 0x80,   // LD HL, 0x8000
-            0x11, 0x00, 0xA0,   // LD DE, 0xA000
-            0x01, 0x20, 0x4E,   // LD BC, 20000
-            0xED, 0xB0,         // LDIR  (~420000 T in one atomic instruction)
-            0x18, 0xFE          // JR $
-        }, 0x0000);
+        Machine<CPU> m(cpu, t::kTPerFrame);
+
+        // First call overruns by ~3 frames; later calls do nothing.
+        int call = 0;
+        auto bursty = [&](uint64_t target) -> uint64_t {
+            return (call++ == 0) ? target + 3 * t::kTPerFrame : 0;
+        };
+
+        const uint64_t first = m.RunFrame(bursty);
+        check(first > 3 * t::kTPerFrame, "first frame overran by more than three frames");
+        check(m.Carry() >= t::kTPerFrame, "carry exceeds a whole frame after the overrun");
+
+        // These must TERMINATE (no underflow-hang) and drain the carry below a
+        // frame. (If this hangs, the bug has regressed.)
+        for (int i = 0; i < 5; ++i) m.RunFrame(bursty);
+        check(m.Carry() < t::kTPerFrame, "carry drained below one frame (no underflow)");
+        check(m.Frames() == 6, "all frames completed without hanging");
+    }
+
+    // --- 4. Block ops (LDIR) are interruptible mid-instruction -------------
+    // A real Z80 services interrupts between block-op iterations; the pushed
+    // return address points back at the instruction so RETI resumes it. Verify
+    // a long LDIR is broken by the frame interrupt and still completes.
+    std::cout << "\n[4] LDIR is interruptible and resumes after the handler\n";
+    {
+        CPU cpu;
+        cpu.Reset();
+        // IM 1; EI; LDIR; HALT
+        cpu.LoadProgram({0xED, 0x56, 0xFB, 0xED, 0xB0, 0x76}, 0x0000);
+        // handler @ 0x0038: LD A,(0x9100); INC A; LD (0x9100),A; EI; RETI
+        cpu.LoadProgram({0x3A, 0x00, 0x91, 0x3C, 0x32, 0x00, 0x91, 0xFB, 0xED, 0x4D}, 0x0038);
+        cpu.HL() = 0x8000; cpu.DE() = 0xA000; cpu.BC() = 4000;   // a long copy
+        cpu.WriteMemory(0x9100, 0);
+        cpu.WriteMemory(0x8000, 0x42);          // first source byte
+        cpu.WriteMemory(0x8000 + 3999, 0x99);   // last source byte (dest 0xAF9F)
 
         Machine<CPU> m(cpu, t::kTPerFrame);
         auto step = make_fast_stepper(cpu);
 
-        const uint64_t first = m.RunFrame(step);
-        check(first > 2 * t::kTPerFrame, "one frame ran several frames' worth (atomic LDIR)");
-        check(m.Carry() >= t::kTPerFrame, "carry exceeds a whole frame after the overrun");
-
-        // The follow-up frames must TERMINATE (no underflow-hang) and drain the
-        // carry back below a frame. (If this hangs, the bug has regressed.)
-        for (int i = 0; i < 10; ++i) m.RunFrame(step);
-        check(m.Carry() < t::kTPerFrame, "carry drained below one frame (no underflow)");
-        check(m.Frames() == 11, "all frames completed without hanging");
+        int frames = 0;
+        while (!cpu.IsHalted() && frames < 1000) { m.RunFrame(step); ++frames; }
+        check(cpu.IsHalted(), "LDIR completed (reached HALT) across several frames");
+        check(cpu.BC() == 0, "all 4000 bytes copied");
+        check(cpu.ReadMemory(0x9100) > 0, "frame interrupt was serviced *during* the LDIR");
+        check(cpu.ReadMemory(0xA000) == 0x42 && cpu.ReadMemory(0xAF9F) == 0x99,
+              "first and last bytes copied correctly across interrupt/resume");
     }
 
     std::cout << "\n================================\n";

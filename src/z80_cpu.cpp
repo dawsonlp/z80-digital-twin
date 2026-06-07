@@ -3937,152 +3937,78 @@ void CPUImpl<Memory, Io>::OUTD() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LDIR() {
-    // ED B0 - Load, increment and repeat
-    do {
-        memory[DE()] = memory[HL()];
-        HL()++;
-        DE()++;
-        BC()--;
-        t_cycle += 21; // 21 cycles per iteration
-    } while (BC() != 0);
-    
-    // Adjust for last iteration (16 cycles instead of 21)
-    t_cycle -= 5;
-    
-    // Set flags
-    F() &= (Constants::Flags::CARRY | Constants::Flags::ZERO | Constants::Flags::SIGN); // Preserve C, Z, S
-    // P/V is reset (BC = 0)
+    // ED B0 - Load, increment and repeat.
+    //
+    // Executed ONE iteration per instruction step, the way a real Z80 does it:
+    // perform a single LDI, then if BC != 0 rewind PC by 2 so the next fetch
+    // re-executes this same instruction. Two consequences, both authentic:
+    //   * It is *interruptible* between iterations — when an interrupt is taken
+    //     mid-copy the pushed return address points back at the LDIR, so RETI
+    //     resumes it. (The atomic version ran the whole copy in one step, so a
+    //     long LDIR could not be broken by the 50 Hz frame interrupt.)
+    //   * A single step never advances more than one iteration's T-states, so
+    //     the frame clock can't overrun a whole frame on one instruction.
+    // Timing per iteration: LDI is 16 T; the repeat adds 5 (21 T), the final
+    // iteration is 16 T — matching the hardware.
+    LDI();
+    if (BC() != 0) { PC() -= 2; t_cycle += 5; }
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CPIR() {
-    // ED B1 - Compare, increment and repeat
-    uint8_t result;
-    do {
-        result = A() - memory[HL()];
-        HL()++;
-        BC()--;
-        t_cycle += 21; // 21 cycles per iteration
-    } while (BC() != 0 && result != 0);
-    
-    // Adjust for last iteration (16 cycles instead of 21)
-    t_cycle -= 5;
-    
-    // Set flags
-    F() &= Constants::Flags::CARRY; // Preserve carry only
-    F() |= Constants::Flags::SUBTRACT; // N flag set for compare
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
-    if (BC() != 0) F() |= Constants::Flags::PARITY; // P/V = (BC != 0)
+    // ED B1 - Compare, increment and repeat (one iteration per step; see LDIR).
+    // Repeats while BC != 0 and no match was found (Z clear). Interruptible
+    // between iterations.
+    CPI();
+    if (BC() != 0 && !(F() & Constants::Flags::ZERO)) { PC() -= 2; t_cycle += 5; }
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::INIR() {
-    // ED B2 - Input, increment and repeat
-    do {
-        memory[HL()] = io.In(BC());
-        HL()++;
-        B()--;
-        t_cycle += 21; // 21 cycles per iteration
-    } while (B() != 0);
-    
-    // Adjust for last iteration (16 cycles instead of 21)
-    t_cycle -= 5;
-    
-    // Set flags
-    F() = Constants::Flags::SUBTRACT | Constants::Flags::ZERO; // N=1, Z=1 (B=0)
+    // ED B2 - Input, increment and repeat (one iteration per step; see LDIR).
+    // Repeats while B != 0. Interruptible between iterations.
+    INI();
+    if (B() != 0) { PC() -= 2; t_cycle += 5; }
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OTIR() {
-    // ED B3 - Output, increment and repeat
-    do {
-        io.Out(BC(), memory[HL()]);
-        HL()++;
-        B()--;
-        t_cycle += 21; // 21 cycles per iteration
-    } while (B() != 0);
-    
-    // Adjust for last iteration (16 cycles instead of 21)
-    t_cycle -= 5;
-    
-    // Set flags
-    F() = Constants::Flags::SUBTRACT | Constants::Flags::ZERO; // N=1, Z=1 (B=0)
+    // ED B3 - Output, increment and repeat (one iteration per step; see LDIR).
+    // Repeats while B != 0. Interruptible between iterations.
+    OUTI();
+    if (B() != 0) { PC() -= 2; t_cycle += 5; }
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LDDR() {
-    // ED B8 - Load, decrement and repeat
-    do {
-        memory[DE()] = memory[HL()];
-        HL()--;
-        DE()--;
-        BC()--;
-        t_cycle += 21; // 21 cycles per iteration
-    } while (BC() != 0);
-    
-    // Adjust for last iteration (16 cycles instead of 21)
-    t_cycle -= 5;
-    
-    // Set flags
-    F() &= (Constants::Flags::CARRY | Constants::Flags::ZERO | Constants::Flags::SIGN); // Preserve C, Z, S
-    // P/V is reset (BC = 0)
+    // ED B8 - Load, decrement and repeat (one iteration per step; see LDIR).
+    // Repeats while BC != 0. Interruptible between iterations.
+    LDD();
+    if (BC() != 0) { PC() -= 2; t_cycle += 5; }
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CPDR() {
-    // ED B9 - Compare, decrement and repeat
-    uint8_t result;
-    do {
-        result = A() - memory[HL()];
-        HL()--;
-        BC()--;
-        t_cycle += 21; // 21 cycles per iteration
-    } while (BC() != 0 && result != 0);
-    
-    // Adjust for last iteration (16 cycles instead of 21)
-    t_cycle -= 5;
-    
-    // Set flags
-    F() &= Constants::Flags::CARRY; // Preserve carry only
-    F() |= Constants::Flags::SUBTRACT; // N flag set for compare
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
-    if (BC() != 0) F() |= Constants::Flags::PARITY; // P/V = (BC != 0)
+    // ED B9 - Compare, decrement and repeat (one iteration per step; see CPIR).
+    // Repeats while BC != 0 and no match (Z clear). Interruptible between iterations.
+    CPD();
+    if (BC() != 0 && !(F() & Constants::Flags::ZERO)) { PC() -= 2; t_cycle += 5; }
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::INDR() {
-    // ED BA - Input, decrement and repeat
-    do {
-        memory[HL()] = io.In(BC());
-        HL()--;
-        B()--;
-        t_cycle += 21; // 21 cycles per iteration
-    } while (B() != 0);
-    
-    // Adjust for last iteration (16 cycles instead of 21)
-    t_cycle -= 5;
-    
-    // Set flags
-    F() = Constants::Flags::SUBTRACT | Constants::Flags::ZERO; // N=1, Z=1 (B=0)
+    // ED BA - Input, decrement and repeat (one iteration per step; see INIR).
+    // Repeats while B != 0. Interruptible between iterations.
+    IND();
+    if (B() != 0) { PC() -= 2; t_cycle += 5; }
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OTDR() {
-    // ED BB - Output, decrement and repeat
-    do {
-        io.Out(BC(), memory[HL()]);
-        HL()--;
-        B()--;
-        t_cycle += 21; // 21 cycles per iteration
-    } while (B() != 0);
-    
-    // Adjust for last iteration (16 cycles instead of 21)
-    t_cycle -= 5;
-    
-    // Set flags
-    F() = Constants::Flags::SUBTRACT | Constants::Flags::ZERO; // N=1, Z=1 (B=0)
+    // ED BB - Output, decrement and repeat (one iteration per step; see OTIR).
+    // Repeats while B != 0. Interruptible between iterations.
+    OUTD();
+    if (B() != 0) { PC() -= 2; t_cycle += 5; }
 }
 
 // =============================================================================

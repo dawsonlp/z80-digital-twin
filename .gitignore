@@ -53,9 +53,16 @@ MinSizeRel/
 *.out
 *.app
 
-# Project-specific executables
-cpu_test
-gcd_example
+# Project-specific executables — target binaries land in the source root if CMake
+# is (mis)configured to build in-source. Build out-of-source (build/ or /tmp);
+# these anchored patterns keep the root clean if someone doesn't.
+/cpu_test
+/gcd_example
+/gcd_stress_test
+/spectrum
+/z80_debugger
+/performance_benchmark
+/*_test
 
 # IDE and editor files
 .vscode/

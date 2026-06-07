@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - Device interface
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // A Device is a peripheral with a per-frame lifecycle hook. Devices interact

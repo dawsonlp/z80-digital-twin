@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin Debugger - DebuggerApp (ImGui front-end)
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // The application shell: owns the CPU + DebugSession + symbol table + the panel

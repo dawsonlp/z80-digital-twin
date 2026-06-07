@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - audio output (miniaudio backend)
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // A minimal mono S16 playback device fed from the main thread via a lock-free

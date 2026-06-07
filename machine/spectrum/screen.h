@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - ZX Spectrum screen decoding
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Decodes the Spectrum's display bytes into palette indices. Ported to modern

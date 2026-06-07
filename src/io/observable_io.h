@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - ObservableIo decorator
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Wraps another I/O device and records every transaction the CPU performs — the

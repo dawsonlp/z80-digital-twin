@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - CB-prefixed rotate/shift flag verification
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Regression test for a flag bug: RLC/RRC/RL/RR/SLA/SRA/SRL/SLL must RECOMPUTE

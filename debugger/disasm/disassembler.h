@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin Debugger - Disassembler
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // A stateless Z80 instruction decoder. It turns the bytes at an address into

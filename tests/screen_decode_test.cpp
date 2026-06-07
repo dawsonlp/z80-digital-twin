@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - ZX Spectrum screen-decode verification
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Verifies the colour/bit logic ported from the C decoder: attribute decode,

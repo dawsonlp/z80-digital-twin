@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - ZX Spectrum beeper resampler
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // The beeper is a 1-bit speaker toggled by OUT 0xFE bit 4. Its sound is the

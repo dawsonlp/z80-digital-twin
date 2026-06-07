@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - debugger-driven Spectrum verification (headless)
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Proves the unified config: a DebugSession wraps a running SpectrumMachine's CPU

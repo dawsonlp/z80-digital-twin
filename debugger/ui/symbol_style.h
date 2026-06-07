@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin Debugger - Symbol styling helpers (shared)
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Colour-per-type and a hover tooltip, used by any panel that renders symbols.

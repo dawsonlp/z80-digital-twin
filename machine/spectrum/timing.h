@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - ZX Spectrum 48K PAL timing
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // The ULA clock tree and the frame/scanline geometry derived from it. Per Chris

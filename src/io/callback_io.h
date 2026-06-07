@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - CallbackIo policy
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // A generic I/O bridge: IN/OUT are forwarded to user-installed handlers. This

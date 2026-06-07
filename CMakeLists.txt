@@ -123,6 +123,10 @@ target_link_libraries(interrupt_test PRIVATE z80_cpu)
 add_executable(rotate_flags_test tests/rotate_flags_test.cpp)
 target_link_libraries(rotate_flags_test PRIVATE z80_cpu)
 
+# DAA decimal-adjust verification (BCD results + S/Z/P/H/C flags)
+add_executable(daa_test tests/daa_test.cpp)
+target_link_libraries(daa_test PRIVATE z80_cpu)
+
 # Spectrum timing constants (clock tree + frame/scanline geometry)
 add_executable(timing_test tests/timing_test.cpp)
 target_link_libraries(timing_test PRIVATE z80_machine)

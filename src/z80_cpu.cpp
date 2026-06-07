@@ -991,30 +991,37 @@ void CPUImpl<Memory, Io>::LD_H_n() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::DAA() {
+    // Decimal-adjust A after a BCD add/sub. Flags: S,Z,P/V and H are recomputed,
+    // C is set per the correction, N is unchanged. (Add and subtract use
+    // different correction conditions, and H is the half-carry/borrow produced
+    // by the correction — both were previously wrong.)
+    const uint8_t a = A();
+    const bool n = F() & Constants::Flags::SUBTRACT;
+    const bool h = F() & Constants::Flags::HALF;
+    const bool c = F() & Constants::Flags::CARRY;
+
     uint8_t correction = 0;
-    bool carry = F() & 0x01;
-    
-    if ((A() & 0x0F) > 9 || (F() & 0x10)) {
-        correction += 0x06;
+    bool out_carry = c;
+    bool out_half;
+    if (!n) {                                   // after ADD/ADC
+        if (h || (a & 0x0F) > 9) correction |= 0x06;
+        if (c || a > 0x99)       { correction |= 0x60; out_carry = true; }
+        A() = static_cast<uint8_t>(a + correction);
+        out_half = (a & 0x0F) > 9;              // low-nibble +6 carried out of bit 3
+    } else {                                    // after SUB/SBC
+        if (h)  correction |= 0x06;
+        if (c)  correction |= 0x60;
+        A() = static_cast<uint8_t>(a - correction);
+        out_half = h && (a & 0x0F) < 6;         // low-nibble -6 borrowed from bit 4
     }
-    
-    if (A() > 0x99 || carry) {
-        correction += 0x60;
-        F() |= 0x01; // Set carry
-    } else {
-        F() &= 0xFE; // Clear carry
-    }
-    
-    if (F() & 0x02) { // N flag set (subtraction)
-        A() -= correction;
-    } else {
-        A() += correction;
-    }
-    
-    F() &= 0x13; // Preserve C, N
-    if (A() == 0) F() |= 0x40; // Zero
-    if (A() & 0x80) F() |= 0x80; // Sign
-    // Parity calculation would go here
+
+    F() = 0;
+    if (n)         F() |= Constants::Flags::SUBTRACT;   // N is unchanged
+    if (out_carry) F() |= Constants::Flags::CARRY;
+    if (out_half)  F() |= Constants::Flags::HALF;
+    if (A() == 0)  F() |= Constants::Flags::ZERO;
+    if (A() & 0x80) F() |= Constants::Flags::SIGN;
+    F() |= CalculateParity(A());
     t_cycle += 4;
 }
 

@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - ZX Spectrum 48K viewer
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Boots a 48K ROM on the SpectrumMachine and shows the running screen in a
@@ -8,7 +8,7 @@
 // and writes a PPM — no display needed — for verification.
 //
 // Usage:
-//   spectrum [rom.rom] [--frames N] [--shot FILE]
+//   spectrum [rom.rom] [--tape file.{tap,tzx}] [--frames N] [--shot FILE]
 // With no path it looks for $Z80_SPEC48_ROM, then spec48.rom / ../spec48.rom.
 //
 
@@ -82,6 +82,43 @@ void glfw_error_callback(int error, const char* description) {
     std::cerr << "GLFW error " << error << ": " << description << "\n";
 }
 
+void print_usage(const char* prog) {
+    std::cout <<
+        "ZX Spectrum 48K viewer — Z80 Digital Twin\n"
+        "\n"
+        "Boots a 48K ROM and shows the live screen (border + display, 3x) in a\n"
+        "window, with the host keyboard wired to the Spectrum matrix and beeper\n"
+        "sound. Paced to real Spectrum speed (50.08 Hz).\n"
+        "\n"
+        "Usage:\n"
+        "  " << prog << " [rom.rom] [options]\n"
+        "\n"
+        "Arguments:\n"
+        "  rom.rom              48K ROM image (<=16 KB). If omitted, looks for\n"
+        "                       $Z80_SPEC48_ROM, then ./spec48.rom, ../spec48.rom.\n"
+        "\n"
+        "Options:\n"
+        "  --tape FILE          Load a tape image (.tap or .tzx; auto-detected).\n"
+        "                       In the Spectrum, type LOAD\"\" then press F5 to play.\n"
+        "  --turbo              Run uncapped (as fast as possible); disables sound.\n"
+        "  --writable-rom       Allow writes to ROM (0x0000-0x3FFF). Off by default\n"
+        "                       (real hardware ROM is read-only).\n"
+        "  --frames N           Run N frames before showing the window (or before\n"
+        "                       the screenshot in --shot mode).\n"
+        "  --shot FILE          Headless: render to a PPM and exit (no display).\n"
+        "  -h, --help           Show this help and exit.\n"
+        "\n"
+        "In-window keys:\n"
+        "  F5                   Play the tape    F6   Stop the tape\n"
+        "  (keyboard)           Letters/digits/ENTER/SPACE; Shift=CAPS SHIFT,\n"
+        "                       Ctrl=SYMBOL SHIFT, Backspace=DELETE.\n"
+        "\n"
+        "Examples:\n"
+        "  " << prog << " spec48.rom\n"
+        "  " << prog << " spec48.rom --tape \"Jetpac.tzx\"      # then LOAD\"\" + F5\n"
+        "  " << prog << " spec48.rom --shot boot.ppm --frames 200\n";
+}
+
 // Translate the host keyboard's current state into the Spectrum matrix. GLFW
 // key tokens for printable ASCII match uppercase ASCII (GLFW_KEY_A == 'A'), so
 // the matrix's ascii table maps straight through. Level-polled each frame — the
@@ -116,7 +153,8 @@ int main(int argc, char** argv) {
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
-        if (arg == "--shot" && i + 1 < argc) shot_path = argv[++i];
+        if (arg == "-h" || arg == "--help") { print_usage(argv[0]); return 0; }
+        else if (arg == "--shot" && i + 1 < argc) shot_path = argv[++i];
         else if (arg == "--frames" && i + 1 < argc) frames = std::atoi(argv[++i]);
         else if (arg == "--tape" && i + 1 < argc) tape_path = argv[++i];
         else if (arg == "--turbo") turbo = true;

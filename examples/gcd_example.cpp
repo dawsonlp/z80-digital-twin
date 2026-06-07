@@ -26,7 +26,7 @@ struct GCDInput {
 
 GCDInput parse_arguments(int argc, char* argv[]) {
     GCDInput input = {0, 0, false, ""};
-    
+
     if (argc != 3) {
         input.error_message = "Usage: " + std::string(argv[0]) + " <number1> <number2>\n"
                               "Calculate the Greatest Common Divisor (GCD) of two positive integers.\n"
@@ -175,9 +175,18 @@ public:
 // =============================================================================
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && (std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
+        std::cout << "Z80 Digital Twin - GCD Calculator\n\n"
+                  << "Computes GCD(a, b) by running a Z80 program on the emulator.\n\n"
+                  << "Usage: " << argv[0] << " <number1> <number2>\n"
+                  << "  Both numbers must be integers in 1..65535.\n"
+                  << "  Example: " << argv[0] << " 1071 462   (GCD = 21)\n";
+        return 0;
+    }
+
     std::cout << "Z80 Digital Twin - GCD Calculator\n";
     std::cout << "=================================\n\n";
-    
+
     // Parse command line arguments
     GCDInput input = parse_arguments(argc, argv);
     if (!input.valid) {

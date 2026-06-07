@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin Debugger - DebuggerApp implementation
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 
@@ -185,7 +185,7 @@ bool DebuggerApp::LoadTape(const std::string& path) {
     if (!in) { std::cerr << "Could not open tape: " << path << "\n"; return false; }
     std::vector<uint8_t> tap((std::istreambuf_iterator<char>(in)),
                              std::istreambuf_iterator<char>());
-    if (tap.empty() || !tape_.load_tap(tap)) {
+    if (tap.empty() || !tape_.load(tap)) {
         std::cerr << "Failed to parse tape: " << path << "\n";
         return false;
     }

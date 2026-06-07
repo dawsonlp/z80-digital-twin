@@ -13,6 +13,7 @@
 #include "panels/io_panel.h"
 #include "panels/smc_panel.h"
 #include "panels/screen_panel.h"
+#include "panels/keyboard_panel.h"
 
 #include "spectrum/timing.h"
 #include "spectrum/keyboard.h"
@@ -171,6 +172,7 @@ bool DebuggerApp::LoadSpectrumRom(const std::string& path) {
     spectrum_running_ = false;
     frame_active_ = false;
     panels_.push_back(std::make_unique<SpectrumScreenPanel>(ula_));
+    panels_.push_back(std::make_unique<KeyboardPanel>(ula_));
 
     session_.ClearDirty();
     status_ = std::format("Loaded ZX Spectrum ROM ({} bytes) — press Run", rom.size());

@@ -265,7 +265,8 @@ if(Z80_BUILD_UI)
         debugger/ui/panels/memory_panel.cpp
         debugger/ui/panels/io_panel.cpp
         debugger/ui/panels/smc_panel.cpp
-        debugger/ui/panels/screen_panel.cpp)
+        debugger/ui/panels/screen_panel.cpp
+        debugger/ui/panels/keyboard_panel.cpp)
     target_include_directories(z80_debugger PRIVATE debugger/ui debugger/ui/panels)
     target_link_libraries(z80_debugger PRIVATE z80_debugger_core z80_machine imgui)
     target_compile_features(z80_debugger PRIVATE cxx_std_23)

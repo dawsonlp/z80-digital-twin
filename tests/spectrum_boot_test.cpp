@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - ZX Spectrum boot verification (headless)
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Boots the 48K ROM through the SpectrumMachine for a couple of seconds of

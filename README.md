@@ -7,9 +7,12 @@ A high-performance Z80 CPU emulator demonstrating digital twin capabilities with
 ```bash
 git clone https://github.com/dawsonlp/z80-digital-twin.git
 cd z80-digital-twin
-make
-./gcd_example 48 18
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+./build/gcd_example 1071 462          # GCD = 21
 ```
+
+See [Getting Started](#-getting-started) below for every program and its options.
 
 ## 📚 Project status & documentation
 
@@ -23,6 +26,103 @@ case via compile-time policies (mass IoT twin · debugger · machine emulator).
 - [DEBUGGER_DESIGN.md](DEBUGGER_DESIGN.md) — the debugger design.
 - [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md) — the reverse-engineering-lab vision (coverage → SMC → annotated, reassemblable source).
 - [SPECTRUM_DESIGN.md](SPECTRUM_DESIGN.md) — the ZX Spectrum machine + ULA/PAL timing (in design).
+
+## 🏁 Getting Started
+
+### Prerequisites
+
+- **C++23 compiler** — Clang 16+, GCC 13+, or MSVC 2022+.
+- **CMake 3.20+**.
+- The core library, examples, and tests have **no external dependencies**.
+- The **debugger** and **Spectrum viewer** add a GUI (Dear ImGui + GLFW) and
+  audio (miniaudio), pulled automatically via CMake `FetchContent` on the first
+  configure (needs network once). Build headless/offline with `-DZ80_BUILD_UI=OFF`.
+
+### Build (out-of-source)
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+All binaries land in `build/`. For a headless/offline build with no GUI/audio
+dependencies (core + examples + tests + the headless Spectrum machine only):
+
+```bash
+cmake -S . -B build -DZ80_BUILD_UI=OFF
+cmake --build build -j
+```
+
+> Always build out-of-source (into `build/` or `/tmp`). Every program accepts
+> `-h` / `--help`.
+
+### The programs
+
+#### `gcd_example` — run real Z80 assembly
+
+Computes GCD(a, b) by executing a Z80 program on the emulator, with a full
+instruction/register/timing trace.
+
+```bash
+./build/gcd_example 1071 462          # GCD = 21
+```
+
+#### `gcd_stress_test` — throughput stress test
+
+Runs *(N−1)* cascading GCD calculations as a scaling benchmark.
+
+```bash
+./build/gcd_stress_test 10000
+```
+
+#### `performance_benchmark` — raw CPU throughput
+
+```bash
+./build/performance_benchmark          # full run
+./build/performance_benchmark --quick  # fewer iterations
+```
+
+#### Tests
+
+```bash
+./build/cpu_test                       # the core CPU suite
+ctest --test-dir build                 # run the whole test suite
+```
+
+#### `z80_debugger` — the ImGui debugger
+
+A windowed debugger: registers, disassembly, memory (with execution-coverage and
+self-modifying-code highlighting), I/O, and — in Spectrum mode — a live screen
+and keyboard-matrix monitor.
+
+```bash
+./build/z80_debugger --demo gcd                              # built-in demo
+./build/z80_debugger program.bin --org 0x8000 --sym prog.sym # your binary + symbols
+./build/z80_debugger --spectrum spec48.rom                   # full ZX Spectrum
+./build/z80_debugger --spectrum spec48.rom --tape jetpac.tzx # boot with a game tape
+```
+
+#### `spectrum` — the ZX Spectrum 48K viewer
+
+Boots a 48K ROM and shows the live screen (3×) with sound, paced to the authentic
+50 Hz.
+
+```bash
+./build/spectrum spec48.rom
+./build/spectrum spec48.rom --tape jetpac.tzx   # then, in the Spectrum: LOAD"" + F5
+```
+
+- **In-window keys:** `F5` plays the tape, `F6` stops it. The host keyboard maps
+  to the Spectrum matrix (`Shift` = CAPS SHIFT, `Ctrl` = SYMBOL SHIFT,
+  `Backspace` = DELETE).
+- **Loading a game:** boot, type `LOAD""` (the `J` key types the `LOAD` keyword;
+  `"` is SYMBOL SHIFT + `P`), press `ENTER`, then `F5`. Tapes load as the real
+  signal, so a full game takes the authentic couple of minutes — `--turbo` runs
+  uncapped to load faster (sound off). Both `.tap` and `.tzx` images work.
+
+> **ROMs and game tapes are copyrighted and not included.** Supply your own
+> `spec48.rom` (place it in the working directory or point to it) and your own
+> `.tap` / `.tzx` files.
 
 ## 🎯 What This Demonstrates
 
@@ -124,48 +224,57 @@ The codebase uses standard C++23 and CMake, so it should be highly portable acro
 
 ### Build Commands
 
-**Option 1: Using CMake (Recommended)**
-```bash
-# Standard build
-make
+See [Getting Started](#-getting-started) for the full walkthrough. In short:
 
-# Debug build
-cmake -DCMAKE_BUILD_TYPE=Debug .
-make
+```bash
+# Release (out-of-source)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+
+# Debug
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j
+
+# Headless / offline (no GUI or audio dependencies)
+cmake -S . -B build -DZ80_BUILD_UI=OFF
+cmake --build build -j
 ```
 
-**Option 2: Direct g++ compilation**
-```bash
-# Build GCD example
-g++ -std=c++23 -O2 -Wall -Wextra src/z80_cpu.cpp examples/gcd_example.cpp -o gcd_example
-
-# Build CPU tests
-g++ -std=c++23 -O2 -Wall -Wextra -Isrc src/z80_cpu.cpp tests/cpu_test.cpp -o cpu_test
-```
+Build a single target with `cmake --build build --target <name>` (e.g.
+`gcd_example`, `spectrum`, `z80_debugger`).
 
 ### Build Targets
 
 | Target | Description |
 |--------|-------------|
 | `z80_cpu` | Core CPU emulation library |
-| `gcd_example` | GCD calculator with command line interface |
-| `cpu_test` | Comprehensive CPU functionality tests |
+| `z80_machine` | ZX Spectrum machine layer (ULA, video, tape, beeper) |
+| `z80_debugger_core` | UI-free debugger engine (session, disassembler, symbols) |
+| `gcd_example` | GCD calculator with command-line interface |
+| `gcd_stress_test` | Cascading-GCD throughput stress test |
+| `performance_benchmark` | Raw CPU throughput benchmark |
+| `cpu_test` (+ `*_test`) | CPU and machine test suites (run via `ctest`) |
+| `z80_debugger` | ImGui debugger (UI build only) |
+| `spectrum` | ZX Spectrum 48K viewer (UI build only) |
 
 ## 🧪 Testing
 
 The project includes comprehensive testing:
 
 ```bash
-# Run core functionality tests
-./cpu_test
+# Run the whole suite
+ctest --test-dir build
+
+# Or run individual binaries
+./build/cpu_test
 
 # Run GCD calculator with various inputs
-./gcd_example 48 18
-./gcd_example 1071 462
+./build/gcd_example 48 18
+./build/gcd_example 1071 462
 
 # Run performance benchmark suite
-./performance_benchmark
-./performance_benchmark --quick    # Faster testing during development
+./build/performance_benchmark
+./build/performance_benchmark --quick    # Faster testing during development
 ```
 
 ### Performance Testing
@@ -174,9 +283,9 @@ The project includes comprehensive performance testing through the stress test f
 
 ```bash
 # Run stress tests with different scales
-./gcd_stress_test 1000    # Medium stress test
-./gcd_stress_test 10000   # Large stress test  
-./gcd_stress_test 65535   # Maximum stress test
+./build/gcd_stress_test 1000    # Medium stress test
+./build/gcd_stress_test 10000   # Large stress test
+./build/gcd_stress_test 65535   # Maximum stress test
 ```
 
 **Stress Test Features:**

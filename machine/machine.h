@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - Machine (frame clock + interrupt source)
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Machine drives a CPU in fixed T-state frame quanta — the foundation of a

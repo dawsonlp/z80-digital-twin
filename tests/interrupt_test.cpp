@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - maskable interrupt (CPU::Interrupt) verification
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Covers acceptance in IM0/1/2, masking via IFF1, HALT wake, the EI one-

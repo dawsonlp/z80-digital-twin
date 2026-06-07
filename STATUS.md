@@ -97,11 +97,14 @@ debugger; the app composes them).
   **`Tape`**: `run_frame()` runs a
   PAL frame (50 Hz INT) and renders to palette indices / RGBA. Boots `spec48.rom`
   to the copyright screen (verified headless by `spectrum_boot_test`).
-- **`tape.h` (`.tap`, real-signal)** — parses `.tap` blocks and synthesises the
-  actual ROM cassette signal (pilot/sync/data pulse train); playback maps the CPU
-  T-cycle → EAR level (`IN 0xFE` bit 6), so the ROM `LOAD` times the edges and
-  decodes — loading stripes come free via the border timeline. `load_tape`/
-  `play_tape`; in the apps `--tape file.tap`, then `LOAD ""` + **F5** to play.
+- **`tape.h` (`.tap` / `.tzx`, real-signal)** — parses tape blocks and synthesises
+  the actual ROM cassette signal (pilot/sync/data pulse train); playback maps the
+  CPU T-cycle → EAR level (`IN 0xFE` bit 6), so the ROM `LOAD` times the edges and
+  decodes — loading stripes come free via the border timeline. `load()` auto-detects
+  `.tzx` (the data-bearing blocks 0x10/0x11/0x12/0x13/0x14/0x20 through one
+  parameterised emitter, metadata blocks skipped by length) vs raw `.tap`. In the
+  apps `--tape file.{tap,tzx}`, then `LOAD ""` + **F5** to play. Verified end-to-end:
+  JetPac loads its screen$ and game code from `.tzx` and runs.
 - **`beeper.h` (sound)** — the 1-bit speaker (`OUT 0xFE` bit 4) recorded as a
   T-cycle edge timeline (like the border) and resampled to PCM by integrating the
   level over each sample's T-cycle window (1 s = 3.5 M T = 44 100 samples). The
@@ -112,7 +115,7 @@ debugger; the app composes them).
   host **keyboard** wired to the matrix (letters/digits/ENTER/SPACE, Shift→CAPS,
   Ctrl→SYM SHIFT, Backspace→DELETE) and **beeper sound**. Paced to real Spectrum
   speed via a 50.08 Hz fixed timestep (decoupled from the display's vsync;
-  `--turbo` runs uncapped; fps shown in the title). `--tape file.tap` (F5 plays);
+  `--turbo` runs uncapped; fps shown in the title). `--tape file.{tap,tzx}` (F5 plays);
   ROM is read-only by default (real hardware); `--writable-rom` lets writes land;
   `--shot FILE` renders headless to a PPM. `spectrum spec48.rom`.
 
@@ -165,7 +168,7 @@ masking, HALT wake, EI deferral), `timing_test` (clock tree + geometry),
 (address mapping, border fill, display decode through the FrameSource seam),
 `keyboard_test` (matrix layout + active-low half-row IN decode),
 `raster_test` (beam-accurate per-scanline display reconstruction),
-`tape_test` (.tap pulse train + EAR-by-cycle),
+`tape_test` (.tap + .tzx pulse train, format auto-detect + EAR-by-cycle),
 `beeper_test` (1-bit speaker → PCM resampler),
 `spectrum_debug_test` (a DebugSession breakpoints the running ROM),
 `spectrum_boot_test` (boots the 48K ROM headlessly and checks the screen drew;

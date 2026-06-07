@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - DAA (decimal adjust) verification
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // DAA was incomplete: it never set P/V (parity) and preserved H instead of

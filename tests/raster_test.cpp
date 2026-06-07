@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - beam-accurate screen reconstruction verification
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Drives the ULA's display-file write timeline directly with a controllable

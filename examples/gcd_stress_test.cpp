@@ -236,9 +236,19 @@ public:
 // =============================================================================
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && (std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
+        std::cout << "Z80 Digital Twin - Cascading GCD Stress Test\n\n"
+                  << "Runs (N-1) cascading GCD calculations (N,N-1 down to 2,1) on the\n"
+                  << "emulator as a stress/throughput test.\n\n"
+                  << "Usage: " << argv[0] << " [starting_number]\n"
+                  << "  starting_number   2..65535 (default 8).\n"
+                  << "  Example: " << argv[0] << " 10   (runs 9 GCD calculations)\n";
+        return 0;
+    }
+
     std::cout << "Z80 Digital Twin - Cascading GCD Stress Test\n";
     std::cout << "============================================\n\n";
-    
+
     // Parse command line argument for starting number
     uint16_t start_num = 8; // Default small value for testing
     if (argc > 1) {

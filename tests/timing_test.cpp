@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - Spectrum timing constants verification
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Verifies the ULA clock tree (14/7/3.5 MHz) and that the frame/scanline

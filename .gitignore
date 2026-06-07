@@ -64,6 +64,9 @@ MinSizeRel/
 /performance_benchmark
 /*_test
 
+# Agent / tooling runtime state
+.claude/
+
 # IDE and editor files
 .vscode/
 .vs/
@@ -117,3 +120,9 @@ imgui.ini
 
 # ROM images (kept locally, not committed — typically copyrighted)
 *.rom
+
+# Tape / snapshot images (games — kept locally, not committed; copyrighted)
+*.tzx
+*.tap
+*.z80
+*.sna

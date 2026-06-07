@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - ZX Spectrum 48K machine
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // Ties the CPU, the ULA, and the generic frame clock into a running 48K:
@@ -109,7 +109,7 @@ public:
     }
 
     // -- Tape ----------------------------------------------------------------
-    bool load_tape(std::span<const uint8_t> tap) { return tape_.load_tap(tap); }
+    bool load_tape(std::span<const uint8_t> image) { return tape_.load(image); }
     void play_tape() { tape_.play(cpu_.GetCycleCount()); }
     void stop_tape() { tape_.stop(); }
     [[nodiscard]] Tape& tape() noexcept { return tape_; }

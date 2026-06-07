@@ -1,6 +1,6 @@
 //
 // Z80 Digital Twin - ObservableMemory policy
-// Copyright (c) 2025 Larry Dawson
+// Copyright (c) 2025-2026 Larry Dawson
 // Licensed under the MIT License (see LICENSE file)
 //
 // An instrumented 64 KB memory plug for tooling (debugger, machines). It mirrors

@@ -1,6 +1,6 @@
 #
 # Z80 Digital Twin - High-performance Z80 CPU emulator
-# Copyright (c) 2025 Larry Dawson
+# Copyright (c) 2025-2026 Larry Dawson
 # Licensed under the MIT License (see LICENSE file)
 #
 
@@ -104,6 +104,8 @@ target_link_libraries(z80_machine INTERFACE z80_cpu)
 # add_executable(gcd_example src/main.cpp)
 # target_link_libraries(gcd_example PRIVATE z80_cpu)
 
+enable_testing()   # register the *_test targets below with CTest (run via `ctest`)
+
 add_executable(cpu_test tests/cpu_test.cpp)
 target_link_libraries(cpu_test PRIVATE z80_cpu)
 
@@ -151,7 +153,7 @@ target_link_libraries(keyboard_test PRIVATE z80_machine)
 add_executable(raster_test tests/raster_test.cpp)
 target_link_libraries(raster_test PRIVATE z80_machine)
 
-# Tape (.tap pulse train + EAR-level playback)
+# Tape (.tap/.tzx pulse train + EAR-level playback)
 add_executable(tape_test tests/tape_test.cpp)
 target_link_libraries(tape_test PRIVATE z80_machine)
 
@@ -190,6 +192,20 @@ target_link_libraries(gcd_example PRIVATE z80_cpu)
 
 add_executable(gcd_stress_test examples/gcd_stress_test.cpp)
 target_link_libraries(gcd_stress_test PRIVATE z80_cpu)
+
+# =============================================================================
+# CTest registration — `ctest --test-dir <build>` runs them all.
+# spectrum_boot_test SKIPs (exits 0) when spec48.rom is absent, so a clean
+# checkout still goes green.
+# =============================================================================
+foreach(test
+        cpu_test observable_memory_test io_policy_test interrupt_test
+        rotate_flags_test daa_test timing_test machine_test screen_decode_test
+        video_test keyboard_test raster_test tape_test beeper_test
+        spectrum_boot_test spectrum_debug_test debug_session_test
+        disassembler_test symbol_table_test)
+    add_test(NAME ${test} COMMAND ${test})
+endforeach()
 
 # =============================================================================
 # Debugger UI (ImGui) — optional, pulls GLFW + Dear ImGui via FetchContent

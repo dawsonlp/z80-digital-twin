@@ -3266,7 +3266,8 @@ uint8_t CPUImpl<Memory, Io>::RotateLeftCircular(uint8_t value) {
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = (value << 1) | bit7;
     
-    F() &= 0xEC; // Preserve S, Z, P/V
+    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
+                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
     if (result == 0) F() |= Constants::Flags::ZERO;
     if (result & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(result);
@@ -3280,7 +3281,8 @@ uint8_t CPUImpl<Memory, Io>::RotateRightCircular(uint8_t value) {
     uint8_t bit0 = value & 0x01;
     uint8_t result = (value >> 1) | (bit0 << 7);
     
-    F() &= 0xEC; // Preserve S, Z, P/V
+    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
+                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
     if (result == 0) F() |= Constants::Flags::ZERO;
     if (result & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(result);
@@ -3295,7 +3297,8 @@ uint8_t CPUImpl<Memory, Io>::RotateLeft(uint8_t value) {
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = (value << 1) | old_carry;
     
-    F() &= 0xEC; // Preserve S, Z, P/V
+    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
+                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
     if (result == 0) F() |= Constants::Flags::ZERO;
     if (result & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(result);
@@ -3310,7 +3313,8 @@ uint8_t CPUImpl<Memory, Io>::RotateRight(uint8_t value) {
     uint8_t bit0 = value & 0x01;
     uint8_t result = (value >> 1) | (old_carry << 7);
     
-    F() &= 0xEC; // Preserve S, Z, P/V
+    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
+                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
     if (result == 0) F() |= Constants::Flags::ZERO;
     if (result & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(result);
@@ -3324,7 +3328,8 @@ uint8_t CPUImpl<Memory, Io>::ShiftLeftArithmetic(uint8_t value) {
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = value << 1;
     
-    F() &= 0xEC; // Preserve S, Z, P/V
+    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
+                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
     if (result == 0) F() |= Constants::Flags::ZERO;
     if (result & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(result);
@@ -3339,7 +3344,8 @@ uint8_t CPUImpl<Memory, Io>::ShiftRightArithmetic(uint8_t value) {
     uint8_t bit7 = value & 0x80; // Preserve sign bit
     uint8_t result = (value >> 1) | bit7;
     
-    F() &= 0xEC; // Preserve S, Z, P/V
+    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
+                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
     if (result == 0) F() |= Constants::Flags::ZERO;
     if (result & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(result);
@@ -3354,7 +3360,8 @@ uint8_t CPUImpl<Memory, Io>::ShiftLeftLogical(uint8_t value) {
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = (value << 1) | 0x01;
     
-    F() &= 0xEC; // Preserve S, Z, P/V
+    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
+                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
     if (result == 0) F() |= Constants::Flags::ZERO;
     if (result & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(result);
@@ -3368,7 +3375,8 @@ uint8_t CPUImpl<Memory, Io>::ShiftRightLogical(uint8_t value) {
     uint8_t bit0 = value & 0x01;
     uint8_t result = value >> 1; // Logical shift - bit 7 becomes 0
     
-    F() &= 0xEC; // Preserve S, Z, P/V
+    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
+                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
     if (result == 0) F() |= Constants::Flags::ZERO;
     if (result & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(result);

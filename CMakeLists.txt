@@ -119,6 +119,10 @@ target_link_libraries(io_policy_test PRIVATE z80_cpu)
 add_executable(interrupt_test tests/interrupt_test.cpp)
 target_link_libraries(interrupt_test PRIVATE z80_cpu)
 
+# CB rotate/shift flag verification (S/Z/P recomputed, not preserved)
+add_executable(rotate_flags_test tests/rotate_flags_test.cpp)
+target_link_libraries(rotate_flags_test PRIVATE z80_cpu)
+
 # Spectrum timing constants (clock tree + frame/scanline geometry)
 add_executable(timing_test tests/timing_test.cpp)
 target_link_libraries(timing_test PRIVATE z80_machine)

@@ -178,6 +178,12 @@ public:
     /// @brief Release every key (call before re-applying the host key state).
     void release_all_keys() noexcept { key_rows_.fill(0x1F); }
 
+    /// @brief Is this matrix position currently pressed? (0 bit = pressed.)
+    [[nodiscard]] bool matrix_pressed(uint8_t half_row, uint8_t bit) const noexcept {
+        if (half_row >= 8 || bit >= 5) return false;
+        return (key_rows_[half_row] & (1u << bit)) == 0;
+    }
+
 private:
     // The display file: 6144 bytes of bitmap (0x4000..0x57FF) + 768 of attributes
     // (0x5800..0x5AFF).

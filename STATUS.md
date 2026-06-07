@@ -155,7 +155,8 @@ Modular panels over a shared `UiContext`; each panel is a `Panel` subclass.
 
 ## Tests (headless, run on every build)
 
-`cpu_test`, `observable_memory_test`, `io_policy_test`, `interrupt_test` (IM 0/1/2,
+`cpu_test`, `rotate_flags_test` (CB rotates/shifts recompute S/Z/P — not preserve),
+`observable_memory_test`, `io_policy_test`, `interrupt_test` (IM 0/1/2,
 masking, HALT wake, EI deferral), `timing_test` (clock tree + geometry),
 `machine_test` (frame budget, device ticks, interrupt-per-frame), `screen_decode_test`
 (attribute/byte/line, FLASH swap, palette — incl. compile-time `static_assert`s), `video_test`

@@ -151,6 +151,7 @@ bool DebuggerApp::LoadSpectrumRom(const std::string& path) {
 
     cpu_.Reset();
     cpu_.LoadProgram(rom, 0x0000);
+    rom_image_ = rom;   // kept for cold-boot reset
 
     // Wire the ULA to this CPU (clock, RAM reader, ports via the inner CallbackIo,
     // and the display-file write observer for beam-accurate screen).
@@ -210,6 +211,22 @@ void DebuggerApp::RunSpectrumFrames(uint64_t count) {
     for (uint64_t i = 0; i < count && spectrum_running_; ++i) DriveSpectrumFrame();
 }
 
+void DebuggerApp::ResetSpectrum() {
+    // Cold boot — as if freshly started: reload the ROM image, zero RAM, reset
+    // the CPU and ULA, and run. RawWrite bypasses observers and write-protection.
+    auto& mem = cpu_.GetMemory();
+    for (std::size_t i = 0; i < rom_image_.size() && i < 0x4000; ++i)
+        mem.RawWrite(static_cast<uint16_t>(i), rom_image_[i]);
+    for (uint32_t a = 0x4000; a <= 0xFFFF; ++a)
+        mem.RawWrite(static_cast<uint16_t>(a), 0x00);
+
+    ula_.reset();
+    session_.Reset();            // cpu.Reset() + clear coverage/SMC/blocked/dirty
+    frame_active_ = false;
+    spectrum_running_ = true;     // re-boot and run
+    status_ = "Reset (cold boot)";
+}
+
 void DebuggerApp::DriveSpectrumFrame() {
     using machine::spectrum::timing::kTPerFrame;
 
@@ -266,10 +283,12 @@ void DebuggerApp::RunInstructions(uint64_t count) {
 
 void DebuggerApp::ExecuteCommands() {
     if (commands_.reset) {
-        session_.Reset();
-        frame_active_ = false;
-        spectrum_running_ = false;
-        status_ = "Reset";
+        if (spectrum_mode_) {
+            ResetSpectrum();     // cold boot the machine
+        } else {
+            session_.Reset();
+            status_ = "Reset";
+        }
     }
     if (commands_.step) {
         session_.ClearDirty();

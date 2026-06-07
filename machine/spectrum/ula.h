@@ -178,6 +178,20 @@ public:
     /// @brief Release every key (call before re-applying the host key state).
     void release_all_keys() noexcept { key_rows_.fill(0x1F); }
 
+    /// @brief Reset all ULA device state (border, beeper, FLASH, timelines,
+    ///        keyboard) — for a machine cold boot.
+    void reset() {
+        current_border_ = 0;
+        beeper_level_ = 0;
+        frame_counter_ = 0;
+        frame_start_ = 0;
+        key_rows_.fill(0x1F);
+        border_events_.assign(1, BorderEvent{0, 0});
+        border_per_line_.fill(0);
+        screen_writes_.clear();
+        beeper_edges_.clear();
+    }
+
     /// @brief Is this matrix position currently pressed? (0 bit = pressed.)
     [[nodiscard]] bool matrix_pressed(uint8_t half_row, uint8_t bit) const noexcept {
         if (half_row >= 8 || bit >= 5) return false;

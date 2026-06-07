@@ -115,7 +115,8 @@ debugger; the app composes them).
   host **keyboard** wired to the matrix (letters/digits/ENTER/SPACE, Shift→CAPS,
   Ctrl→SYM SHIFT, Backspace→DELETE) and **beeper sound**. Paced to real Spectrum
   speed via a 50.08 Hz fixed timestep (decoupled from the display's vsync;
-  `--turbo` runs uncapped; fps shown in the title). `--tape file.{tap,tzx}` (F5 plays);
+  `--turbo` runs uncapped; fps shown in the title). `--tape file.{tap,tzx}` or
+  **F3** for a native open-file picker (portable-file-dialogs); F5 plays, F6 stops.
   ROM is read-only by default (real hardware); `--writable-rom` lets writes land;
   `--shot FILE` renders headless to a PPM. `spectrum spec48.rom`.
 

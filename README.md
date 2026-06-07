@@ -112,13 +112,15 @@ Boots a 48K ROM and shows the live screen (3×) with sound, paced to the authent
 ./build/spectrum spec48.rom --tape jetpac.tzx   # then, in the Spectrum: LOAD"" + F5
 ```
 
-- **In-window keys:** `F5` plays the tape, `F6` stops it. The host keyboard maps
-  to the Spectrum matrix (`Shift` = CAPS SHIFT, `Ctrl` = SYMBOL SHIFT,
-  `Backspace` = DELETE).
-- **Loading a game:** boot, type `LOAD""` (the `J` key types the `LOAD` keyword;
-  `"` is SYMBOL SHIFT + `P`), press `ENTER`, then `F5`. Tapes load as the real
-  signal, so a full game takes the authentic couple of minutes — `--turbo` runs
-  uncapped to load faster (sound off). Both `.tap` and `.tzx` images work.
+- **In-window keys:** `F3` opens a tape via the native file picker; `F5` plays
+  the tape, `F6` stops it. The host keyboard maps to the Spectrum matrix
+  (`Shift` = CAPS SHIFT, `Ctrl` = SYMBOL SHIFT, `Backspace` = DELETE).
+- **Loading a game:** load a tape with `--tape` or `F3`, boot, type `LOAD""` (the
+  `J` key types the `LOAD` keyword; `"` is SYMBOL SHIFT + `P`), press `ENTER`,
+  then `F5`. Tapes load as the real signal, so a full game takes the authentic
+  couple of minutes — `--turbo` runs uncapped to load faster (sound off). Both
+  `.tap` and `.tzx` images work. (The debugger has the same picker under
+  **File ▸ Open tape…** in Spectrum mode.)
 
 > **ROMs and game tapes are copyrighted and not included.** Supply your own
 > `spec48.rom` (place it in the working directory or point to it) and your own

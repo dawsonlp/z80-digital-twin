@@ -147,8 +147,12 @@ void CPUImpl<Memory, Io>::Step() {
             break;
             
         case CPUState::CB_PREFIX:
-            // Execute CB-prefixed instruction using compact decoder
+            // Execute CB-prefixed instruction using compact decoder. The CB
+            // prefix fetch above already charged its 4 T M1; the body returns the
+            // full instruction time (including that M1), so discount it once to
+            // avoid double-counting the prefix fetch.
             ExecuteCBInstruction(opcode);
+            t_cycle -= 4;
             current_state = CPUState::NORMAL;
             break;
             
@@ -176,8 +180,12 @@ void CPUImpl<Memory, Io>::Step() {
             break;
             
         case CPUState::ED_PREFIX:
-            // Execute ED-prefixed instruction
+            // Execute ED-prefixed instruction. The ED prefix fetch above charged
+            // its 4 T M1; the bodies return the full instruction time (including
+            // that M1), so discount it once. (Block-repeat ops run one iteration
+            // per step, so this applies per iteration too.)
             (this->*ED_opcodes[opcode])();
+            t_cycle -= 4;
             current_state = CPUState::NORMAL;
             break;
             
@@ -208,14 +216,17 @@ void CPUImpl<Memory, Io>::Step() {
             {
                 current_displacement = static_cast<int8_t>(opcode);  // Store displacement
                 uint8_t cb_opcode = memory[PC()++];  // Read the actual CB instruction
-                
-                // Execute the CB instruction with stored displacement
+
+                // Execute the CB instruction with stored displacement. The DD and
+                // CB prefix fetches above each charged 4 T (two M1s); the body
+                // returns the full DDCB time including both, so discount 8 once.
                 ExecuteCBInstruction(cb_opcode);
-                
+                t_cycle -= 8;
+
                 current_state = CPUState::NORMAL;
             }
             break;
-            
+
         case CPUState::FD_CB_PREFIX:
             // FD CB instructions have format: FD CB displacement opcode
             // The opcode we just read is the displacement, we need to read the actual CB opcode
@@ -223,9 +234,12 @@ void CPUImpl<Memory, Io>::Step() {
                 current_displacement = static_cast<int8_t>(opcode);  // Store displacement
                 uint8_t cb_opcode = memory[PC()++];  // Read the actual CB instruction
                 
-                // Execute the CB instruction with stored displacement
+                // Execute the CB instruction with stored displacement. The FD and
+                // CB prefix fetches above each charged 4 T (two M1s); the body
+                // returns the full FDCB time including both, so discount 8 once.
                 ExecuteCBInstruction(cb_opcode);
-                
+                t_cycle -= 8;
+
                 current_state = CPUState::NORMAL;
             }
             break;
@@ -716,8 +730,9 @@ void CPUImpl<Memory, Io>::ADD_HL_BC() {
     if (((hl_reg & 0x0FFF) + (BC() & 0x0FFF)) & 0x1000) F() |= 0x10; // Half-carry
     hl_reg = result & 0xFFFF;
     
-    // Timing: HL=11 cycles, IX/IY=15 cycles (prefix adds 4 cycles)
-    t_cycle += (current_state == CPUState::NORMAL) ? 11 : 15;
+    // ADD HL,rr is 11 T; the IX/IY form is 15 T, but the extra 4 is the DD/FD
+    // prefix M1 already charged at the prefix fetch — so the body is 11 either way.
+    t_cycle += 11;
 }
 
 template <class Memory, class Io>
@@ -863,8 +878,9 @@ void CPUImpl<Memory, Io>::ADD_HL_DE() {
     if (((hl_reg & 0x0FFF) + (DE() & 0x0FFF)) & 0x1000) F() |= 0x10; // Half-carry
     hl_reg = result & 0xFFFF;
     
-    // Timing: HL=11 cycles, IX/IY=15 cycles (prefix adds 4 cycles)
-    t_cycle += (current_state == CPUState::NORMAL) ? 11 : 15;
+    // ADD HL,rr is 11 T; the IX/IY form is 15 T, but the extra 4 is the DD/FD
+    // prefix M1 already charged at the prefix fetch — so the body is 11 either way.
+    t_cycle += 11;
 }
 
 template <class Memory, class Io>
@@ -1046,8 +1062,9 @@ void CPUImpl<Memory, Io>::ADD_HL_HL() {
     if (((hl_reg & 0x0FFF) + (hl_reg & 0x0FFF)) & 0x1000) F() |= 0x10; // Half-carry
     hl_reg = result & 0xFFFF;
     
-    // Timing: HL=11 cycles, IX/IY=15 cycles (prefix adds 4 cycles)
-    t_cycle += (current_state == CPUState::NORMAL) ? 11 : 15;
+    // ADD HL,rr is 11 T; the IX/IY form is 15 T, but the extra 4 is the DD/FD
+    // prefix M1 already charged at the prefix fetch — so the body is 11 either way.
+    t_cycle += 11;
 }
 
 template <class Memory, class Io>
@@ -1151,7 +1168,8 @@ void CPUImpl<Memory, Io>::INC_mHL() {
     if (value & 0x80) F() |= 0x80; // Sign
     if ((old_value & 0x0F) == 0x0F) F() |= 0x10; // Half-carry
     if (old_value == 0x7F) F() |= 0x04; // Overflow
-    t_cycle += 11;
+    // INC (HL)=11 T; INC (IX/IY+d)=23 T (body 19 + DD/FD prefix M1 charged above).
+    t_cycle += (current_state == CPUState::NORMAL) ? 11 : 19;
 }
 
 template <class Memory, class Io>
@@ -1167,14 +1185,16 @@ void CPUImpl<Memory, Io>::DEC_mHL() {
     if (value & 0x80) F() |= 0x80; // Sign
     if ((old_value & 0x0F) == 0) F() |= 0x10; // Half-carry
     if (old_value == 0x80) F() |= 0x04; // Overflow
-    t_cycle += 11;
+    // DEC (HL)=11 T; DEC (IX/IY+d)=23 T (body 19 + DD/FD prefix M1 charged above).
+    t_cycle += (current_state == CPUState::NORMAL) ? 11 : 19;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_mHL_n() {
     uint16_t address = GetEffectiveHL_Memory();
     memory[address] = memory[PC()++];
-    t_cycle += GetMemoryAccessCycles() + 3; // Base 7 cycles + 3 for immediate byte
+    // LD (HL),n=10 T; LD (IX/IY+d),n=19 T (body 15 + DD/FD prefix M1 charged above).
+    t_cycle += (current_state == CPUState::NORMAL) ? 10 : 15;
 }
 
 template <class Memory, class Io>
@@ -1205,8 +1225,9 @@ void CPUImpl<Memory, Io>::ADD_HL_SP() {
     if (((hl_reg & 0x0FFF) + (SP() & 0x0FFF)) & 0x1000) F() |= 0x10; // Half-carry
     hl_reg = result & 0xFFFF;
     
-    // Timing: HL=11 cycles, IX/IY=15 cycles (prefix adds 4 cycles)
-    t_cycle += (current_state == CPUState::NORMAL) ? 11 : 15;
+    // ADD HL,rr is 11 T; the IX/IY form is 15 T, but the extra 4 is the DD/FD
+    // prefix M1 already charged at the prefix fetch — so the body is 11 either way.
+    t_cycle += 11;
 }
 
 template <class Memory, class Io>
@@ -2487,8 +2508,10 @@ uint8_t& CPUImpl<Memory, Io>::GetEffectiveL() {
 
 template <class Memory, class Io>
 uint8_t CPUImpl<Memory, Io>::GetMemoryAccessCycles() {
-    // Memory operations: HL=7 cycles, IX/IY=19 cycles (+12 for displacement calculation)
-    return (current_state == CPUState::NORMAL) ? 7 : 19;
+    // (HL)=7 T; (IX/IY+d)=19 T. The body returns 15 for the indexed form (the
+    // extra 8 over (HL) is the displacement read + internal add); the remaining 4
+    // is the DD/FD prefix M1, charged at the prefix fetch.
+    return (current_state == CPUState::NORMAL) ? 7 : 15;
 }
 
 template <class Memory, class Io>
@@ -2499,8 +2522,9 @@ uint8_t CPUImpl<Memory, Io>::GetRegisterOpCycles() {
 
 template <class Memory, class Io>
 uint8_t CPUImpl<Memory, Io>::GetArithmeticMemCycles() {
-    // Arithmetic with memory: HL=7 cycles, IX/IY=19 cycles (+12 for displacement)
-    return (current_state == CPUState::NORMAL) ? 7 : 19;
+    // A,(HL)=7 T; A,(IX/IY+d)=19 T. Body returns 15 for the indexed form; the
+    // remaining 4 is the DD/FD prefix M1, charged at the prefix fetch.
+    return (current_state == CPUState::NORMAL) ? 7 : 15;
 }
 
 // =============================================================================

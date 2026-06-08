@@ -27,6 +27,7 @@ case via compile-time policies (mass IoT twin · debugger · machine emulator).
 - [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md) — the reverse-engineering-lab vision (coverage → SMC → annotated, reassemblable source).
 - [SPECTRUM_DESIGN.md](SPECTRUM_DESIGN.md) — the ZX Spectrum machine + ULA/PAL timing (in design).
 - [HEADLESS_INSTRUMENTATION.md](HEADLESS_INSTRUMENTATION.md) — driving and observing a running machine with no UI: keyboard-matrix injection, tape loading, coverage/RAM/PC instrumentation (the `spectrum_probe` tool).
+- [COMPATIBILITY_TEST_PLAN.md](COMPATIBILITY_TEST_PLAN.md) — a battery of real software that historically broke emulators (exotic loaders, cycle-exact ULA timing, undocumented CPU behaviour), with the twin's current status and how to run each headlessly.
 
 ## 🏁 Getting Started
 

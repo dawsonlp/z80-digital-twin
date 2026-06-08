@@ -197,6 +197,11 @@ target_link_libraries(gcd_example PRIVATE z80_cpu)
 add_executable(gcd_stress_test examples/gcd_stress_test.cpp)
 target_link_libraries(gcd_stress_test PRIVATE z80_cpu)
 
+# Headless Spectrum instrumentation probe (drives the machine via a DebugSession:
+# keyboard injection, tape loading, coverage/RAM/PC reporting, ASCII screen).
+add_executable(spectrum_probe examples/spectrum_probe.cpp)
+target_link_libraries(spectrum_probe PRIVATE z80_machine z80_debugger_core)
+
 # =============================================================================
 # CTest registration — `ctest --test-dir <build>` runs them all.
 # spectrum_boot_test SKIPs (exits 0) when spec48.rom is absent, so a clean

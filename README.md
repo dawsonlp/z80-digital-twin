@@ -26,6 +26,7 @@ case via compile-time policies (mass IoT twin · debugger · machine emulator).
 - [DEBUGGER_DESIGN.md](DEBUGGER_DESIGN.md) — the debugger design.
 - [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md) — the reverse-engineering-lab vision (coverage → SMC → annotated, reassemblable source).
 - [SPECTRUM_DESIGN.md](SPECTRUM_DESIGN.md) — the ZX Spectrum machine + ULA/PAL timing (in design).
+- [HEADLESS_INSTRUMENTATION.md](HEADLESS_INSTRUMENTATION.md) — driving and observing a running machine with no UI: keyboard-matrix injection, tape loading, coverage/RAM/PC instrumentation (the `spectrum_probe` tool).
 
 ## 🏁 Getting Started
 
@@ -87,6 +88,18 @@ Runs *(N−1)* cascading GCD calculations as a scaling benchmark.
 ```bash
 ./build/cpu_test                       # the core CPU suite
 ctest --test-dir build                 # run the whole test suite
+```
+
+#### `spectrum_probe` — headless Spectrum instrumentation
+
+Boots a ROM, types on the keyboard matrix, plays a tape, and reports per-window
+CPU activity (code coverage, RAM writes, PC hot-spot, border) with a freeze
+detector — no display. Built on `SpectrumMachine` + `DebugSession`. See
+[HEADLESS_INSTRUMENTATION.md](HEADLESS_INSTRUMENTATION.md).
+
+```bash
+./build/spectrum_probe spec48.rom --tape underwurlde.tzx --load --screen
+./build/spectrum_probe spec48.rom --boot 150 --frames 0 --screen   # boot to BASIC
 ```
 
 #### `z80_debugger` — the ImGui debugger
@@ -253,6 +266,7 @@ Build a single target with `cmake --build build --target <name>` (e.g.
 | `z80_machine` | ZX Spectrum machine layer (ULA, video, tape, beeper) |
 | `z80_debugger_core` | UI-free debugger engine (session, disassembler, symbols) |
 | `gcd_example` | GCD calculator with command-line interface |
+| `spectrum_probe` | Headless Spectrum instrumentation (keyboard/tape/coverage probe) |
 | `gcd_stress_test` | Cascading-GCD throughput stress test |
 | `performance_benchmark` | Raw CPU throughput benchmark |
 | `cpu_test` (+ `*_test`) | CPU and machine test suites (run via `ctest`) |

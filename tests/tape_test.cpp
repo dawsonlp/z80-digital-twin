@@ -150,6 +150,31 @@ int main() {
         check(tape.block_count() == 1, "tap block parsed via load()");
     }
 
+    std::cout << "\n[6] Loop blocks (0x24/0x25) unroll the bracketed body\n";
+    {
+        // A custom-loader pilot, as Underwurlde encodes it: a loop of one pure
+        // tone (0x12) plus a two-pulse sequence (0x13), replayed N times. Before
+        // loop support the parser hit 0x24 and bailed, dropping the turbo signal
+        // and freezing the in-RAM loader; now the body is unrolled `reps` times.
+        const uint32_t reps = 5, tone_count = 10;
+        auto tzx = tzx_header();
+        tzx.push_back(0x24); put16(tzx, reps);            // loop start
+        tzx.push_back(0x12); put16(tzx, 2165); put16(tzx, tone_count);  // pure tone
+        tzx.push_back(0x13); tzx.push_back(2);            // pulse sequence: 2 pulses
+        put16(tzx, 714); put16(tzx, 714);
+        tzx.push_back(0x25);                              // loop end
+        put_block_0x10(tzx, 1000, {0xFF, 0x00});          // a real data block follows
+
+        Tape tape;
+        check(tape.load(tzx), "loaded tzx with loop blocks");
+        // The loop body is (tone_count + 2) pulses, replayed `reps` times, then the
+        // standard data block (3223 pilot + 2 sync + 2*16 data + 1 pause).
+        const std::size_t body = (tone_count + 2) * reps;
+        const std::size_t data = 3223u + 2u + 32u + 1u;
+        check(tape.pulse_count() == body + data, "loop body unrolled `reps` times + data block");
+        check(tape.block_count() == 1, "data block past the loop was reached (no bail)");
+    }
+
     std::cout << "\n======================================\n";
     if (failures == 0) {
         std::cout << "✅ ALL TAPE CHECKS PASSED\n";

@@ -94,6 +94,8 @@ public:
         };
 
         std::size_t i = 10;   // skip the "ZXTape!" header
+        std::size_t loop_body = 0;   // stream offset of the loop body (after 0x24)
+        uint32_t    loop_left = 0;   // iterations still to replay at the next 0x25
         while (i < data.size()) {
             const uint8_t id = data[i++];
             switch (id) {
@@ -156,9 +158,28 @@ public:
                 i += 2;
                 break;
 
+            // -- Loop blocks: replay the bracketed body N times ---------------
+            // Custom loaders (e.g. Underwurlde) emit the pilot tone as a loop
+            // of pure-tone + pulse-sequence blocks rather than one 0x12 run, so
+            // unrolling these is what produces the turbo signal at all.
+            case 0x24:     // Loop start: [reps:2]; body runs `reps` times total
+                loop_left = rd16(i);
+                i += 2;
+                loop_body = i;
+                break;
+            case 0x25:     // Loop end (no body): replay body until reps exhausted
+                if (loop_left > 1) { --loop_left; i = loop_body; }
+                break;
+
             // -- Metadata blocks: no signal, skip by declared length ----------
             case 0x21: i += 1 + byte(i); break;             // group start [n][name]
             case 0x22: break;                               // group end (no body)
+            case 0x23: i += 2; break;                       // jump to block [rel:2] (played linearly)
+            case 0x26: i += 2 + 2 * rd16(i); break;         // call sequence [n:2][n*2]
+            case 0x27: break;                               // return from sequence (no body)
+            case 0x28: i += 2 + rd16(i); break;             // select block [len:2][..]
+            case 0x2A: i += 4; break;                       // stop tape if 48K [len:4=0]
+            case 0x2B: i += 5; break;                        // set signal level [len:4=1][level:1]
             case 0x30: i += 1 + byte(i); break;             // text desc [n][text]
             case 0x31: i += 2 + byte(i + 1); break;         // message [time][n][text]
             case 0x32: i += 2 + rd16(i); break;             // archive info [len:2][..]

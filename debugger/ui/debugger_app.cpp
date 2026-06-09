@@ -25,11 +25,13 @@
 #include <GLFW/glfw3.h>
 #include "portable-file-dialogs.h"
 
+#include <chrono>
 #include <cstdint>
 #include <fstream>
 #include <format>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace z80::dbg {
@@ -426,7 +428,11 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
         return 1;
     }
     glfwMakeContextCurrent(window_);
-    glfwSwapInterval(1);
+    // Vsync OFF: the swap must not block, so the input/emulation loop below can
+    // poll the keyboard and step the 50 Hz machine faster than the monitor
+    // refreshes (low input latency). Rendering is throttled separately. Trade-off:
+    // the picture can tear slightly without vsync — a worthwhile trade for a game.
+    glfwSwapInterval(0);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -447,6 +453,16 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
                              : "sound: no audio device\n") << std::flush;
     }
 
+    // The input/emulation loop runs much faster than the display (vsync is off):
+    // it pumps OS events, samples the keyboard, and steps the 50 Hz machine every
+    // iteration, but only *repaints* at kRenderHz. So a keypress is picked up
+    // within ~1 ms (one poll), not up to a full monitor-refresh period.
+    using clock = std::chrono::steady_clock;
+    constexpr double kRenderHz = 60.0;   // repaint cap (content only changes at 50 Hz)
+    const auto render_period = std::chrono::duration_cast<clock::duration>(
+        std::chrono::duration<double>(1.0 / kRenderHz));
+    auto last_render = clock::now();
+
     int frame = 0;
     while (!glfwWindowShouldClose(window_)) {
         glfwPollEvents();
@@ -460,6 +476,14 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
             tape_play_prev_ = f5;
         }
         ExecuteCommands();
+
+        // Repaint only every render_period; otherwise idle ~0.5 ms so the loop
+        // polls input at ~1-2 kHz instead of busy-spinning a core.
+        if (!smoke && clock::now() - last_render < render_period) {
+            std::this_thread::sleep_for(std::chrono::microseconds(500));
+            continue;
+        }
+        last_render = clock::now();
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();

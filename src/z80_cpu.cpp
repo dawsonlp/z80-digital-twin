@@ -79,6 +79,10 @@ bool CPUImpl<Memory, Io>::Interrupt(uint8_t bus) {
     _IFF2 = false;
     PushWord(_PC);
 
+    // The interrupt-acknowledge cycle is an M1, so it bumps R too (low 7 bits;
+    // bit 7 preserved) — keeps R consistent for refresh-keyed code across an ISR.
+    R() = static_cast<uint8_t>((R() & 0x80u) | ((R() + 1u) & 0x7Fu));
+
     switch (_interrupt_mode) {
         case 2: {
             // Vector table: address = (I << 8) | bus; PC = word at that address.
@@ -123,6 +127,17 @@ void CPUImpl<Memory, Io>::Step() {
 
     // Fetch instruction opcode
     uint8_t opcode = memory[PC()++];
+
+    // R (memory-refresh) register: its low 7 bits increment on every M1 opcode
+    // fetch; bit 7 is preserved (only LD R,A changes it). Each Step() fetches one
+    // opcode/prefix byte = one M1, so increment once per Step — EXCEPT the
+    // DDCB/FDCB states, whose Step reads the displacement + sub-opcode as operands
+    // (those bytes are not M1 fetches; DDCB/FDCB have just two refreshes, for the
+    // DD/FD and CB bytes). R-keyed self-decrypting loaders (e.g. Speedlock, used by
+    // Arkanoid) depend on this exact sequence via LD A,R — without it the key is
+    // constant and the decrypt produces garbage. See FLOATING_BUS_DESIGN.md notes.
+    if (current_state != CPUState::DD_CB_PREFIX && current_state != CPUState::FD_CB_PREFIX)
+        R() = static_cast<uint8_t>((R() & 0x80u) | ((R() + 1u) & 0x7Fu));
 
     // Execute based on current CPU state
     switch (current_state) {
@@ -2782,8 +2797,13 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IN_A_n() {
     uint8_t port = memory[PC()++];
     // IN A,(n) drives A onto the high address byte; A's old value forms the port.
+    // I/O timing split (see FLOATING_BUS_DESIGN.md §5): charge the fetch M-cycles
+    // (M1=4 + operand=3) BEFORE the port read, so a device sampling the clock
+    // (the ULA's floating bus) sees the I/O M-cycle T-state; charge M3=4 after.
+    // Total is unchanged (11), so instruction_timing_test stays green.
+    t_cycle += 7;
     A() = io.In((static_cast<uint16_t>(A()) << 8) | port);
-    t_cycle += 11;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
@@ -3869,6 +3889,10 @@ void CPUImpl<Memory, Io>::CPI() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::INI() {
     // ED A2 - Input and increment
+    // I/O timing split (see FLOATING_BUS_DESIGN.md §5): charge the opcode M1 (5 T
+    // for block I/O; the prefix M1 was charged by Step's dispatch) before the port
+    // read, the remaining 11 T after. Handler total stays 16.
+    t_cycle += 5;
     memory[HL()] = io.In(BC());
     HL()++;
     B()--;
@@ -3877,8 +3901,8 @@ void CPUImpl<Memory, Io>::INI() {
     F() = Constants::Flags::SUBTRACT; // N flag set
     if (B() == 0) F() |= Constants::Flags::ZERO;
     if (B() & 0x80) F() |= Constants::Flags::SIGN;
-    
-    t_cycle += 16;
+
+    t_cycle += 11;   // (5 charged before the I/O read; total 16) see INI split
 }
 
 template <class Memory, class Io>
@@ -3932,16 +3956,17 @@ void CPUImpl<Memory, Io>::CPD() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IND() {
     // ED AA - Input and decrement
+    t_cycle += 5;                   // opcode M1 before the I/O read (see INI split)
     memory[HL()] = io.In(BC());
     HL()--;
     B()--;
-    
+
     // Set flags
     F() = Constants::Flags::SUBTRACT; // N flag set
     if (B() == 0) F() |= Constants::Flags::ZERO;
     if (B() & 0x80) F() |= Constants::Flags::SIGN;
-    
-    t_cycle += 16;
+
+    t_cycle += 11;   // (5 charged before the I/O read; total 16)
 }
 
 template <class Memory, class Io>
@@ -4042,15 +4067,21 @@ void CPUImpl<Memory, Io>::OTDR() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IN_B_C() {
     // ED 40 - Input from port C to B
+    // I/O timing split (see FLOATING_BUS_DESIGN.md §5): the ED prefix M1 (4 T) was
+    // charged by Step's dispatch; charge the opcode M1 (4 T) BEFORE the port read
+    // so a device sampling the clock sees the I/O M-cycle, and the remaining 8 T
+    // after. Handler total stays 12 (the dispatcher's -=4 prefix discount is
+    // unchanged), so instruction_timing_test stays green.
+    t_cycle += 4;
     B() = io.In(BC());
-    
+
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
     if (B() == 0) F() |= Constants::Flags::ZERO;
     if (B() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(B());
-    
-    t_cycle += 12;
+
+    t_cycle += 8;
 }
 
 template <class Memory, class Io>
@@ -4063,15 +4094,16 @@ void CPUImpl<Memory, Io>::OUT_C_B() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IN_C_C() {
     // ED 48 - Input from port C to C
+    t_cycle += 4;                   // opcode M1 before the I/O read (see IN_B_C)
     C() = io.In(BC());
-    
+
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
     if (C() == 0) F() |= Constants::Flags::ZERO;
     if (C() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(C());
-    
-    t_cycle += 12;
+
+    t_cycle += 8;
 }
 
 template <class Memory, class Io>
@@ -4084,15 +4116,16 @@ void CPUImpl<Memory, Io>::OUT_C_C() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IN_D_C() {
     // ED 50 - Input from port C to D
+    t_cycle += 4;                   // opcode M1 before the I/O read (see IN_B_C)
     D() = io.In(BC());
-    
+
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
     if (D() == 0) F() |= Constants::Flags::ZERO;
     if (D() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(D());
-    
-    t_cycle += 12;
+
+    t_cycle += 8;
 }
 
 template <class Memory, class Io>
@@ -4105,15 +4138,16 @@ void CPUImpl<Memory, Io>::OUT_C_D() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IN_E_C() {
     // ED 58 - Input from port C to E
+    t_cycle += 4;                   // opcode M1 before the I/O read (see IN_B_C)
     E() = io.In(BC());
-    
+
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
     if (E() == 0) F() |= Constants::Flags::ZERO;
     if (E() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(E());
-    
-    t_cycle += 12;
+
+    t_cycle += 8;
 }
 
 template <class Memory, class Io>
@@ -4126,15 +4160,16 @@ void CPUImpl<Memory, Io>::OUT_C_E() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IN_H_C() {
     // ED 60 - Input from port C to H
+    t_cycle += 4;                   // opcode M1 before the I/O read (see IN_B_C)
     H() = io.In(BC());
-    
+
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
     if (H() == 0) F() |= Constants::Flags::ZERO;
     if (H() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(H());
-    
-    t_cycle += 12;
+
+    t_cycle += 8;
 }
 
 template <class Memory, class Io>
@@ -4147,15 +4182,16 @@ void CPUImpl<Memory, Io>::OUT_C_H() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IN_L_C() {
     // ED 68 - Input from port C to L
+    t_cycle += 4;                   // opcode M1 before the I/O read (see IN_B_C)
     L() = io.In(BC());
-    
+
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
     if (L() == 0) F() |= Constants::Flags::ZERO;
     if (L() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(L());
-    
-    t_cycle += 12;
+
+    t_cycle += 8;
 }
 
 template <class Memory, class Io>
@@ -4168,15 +4204,16 @@ void CPUImpl<Memory, Io>::OUT_C_L() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IN_F_C() {
     // ED 70 - Input from port C (undocumented - sets flags only, doesn't store value)
+    t_cycle += 4;                   // opcode M1 before the I/O read (see IN_B_C)
     uint8_t value = io.In(BC());
-    
+
     // Set flags based on input value but don't store it anywhere
     F() &= Constants::Flags::CARRY; // Preserve carry only
     if (value == 0) F() |= Constants::Flags::ZERO;
     if (value & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(value);
-    
-    t_cycle += 12;
+
+    t_cycle += 8;
 }
 
 template <class Memory, class Io>
@@ -4189,15 +4226,16 @@ void CPUImpl<Memory, Io>::OUT_C_0() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IN_A_C() {
     // ED 78 - Input from port C to A
+    t_cycle += 4;                   // opcode M1 before the I/O read (see IN_B_C)
     A() = io.In(BC());
-    
+
     // Set flags based on input value
     F() &= Constants::Flags::CARRY; // Preserve carry only
     if (A() == 0) F() |= Constants::Flags::ZERO;
     if (A() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(A());
-    
-    t_cycle += 12;
+
+    t_cycle += 8;
 }
 
 template <class Memory, class Io>

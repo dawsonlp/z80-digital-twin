@@ -75,12 +75,14 @@ public:
         }
     }
 
-    /// @brief IN handler. Even ports read the keyboard matrix + EAR; other ports
-    ///        float (0xFF). The port's high byte selects half-rows (active low):
-    ///        A(8+r) low selects half-row r; the result is the AND of every
-    ///        selected row, so a pressed key in any of them pulls its bit low.
+    /// @brief IN handler. Even ports read the keyboard matrix + EAR; odd (undecoded)
+    ///        ports read the floating bus (the byte the ULA is fetching for the
+    ///        display, or 0xFF when not fetching) — see floating_bus(). The port's
+    ///        high byte selects half-rows (active low): A(8+r) low selects half-row
+    ///        r; the result is the AND of every selected row, so a pressed key in
+    ///        any of them pulls its bit low.
     [[nodiscard]] uint8_t read_port(uint16_t port) const {
-        if ((port & 1) != 0) return 0xFF;
+        if ((port & 1) != 0) return floating_bus();  // undecoded -> floating bus
         uint8_t result = 0x1F;                       // D0..D4 high = no key
         for (int row = 0; row < 8; ++row)
             if (((port >> (8 + row)) & 1) == 0)      // address line low -> row selected
@@ -222,6 +224,56 @@ private:
         if (!clock_) return 0;
         const uint64_t now = clock_();
         return static_cast<uint32_t>(now >= frame_start_ ? now - frame_start_ : 0);
+    }
+
+    // -- Floating bus (see FLOATING_BUS_DESIGN.md) ---------------------------
+    // An IN from an undecoded (odd) port reads the byte the ULA is fetching for
+    // the display at that instant; outside the active display fetch the bus idles
+    // to 0xFF. This is the canonical floating-bus behaviour that raster-syncing
+    // games (Arkanoid, Sidewize, Cobra, Short Circuit, Aquaplane) rely on.
+
+    /// @brief Within-M3 latch offset (T-states) added to the sample time. The CPU
+    ///        core charges fetch cycles before io.In(), so frame_tstate() already
+    ///        marks the I/O M-cycle start; this nudges to the byte-latch point.
+    ///        Calibrate against fbustest.
+    static constexpr uint32_t kFloatingBusReadT = 0;
+
+    /// @brief T-states of active display fetch per scanline (256 px / 2 px-per-T).
+    static constexpr uint32_t kDisplayFetchT =
+        static_cast<uint32_t>(video::kDisplayWidth) / timing::kPixelsPerT;
+
+    struct BeamFetch {
+        bool active;        ///< Is the ULA fetching a display byte at this T-state?
+        uint16_t address;   ///< Display-file address being fetched (valid iff active).
+    };
+
+    /// @brief What is the ULA fetching at frame T-state @p t? The single beam-fetch
+    ///        authority: floating bus consumes it now, contention will reuse it.
+    ///        In the 128-T display fetch the ULA works two cells per 8 T-states —
+    ///        bitmap, attr, bitmap, attr, then four idle slots.
+    [[nodiscard]] BeamFetch beam_fetch_at(uint32_t t) const {
+        const uint32_t line = t / timing::kTPerLine;
+        const uint32_t within = t % timing::kTPerLine;
+        const int display_line =
+            static_cast<int>(line) - static_cast<int>(timing::kTopBorderLines);
+        if (display_line < 0 || display_line >= static_cast<int>(timing::kDisplayLines) ||
+            within >= kDisplayFetchT)
+            return {false, 0};
+        const uint32_t slot = within % 8;            // 0..3 fetch, 4..7 ULA idle
+        if (slot >= 4) return {false, 0};
+        const int cell = static_cast<int>((within / 8) * 2 + (slot >> 1));   // column 0..31
+        const uint16_t address = (slot & 1)          // odd slot = attribute byte
+            ? video::attribute_address(display_line, cell)
+            : video::bitmap_address(display_line, cell);
+        return {true, address};
+    }
+
+    /// @brief The value an undecoded-port IN reads: the live byte the ULA is
+    ///        fetching, or 0xFF when the beam is not in the display fetch.
+    [[nodiscard]] uint8_t floating_bus() const {
+        if (!clock_ || !read_) return 0xFF;
+        const BeamFetch f = beam_fetch_at(frame_tstate() + kFloatingBusReadT);
+        return f.active ? read_(f.address) : 0xFF;
     }
 
     /// @brief Map each rendered line to the border colour active when the beam

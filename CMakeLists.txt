@@ -133,6 +133,10 @@ target_link_libraries(daa_test PRIVATE z80_cpu)
 add_executable(instruction_timing_test tests/instruction_timing_test.cpp)
 target_link_libraries(instruction_timing_test PRIVATE z80_cpu)
 
+# R (memory-refresh) register: per-M1 increment, bit-7 preserve, LD A,R read
+add_executable(refresh_register_test tests/refresh_register_test.cpp)
+target_link_libraries(refresh_register_test PRIVATE z80_cpu)
+
 # Spectrum timing constants (clock tree + frame/scanline geometry)
 add_executable(timing_test tests/timing_test.cpp)
 target_link_libraries(timing_test PRIVATE z80_machine)
@@ -156,6 +160,10 @@ target_link_libraries(keyboard_test PRIVATE z80_machine)
 # Beam-accurate screen (per-scanline display-file reconstruction)
 add_executable(raster_test tests/raster_test.cpp)
 target_link_libraries(raster_test PRIVATE z80_machine)
+
+# Floating bus (undecoded-port IN reads the ULA's live display fetch)
+add_executable(floating_bus_test tests/floating_bus_test.cpp)
+target_link_libraries(floating_bus_test PRIVATE z80_machine)
 
 # Tape (.tap/.tzx pulse train + EAR-level playback)
 add_executable(tape_test tests/tape_test.cpp)
@@ -209,9 +217,9 @@ target_link_libraries(spectrum_probe PRIVATE z80_machine z80_debugger_core)
 # =============================================================================
 foreach(test
         cpu_test observable_memory_test io_policy_test interrupt_test
-        rotate_flags_test daa_test instruction_timing_test timing_test
+        rotate_flags_test daa_test instruction_timing_test refresh_register_test timing_test
         machine_test screen_decode_test
-        video_test keyboard_test raster_test tape_test beeper_test
+        video_test keyboard_test raster_test floating_bus_test tape_test beeper_test
         spectrum_boot_test spectrum_debug_test debug_session_test
         disassembler_test symbol_table_test)
     add_test(NAME ${test} COMMAND ${test})

@@ -26,7 +26,8 @@ Several tests below can't pass until a ULA feature exists. Current state, from
 
 | Feature | Status | Gates |
 |---|---|---|
-| **Floating bus** (IN from unmapped/odd port returns the byte the ULA is fetching) | ❌ floats to `0xFF` ([ula.h](machine/spectrum/ula.h#L82-L90)) | §C Arkanoid, Sidewize, Cobra, Short Circuit |
+| **Floating bus** (IN from unmapped/odd port returns the byte the ULA is fetching) | ✅ implemented ([ula.h](machine/spectrum/ula.h) `floating_bus`/`beam_fetch_at`; `floating_bus_test`); `kFloatingBusReadT` pending `fbustest` calibration | §C Arkanoid, Sidewize, Cobra, Short Circuit |
+| **`R` refresh register** (low 7 bits increment per M1; read by `LD A,R`) | ✅ implemented (`Step()` per-M1 + interrupt-ack) | §F Speedlock R-keyed decryptors (Arkanoid) |
 | **Contended memory** (CPU stalled on 0x4000–0x7FFF during the display window) | ❌ not modelled (frame runs a flat T-state budget) | §B contention tests, §D multicolour |
 | **`MEMPTR`/WZ** internal register | ❓ unverified | §A `z80memptr` |
 | **Undocumented `SCF`/`CCF` flags** (YF/XF from prior A) | ❓ unverified | §A `z80ccf` |
@@ -72,7 +73,7 @@ real bugs than any game.
 
 | Game | Why it's hard |
 |---|---|
-| **Arkanoid** (Imagine/Ocean) | *The* canonical floating-bus game — hangs/misbehaves early without it. If you test one thing, test this. |
+| **Arkanoid** (Imagine/Ocean) | *The* canonical floating-bus game — hangs/misbehaves early without it. If you test one thing, test this. **Note:** the `Arkanoid.tzx` in the repo is a **Speedlock 2** release, so it gates on §F (Speedlock) *before* the floating bus matters — after the `R`-register fix its loader decrypts and runs to the interactive title screen; driving into gameplay (where the floating bus applies) is the next step (see [FLOATING_BUS_DESIGN.md](FLOATING_BUS_DESIGN.md) §7). Use a non-Speedlock §C title to exercise the floating bus alone. |
 | **Sidewize** | floating-bus dependent for raster sync |
 | **Cobra** (Ocean) | floating bus + tight timing |
 | **Short Circuit** (Ocean) | floating bus |
@@ -117,7 +118,7 @@ This is the category the TZX loop-block fix opened up. Drive with
 | Loader / family | Examples | What it stresses |
 |---|---|---|
 | **Ultimate Play the Game** | *Underwurlde* ✅, *Knight Lore*, *Sabre Wulf*, *Atic Atac*, *Lunar Jetman* | TZX loop (0x24/0x25) + tone/pulse/pure-data turbo signal |
-| **Speedlock** (many revisions) | Ocean / US Gold titles | timing-sensitive turbo + anti-tamper; revisions are mutually incompatible |
+| **Speedlock** (many revisions) | Ocean / US Gold titles; **Arkanoid** (Speedlock 2) | timing-sensitive turbo + anti-tamper; revisions are mutually incompatible. **Status:** root-caused & fixed one anti-tamper trick — the decryptor is keyed on the **`R` refresh register** (`LD A,R`/`XOR (HL)`), which our core wasn't incrementing per-M1, so the key was constant → garbage decrypt → `RST 0`. Fixed (R now increments on every M1 + interrupt-ack). Arkanoid now decrypts, loads end-to-end, and reaches its **interactive title/control-select screen** (polls the keyboard, responds to keypresses; the `~0xF470` `OUT (0xFE)` loop is just a held title tone, not a hang). Driving a start sequence into gameplay — where the floating bus does its raster sync — is the next milestone. |
 | **Alkatraz** | US Gold titles | heavy self-modifying / decrypting code — good `SetBreakOnSmc` test |
 | **Bleepload** (Firebird) | Firebird titles | multi-speed, anti-piracy, border noise during load |
 | **Paul Owens / Microsphere** | various | multi-stage loads, embedded timing checks (exercise 0x23/0x26 flow blocks) |

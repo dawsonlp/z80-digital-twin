@@ -129,6 +129,10 @@ target_link_libraries(rotate_flags_test PRIVATE z80_cpu)
 add_executable(alu_flags_test tests/alu_flags_test.cpp)
 target_link_libraries(alu_flags_test PRIVATE z80_cpu)
 
+# 16-bit ADD/ADC/SBC flag verification (high-byte X/Y and preservation rules)
+add_executable(word_arithmetic_flags_test tests/word_arithmetic_flags_test.cpp)
+target_link_libraries(word_arithmetic_flags_test PRIVATE z80_cpu)
+
 # DAA decimal-adjust verification (BCD results + S/Z/P/H/C flags)
 add_executable(daa_test tests/daa_test.cpp)
 target_link_libraries(daa_test PRIVATE z80_cpu)
@@ -225,7 +229,8 @@ target_link_libraries(cpu_suite_runner PRIVATE z80_cpu)
 # =============================================================================
 foreach(test
         cpu_test observable_memory_test io_policy_test interrupt_test
-        rotate_flags_test alu_flags_test daa_test instruction_timing_test refresh_register_test timing_test
+        rotate_flags_test alu_flags_test word_arithmetic_flags_test daa_test
+        instruction_timing_test refresh_register_test timing_test
         machine_test screen_decode_test
         video_test keyboard_test raster_test floating_bus_test tape_test beeper_test
         spectrum_boot_test spectrum_debug_test debug_session_test

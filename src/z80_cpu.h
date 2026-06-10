@@ -272,12 +272,16 @@ private:
     void SetCarryFlag(bool value);
     bool GetCarryFlag() const;
     uint8_t Flags_SZXY(uint8_t value) const;
+    uint8_t Flags_SZXY16(uint16_t value) const;
     void SetFlags_ADD(uint8_t result, uint8_t operand1, uint8_t operand2);
     void SetFlags_ADC(uint8_t result, uint8_t operand1, uint8_t operand2, uint8_t carry);
     void SetFlags_SUB(uint8_t result, uint8_t operand1, uint8_t operand2);
     void SetFlags_SBC(uint8_t result, uint8_t operand1, uint8_t operand2, uint8_t carry);
     void SetFlags_CP(uint8_t result, uint8_t operand1, uint8_t operand2);
     void SetFlags_LOGIC(uint8_t result, bool half_carry);
+    void SetFlags_ADD16(uint16_t result, uint16_t operand1, uint16_t operand2);
+    void SetFlags_ADC16(uint16_t result, uint16_t operand1, uint16_t operand2, uint8_t carry);
+    void SetFlags_SBC16(uint16_t result, uint16_t operand1, uint16_t operand2, uint8_t carry);
     uint8_t CalculateParity(uint8_t value);
     void PushWord(uint16_t value);
     uint16_t PopWord();

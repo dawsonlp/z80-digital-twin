@@ -739,11 +739,10 @@ void CPUImpl<Memory, Io>::EX_AF_AF() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::ADD_HL_BC() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
-    uint32_t result = hl_reg + BC();
-    F() &= 0xC4; // Preserve S, Z, P/V
-    if (result & 0x10000) F() |= 0x01; // Carry
-    if (((hl_reg & 0x0FFF) + (BC() & 0x0FFF)) & 0x1000) F() |= 0x10; // Half-carry
-    hl_reg = result & 0xFFFF;
+    const uint16_t old_hl = hl_reg;
+    const uint16_t operand = BC();
+    hl_reg = static_cast<uint16_t>(old_hl + operand);
+    SetFlags_ADD16(hl_reg, old_hl, operand);
     
     // ADD HL,rr is 11 T; the IX/IY form is 15 T, but the extra 4 is the DD/FD
     // prefix M1 already charged at the prefix fetch — so the body is 11 either way.
@@ -887,11 +886,10 @@ void CPUImpl<Memory, Io>::JR() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::ADD_HL_DE() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
-    uint32_t result = hl_reg + DE();
-    F() &= 0xC4; // Preserve S, Z, P/V
-    if (result & 0x10000) F() |= 0x01; // Carry
-    if (((hl_reg & 0x0FFF) + (DE() & 0x0FFF)) & 0x1000) F() |= 0x10; // Half-carry
-    hl_reg = result & 0xFFFF;
+    const uint16_t old_hl = hl_reg;
+    const uint16_t operand = DE();
+    hl_reg = static_cast<uint16_t>(old_hl + operand);
+    SetFlags_ADD16(hl_reg, old_hl, operand);
     
     // ADD HL,rr is 11 T; the IX/IY form is 15 T, but the extra 4 is the DD/FD
     // prefix M1 already charged at the prefix fetch — so the body is 11 either way.
@@ -1069,11 +1067,9 @@ void CPUImpl<Memory, Io>::JR_Z() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::ADD_HL_HL() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
-    uint32_t result = hl_reg + hl_reg;
-    F() &= 0xC4; // Preserve S, Z, P/V
-    if (result & 0x10000) F() |= 0x01; // Carry
-    if (((hl_reg & 0x0FFF) + (hl_reg & 0x0FFF)) & 0x1000) F() |= 0x10; // Half-carry
-    hl_reg = result & 0xFFFF;
+    const uint16_t old_hl = hl_reg;
+    hl_reg = static_cast<uint16_t>(old_hl + old_hl);
+    SetFlags_ADD16(hl_reg, old_hl, old_hl);
     
     // ADD HL,rr is 11 T; the IX/IY form is 15 T, but the extra 4 is the DD/FD
     // prefix M1 already charged at the prefix fetch — so the body is 11 either way.
@@ -1237,11 +1233,10 @@ void CPUImpl<Memory, Io>::JR_C() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::ADD_HL_SP() {
     uint16_t& hl_reg = GetEffectiveHL_Register();
-    uint32_t result = hl_reg + SP();
-    F() &= 0xC4; // Preserve S, Z, P/V
-    if (result & 0x10000) F() |= 0x01; // Carry
-    if (((hl_reg & 0x0FFF) + (SP() & 0x0FFF)) & 0x1000) F() |= 0x10; // Half-carry
-    hl_reg = result & 0xFFFF;
+    const uint16_t old_hl = hl_reg;
+    const uint16_t operand = SP();
+    hl_reg = static_cast<uint16_t>(old_hl + operand);
+    SetFlags_ADD16(hl_reg, old_hl, operand);
     
     // ADD HL,rr is 11 T; the IX/IY form is 15 T, but the extra 4 is the DD/FD
     // prefix M1 already charged at the prefix fetch — so the body is 11 either way.
@@ -1722,6 +1717,14 @@ uint8_t CPUImpl<Memory, Io>::Flags_SZXY(uint8_t value) const {
 }
 
 template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::Flags_SZXY16(uint16_t value) const {
+    uint8_t flags = static_cast<uint8_t>((value >> 8) &
+                                         (Constants::Flags::SIGN | Constants::Flags::X | Constants::Flags::Y));
+    if (value == 0) flags |= Constants::Flags::ZERO;
+    return flags;
+}
+
+template <class Memory, class Io>
 void CPUImpl<Memory, Io>::SetFlags_ADD(uint8_t result, uint8_t operand1, uint8_t operand2) {
     SetFlags_ADC(result, operand1, operand2, 0);
 }
@@ -1761,6 +1764,33 @@ void CPUImpl<Memory, Io>::SetFlags_LOGIC(uint8_t result, bool half_carry) {
     F() = Flags_SZXY(result);
     if (half_carry) F() |= Constants::Flags::HALF;
     F() |= CalculateParity(result);
+}
+
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetFlags_ADD16(uint16_t result, uint16_t operand1, uint16_t operand2) {
+    const uint32_t full = static_cast<uint32_t>(operand1) + operand2;
+    F() = (F() & (Constants::Flags::SIGN | Constants::Flags::ZERO | Constants::Flags::PARITY)) |
+          (static_cast<uint8_t>(result >> 8) & (Constants::Flags::X | Constants::Flags::Y));
+    if (((operand1 ^ operand2 ^ result) & 0x1000) != 0) F() |= Constants::Flags::HALF;
+    if (full & 0x10000) F() |= Constants::Flags::CARRY;
+}
+
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetFlags_ADC16(uint16_t result, uint16_t operand1, uint16_t operand2, uint8_t carry) {
+    const uint32_t full = static_cast<uint32_t>(operand1) + operand2 + carry;
+    F() = Flags_SZXY16(result);
+    if (((operand1 ^ operand2 ^ result) & 0x1000) != 0) F() |= Constants::Flags::HALF;
+    if ((~(operand1 ^ operand2) & (operand1 ^ result) & 0x8000) != 0) F() |= Constants::Flags::PARITY;
+    if (full & 0x10000) F() |= Constants::Flags::CARRY;
+}
+
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetFlags_SBC16(uint16_t result, uint16_t operand1, uint16_t operand2, uint8_t carry) {
+    const uint32_t subtrahend = static_cast<uint32_t>(operand2) + carry;
+    F() = Flags_SZXY16(result) | Constants::Flags::SUBTRACT;
+    if (((operand1 ^ operand2 ^ result) & 0x1000) != 0) F() |= Constants::Flags::HALF;
+    if (((operand1 ^ operand2) & (operand1 ^ result) & 0x8000) != 0) F() |= Constants::Flags::PARITY;
+    if (static_cast<uint32_t>(operand1) < subtrahend) F() |= Constants::Flags::CARRY;
 }
 
 template <class Memory, class Io>
@@ -3363,18 +3393,11 @@ void CPUImpl<Memory, Io>::ED_NOP() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::SBC_HL_DE() {
     // ED 52 - Subtract DE from HL with carry
-    uint16_t old_hl = HL();
-    uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
-    int32_t result = static_cast<int32_t>(HL()) - static_cast<int32_t>(DE()) - carry;
-    HL() = result & 0xFFFF;
-    
-    // Set flags for 16-bit subtraction
-    F() = Constants::Flags::SUBTRACT; // N flag always set for subtraction
-    if (HL() == 0) F() |= Constants::Flags::ZERO;
-    if (HL() & 0x8000) F() |= Constants::Flags::SIGN;
-    if ((old_hl & 0x0FFF) < ((DE() & 0x0FFF) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_hl ^ DE()) & (old_hl ^ HL()) & 0x8000) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    const uint16_t old_hl = HL();
+    const uint16_t operand = DE();
+    const uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
+    HL() = static_cast<uint16_t>(old_hl - operand - carry);
+    SetFlags_SBC16(HL(), old_hl, operand, carry);
     
     t_cycle += 15;
 }
@@ -3382,18 +3405,11 @@ void CPUImpl<Memory, Io>::SBC_HL_DE() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::ADC_HL_DE() {
     // ED 5A - Add DE to HL with carry
-    uint16_t old_hl = HL();
-    uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
-    uint32_t result = static_cast<uint32_t>(HL()) + static_cast<uint32_t>(DE()) + carry;
-    HL() = result & 0xFFFF;
-    
-    // Set flags for 16-bit addition
-    F() = 0; // Clear N flag for addition
-    if (HL() == 0) F() |= Constants::Flags::ZERO;
-    if (HL() & 0x8000) F() |= Constants::Flags::SIGN;
-    if (((old_hl & 0x0FFF) + (DE() & 0x0FFF) + carry) & 0x1000) F() |= Constants::Flags::HALF;
-    if (((old_hl ^ HL()) & (DE() ^ HL()) & 0x8000) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x10000) F() |= Constants::Flags::CARRY;
+    const uint16_t old_hl = HL();
+    const uint16_t operand = DE();
+    const uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
+    HL() = static_cast<uint16_t>(old_hl + operand + carry);
+    SetFlags_ADC16(HL(), old_hl, operand, carry);
     
     t_cycle += 15;
 }
@@ -3405,18 +3421,11 @@ void CPUImpl<Memory, Io>::ADC_HL_DE() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::SBC_HL_BC() {
     // ED 42 - Subtract BC from HL with carry
-    uint16_t old_hl = HL();
-    uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
-    int32_t result = static_cast<int32_t>(HL()) - static_cast<int32_t>(BC()) - carry;
-    HL() = result & 0xFFFF;
-    
-    // Set flags for 16-bit subtraction
-    F() = Constants::Flags::SUBTRACT; // N flag always set for subtraction
-    if (HL() == 0) F() |= Constants::Flags::ZERO;
-    if (HL() & 0x8000) F() |= Constants::Flags::SIGN;
-    if ((old_hl & 0x0FFF) < ((BC() & 0x0FFF) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_hl ^ BC()) & (old_hl ^ HL()) & 0x8000) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    const uint16_t old_hl = HL();
+    const uint16_t operand = BC();
+    const uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
+    HL() = static_cast<uint16_t>(old_hl - operand - carry);
+    SetFlags_SBC16(HL(), old_hl, operand, carry);
     
     t_cycle += 15;
 }
@@ -3424,18 +3433,11 @@ void CPUImpl<Memory, Io>::SBC_HL_BC() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::ADC_HL_BC() {
     // ED 4A - Add BC to HL with carry
-    uint16_t old_hl = HL();
-    uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
-    uint32_t result = static_cast<uint32_t>(HL()) + static_cast<uint32_t>(BC()) + carry;
-    HL() = result & 0xFFFF;
-    
-    // Set flags for 16-bit addition
-    F() = 0; // Clear N flag for addition
-    if (HL() == 0) F() |= Constants::Flags::ZERO;
-    if (HL() & 0x8000) F() |= Constants::Flags::SIGN;
-    if (((old_hl & 0x0FFF) + (BC() & 0x0FFF) + carry) & 0x1000) F() |= Constants::Flags::HALF;
-    if (((old_hl ^ HL()) & (BC() ^ HL()) & 0x8000) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x10000) F() |= Constants::Flags::CARRY;
+    const uint16_t old_hl = HL();
+    const uint16_t operand = BC();
+    const uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
+    HL() = static_cast<uint16_t>(old_hl + operand + carry);
+    SetFlags_ADC16(HL(), old_hl, operand, carry);
     
     t_cycle += 15;
 }
@@ -3443,18 +3445,10 @@ void CPUImpl<Memory, Io>::ADC_HL_BC() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::SBC_HL_HL() {
     // ED 62 - Subtract HL from HL with carry
-    uint16_t old_hl = HL();
-    uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
-    int32_t result = static_cast<int32_t>(HL()) - static_cast<int32_t>(HL()) - carry;
-    HL() = result & 0xFFFF;
-    
-    // Set flags for 16-bit subtraction
-    F() = Constants::Flags::SUBTRACT; // N flag always set for subtraction
-    if (HL() == 0) F() |= Constants::Flags::ZERO;
-    if (HL() & 0x8000) F() |= Constants::Flags::SIGN;
-    if ((old_hl & 0x0FFF) < ((old_hl & 0x0FFF) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_hl ^ old_hl) & (old_hl ^ HL()) & 0x8000) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    const uint16_t old_hl = HL();
+    const uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
+    HL() = static_cast<uint16_t>(old_hl - old_hl - carry);
+    SetFlags_SBC16(HL(), old_hl, old_hl, carry);
     
     t_cycle += 15;
 }
@@ -3462,18 +3456,10 @@ void CPUImpl<Memory, Io>::SBC_HL_HL() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::ADC_HL_HL() {
     // ED 6A - Add HL to HL with carry
-    uint16_t old_hl = HL();
-    uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
-    uint32_t result = static_cast<uint32_t>(HL()) + static_cast<uint32_t>(HL()) + carry;
-    HL() = result & 0xFFFF;
-    
-    // Set flags for 16-bit addition
-    F() = 0; // Clear N flag for addition
-    if (HL() == 0) F() |= Constants::Flags::ZERO;
-    if (HL() & 0x8000) F() |= Constants::Flags::SIGN;
-    if (((old_hl & 0x0FFF) + (old_hl & 0x0FFF) + carry) & 0x1000) F() |= Constants::Flags::HALF;
-    if (((old_hl ^ HL()) & (old_hl ^ HL()) & 0x8000) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x10000) F() |= Constants::Flags::CARRY;
+    const uint16_t old_hl = HL();
+    const uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
+    HL() = static_cast<uint16_t>(old_hl + old_hl + carry);
+    SetFlags_ADC16(HL(), old_hl, old_hl, carry);
     
     t_cycle += 15;
 }
@@ -3481,18 +3467,11 @@ void CPUImpl<Memory, Io>::ADC_HL_HL() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::SBC_HL_SP() {
     // ED 72 - Subtract SP from HL with carry
-    uint16_t old_hl = HL();
-    uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
-    int32_t result = static_cast<int32_t>(HL()) - static_cast<int32_t>(SP()) - carry;
-    HL() = result & 0xFFFF;
-    
-    // Set flags for 16-bit subtraction
-    F() = Constants::Flags::SUBTRACT; // N flag always set for subtraction
-    if (HL() == 0) F() |= Constants::Flags::ZERO;
-    if (HL() & 0x8000) F() |= Constants::Flags::SIGN;
-    if ((old_hl & 0x0FFF) < ((SP() & 0x0FFF) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_hl ^ SP()) & (old_hl ^ HL()) & 0x8000) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    const uint16_t old_hl = HL();
+    const uint16_t operand = SP();
+    const uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
+    HL() = static_cast<uint16_t>(old_hl - operand - carry);
+    SetFlags_SBC16(HL(), old_hl, operand, carry);
     
     t_cycle += 15;
 }
@@ -3500,18 +3479,11 @@ void CPUImpl<Memory, Io>::SBC_HL_SP() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::ADC_HL_SP() {
     // ED 7A - Add SP to HL with carry
-    uint16_t old_hl = HL();
-    uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
-    uint32_t result = static_cast<uint32_t>(HL()) + static_cast<uint32_t>(SP()) + carry;
-    HL() = result & 0xFFFF;
-    
-    // Set flags for 16-bit addition
-    F() = 0; // Clear N flag for addition
-    if (HL() == 0) F() |= Constants::Flags::ZERO;
-    if (HL() & 0x8000) F() |= Constants::Flags::SIGN;
-    if (((old_hl & 0x0FFF) + (SP() & 0x0FFF) + carry) & 0x1000) F() |= Constants::Flags::HALF;
-    if (((old_hl ^ HL()) & (SP() ^ HL()) & 0x8000) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x10000) F() |= Constants::Flags::CARRY;
+    const uint16_t old_hl = HL();
+    const uint16_t operand = SP();
+    const uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
+    HL() = static_cast<uint16_t>(old_hl + operand + carry);
+    SetFlags_ADC16(HL(), old_hl, operand, carry);
     
     t_cycle += 15;
 }

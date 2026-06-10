@@ -59,7 +59,9 @@ namespace Constants {
         constexpr uint8_t CARRY    = 0x01;
         constexpr uint8_t SUBTRACT = 0x02;
         constexpr uint8_t PARITY   = 0x04;
+        constexpr uint8_t X        = 0x08;
         constexpr uint8_t HALF     = 0x10;
+        constexpr uint8_t Y        = 0x20;
         constexpr uint8_t ZERO     = 0x40;
         constexpr uint8_t SIGN     = 0x80;
     }
@@ -269,9 +271,13 @@ private:
     void InitializeInstructionTables();
     void SetCarryFlag(bool value);
     bool GetCarryFlag() const;
+    uint8_t Flags_SZXY(uint8_t value) const;
     void SetFlags_ADD(uint8_t result, uint8_t operand1, uint8_t operand2);
+    void SetFlags_ADC(uint8_t result, uint8_t operand1, uint8_t operand2, uint8_t carry);
     void SetFlags_SUB(uint8_t result, uint8_t operand1, uint8_t operand2);
-    void SetFlags_LOGIC(uint8_t result);
+    void SetFlags_SBC(uint8_t result, uint8_t operand1, uint8_t operand2, uint8_t carry);
+    void SetFlags_CP(uint8_t result, uint8_t operand1, uint8_t operand2);
+    void SetFlags_LOGIC(uint8_t result, bool half_carry);
     uint8_t CalculateParity(uint8_t value);
     void PushWord(uint16_t value);
     uint16_t PopWord();

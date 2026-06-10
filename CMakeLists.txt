@@ -125,6 +125,10 @@ target_link_libraries(interrupt_test PRIVATE z80_cpu)
 add_executable(rotate_flags_test tests/rotate_flags_test.cpp)
 target_link_libraries(rotate_flags_test PRIVATE z80_cpu)
 
+# 8-bit ALU flag verification (documented + X/Y flags, CP, SCF/CCF/CPL)
+add_executable(alu_flags_test tests/alu_flags_test.cpp)
+target_link_libraries(alu_flags_test PRIVATE z80_cpu)
+
 # DAA decimal-adjust verification (BCD results + S/Z/P/H/C flags)
 add_executable(daa_test tests/daa_test.cpp)
 target_link_libraries(daa_test PRIVATE z80_cpu)
@@ -210,6 +214,10 @@ target_link_libraries(gcd_stress_test PRIVATE z80_cpu)
 add_executable(spectrum_probe examples/spectrum_probe.cpp)
 target_link_libraries(spectrum_probe PRIVATE z80_machine z80_debugger_core)
 
+# External CPU correctness suite runner. It skips when local assets are absent.
+add_executable(cpu_suite_runner tools/cpu_suite_runner/main.cpp)
+target_link_libraries(cpu_suite_runner PRIVATE z80_cpu)
+
 # =============================================================================
 # CTest registration — `ctest --test-dir <build>` runs them all.
 # spectrum_boot_test SKIPs (exits 0) when spec48.rom is absent, so a clean
@@ -217,12 +225,18 @@ target_link_libraries(spectrum_probe PRIVATE z80_machine z80_debugger_core)
 # =============================================================================
 foreach(test
         cpu_test observable_memory_test io_policy_test interrupt_test
-        rotate_flags_test daa_test instruction_timing_test refresh_register_test timing_test
+        rotate_flags_test alu_flags_test daa_test instruction_timing_test refresh_register_test timing_test
         machine_test screen_decode_test
         video_test keyboard_test raster_test floating_bus_test tape_test beeper_test
         spectrum_boot_test spectrum_debug_test debug_session_test
         disassembler_test symbol_table_test)
     add_test(NAME ${test} COMMAND ${test})
+endforeach()
+
+foreach(suite zexdoc zexall)
+    add_test(NAME cpu_suite_${suite} COMMAND cpu_suite_runner --case ${suite}
+             --artifacts ${CMAKE_BINARY_DIR}/compat-artifacts/cpu)
+    set_tests_properties(cpu_suite_${suite} PROPERTIES SKIP_RETURN_CODE 77)
 endforeach()
 
 # =============================================================================

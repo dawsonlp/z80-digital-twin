@@ -1022,10 +1022,9 @@ void CPUImpl<Memory, Io>::LD_H_n() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::DAA() {
-    // Decimal-adjust A after a BCD add/sub. Flags: S,Z,P/V and H are recomputed,
-    // C is set per the correction, N is unchanged. (Add and subtract use
-    // different correction conditions, and H is the half-carry/borrow produced
-    // by the correction — both were previously wrong.)
+    // Decimal-adjust A after a BCD add/sub. The correction gates are evaluated
+    // from the incoming A/H/C even for otherwise-invalid flag combinations; the
+    // N flag only chooses whether that correction is added or subtracted.
     const uint8_t a = A();
     const bool n = F() & Constants::Flags::SUBTRACT;
     const bool h = F() & Constants::Flags::HALF;
@@ -1033,25 +1032,24 @@ void CPUImpl<Memory, Io>::DAA() {
 
     uint8_t correction = 0;
     bool out_carry = c;
-    bool out_half;
-    if (!n) {                                   // after ADD/ADC
-        if (h || (a & 0x0F) > 9) correction |= 0x06;
-        if (c || a > 0x99)       { correction |= 0x60; out_carry = true; }
-        A() = static_cast<uint8_t>(a + correction);
-        out_half = (a & 0x0F) > 9;              // low-nibble +6 carried out of bit 3
-    } else {                                    // after SUB/SBC
-        if (h)  correction |= 0x06;
-        if (c)  correction |= 0x60;
-        A() = static_cast<uint8_t>(a - correction);
-        out_half = h && (a & 0x0F) < 6;         // low-nibble -6 borrowed from bit 4
+    if (h || (a & 0x0F) > 9) correction |= 0x06;
+    if (c || a > 0x99) {
+        correction |= 0x60;
+        out_carry = true;
     }
+
+    if (!n) {
+        A() = static_cast<uint8_t>(a + correction);
+    } else {
+        A() = static_cast<uint8_t>(a - correction);
+    }
+    const bool out_half = (a ^ A()) & Constants::Flags::HALF;
 
     F() = 0;
     if (n)         F() |= Constants::Flags::SUBTRACT;   // N is unchanged
     if (out_carry) F() |= Constants::Flags::CARRY;
     if (out_half)  F() |= Constants::Flags::HALF;
-    if (A() == 0)  F() |= Constants::Flags::ZERO;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
+    F() |= Flags_SZXY(A());
     F() |= CalculateParity(A());
     t_cycle += 4;
 }
@@ -1133,7 +1131,10 @@ void CPUImpl<Memory, Io>::LD_L_n() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CPL() {
     A() = ~A();
-    F() |= 0x12; // Set N and H flags
+    F() = (F() & (Constants::Flags::SIGN | Constants::Flags::ZERO |
+                  Constants::Flags::PARITY | Constants::Flags::CARRY)) |
+          (A() & (Constants::Flags::X | Constants::Flags::Y)) |
+          Constants::Flags::HALF | Constants::Flags::SUBTRACT;
     t_cycle += 4;
 }
 
@@ -1214,8 +1215,10 @@ void CPUImpl<Memory, Io>::LD_mHL_n() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::SCF() {
-    F() |= 0x01; // Set carry
-    F() &= 0xED; // Clear N and H
+    F() = (F() & (Constants::Flags::SIGN | Constants::Flags::ZERO |
+                  Constants::Flags::PARITY)) |
+          (A() & (Constants::Flags::X | Constants::Flags::Y)) |
+          Constants::Flags::CARRY;
     t_cycle += 4;
 }
 
@@ -1292,8 +1295,15 @@ void CPUImpl<Memory, Io>::LD_A_n() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CCF() {
-    F() ^= 0x01; // Flip carry
-    F() &= 0xED; // Clear N and H
+    const bool old_carry = F() & Constants::Flags::CARRY;
+    F() = (F() & (Constants::Flags::SIGN | Constants::Flags::ZERO |
+                  Constants::Flags::PARITY)) |
+          (A() & (Constants::Flags::X | Constants::Flags::Y));
+    if (old_carry) {
+        F() |= Constants::Flags::HALF;
+    } else {
+        F() |= Constants::Flags::CARRY;
+    }
     t_cycle += 4;
 }
 
@@ -1705,65 +1715,52 @@ void CPUImpl<Memory, Io>::LD_A_A() {
 // =============================================================================
 
 template <class Memory, class Io>
+uint8_t CPUImpl<Memory, Io>::Flags_SZXY(uint8_t value) const {
+    uint8_t flags = value & (Constants::Flags::SIGN | Constants::Flags::X | Constants::Flags::Y);
+    if (value == 0) flags |= Constants::Flags::ZERO;
+    return flags;
+}
+
+template <class Memory, class Io>
 void CPUImpl<Memory, Io>::SetFlags_ADD(uint8_t result, uint8_t operand1, uint8_t operand2) {
-    F() = 0; // Clear all flags
-    
-    // Sign flag (bit 7)
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
-    
-    // Zero flag
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    
-    // Half carry flag (carry from bit 3 to bit 4)
-    if (((operand1 & 0x0F) + (operand2 & 0x0F)) & 0x10) F() |= Constants::Flags::HALF;
-    
-    // Parity/Overflow flag (overflow for signed arithmetic)
-    if (((operand1 ^ result) & (operand2 ^ result) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    
-    // Carry flag (carry from bit 7)
-    if ((static_cast<uint16_t>(operand1) + static_cast<uint16_t>(operand2)) & 0x100) F() |= Constants::Flags::CARRY;
-    
-    // N flag is cleared for addition
+    SetFlags_ADC(result, operand1, operand2, 0);
+}
+
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetFlags_ADC(uint8_t result, uint8_t operand1, uint8_t operand2, uint8_t carry) {
+    const uint16_t full = static_cast<uint16_t>(operand1) + operand2 + carry;
+    F() = Flags_SZXY(result);
+    if (((operand1 ^ operand2 ^ result) & 0x10) != 0) F() |= Constants::Flags::HALF;
+    if ((~(operand1 ^ operand2) & (operand1 ^ result) & 0x80) != 0) F() |= Constants::Flags::PARITY;
+    if (full & 0x100) F() |= Constants::Flags::CARRY;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::SetFlags_SUB(uint8_t result, uint8_t operand1, uint8_t operand2) {
-    F() = Constants::Flags::SUBTRACT; // Set N flag for subtraction
-    
-    // Sign flag (bit 7)
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
-    
-    // Zero flag
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    
-    // Half carry flag (borrow from bit 4 to bit 3)
-    if ((operand1 & 0x0F) < (operand2 & 0x0F)) F() |= Constants::Flags::HALF;
-    
-    // Parity/Overflow flag (overflow for signed arithmetic)
-    if (((operand1 ^ operand2) & (operand1 ^ result) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    
-    // Carry flag (borrow)
-    if (operand1 < operand2) F() |= Constants::Flags::CARRY;
+    SetFlags_SBC(result, operand1, operand2, 0);
 }
 
 template <class Memory, class Io>
-void CPUImpl<Memory, Io>::SetFlags_LOGIC(uint8_t result) {
-    F() = 0; // Clear all flags
-    
-    // Sign flag (bit 7)
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
-    
-    // Zero flag
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    
-    // Half carry flag is set for logical operations
-    F() |= Constants::Flags::HALF;
-    
-    // Parity flag
+void CPUImpl<Memory, Io>::SetFlags_SBC(uint8_t result, uint8_t operand1, uint8_t operand2, uint8_t carry) {
+    const uint16_t subtrahend = static_cast<uint16_t>(operand2) + carry;
+    F() = Flags_SZXY(result) | Constants::Flags::SUBTRACT;
+    if (((operand1 ^ operand2 ^ result) & 0x10) != 0) F() |= Constants::Flags::HALF;
+    if (((operand1 ^ operand2) & (operand1 ^ result) & 0x80) != 0) F() |= Constants::Flags::PARITY;
+    if (static_cast<uint16_t>(operand1) < subtrahend) F() |= Constants::Flags::CARRY;
+}
+
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetFlags_CP(uint8_t result, uint8_t operand1, uint8_t operand2) {
+    SetFlags_SUB(result, operand1, operand2);
+    F() = (F() & ~(Constants::Flags::X | Constants::Flags::Y)) |
+          (operand2 & (Constants::Flags::X | Constants::Flags::Y));
+}
+
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetFlags_LOGIC(uint8_t result, bool half_carry) {
+    F() = Flags_SZXY(result);
+    if (half_carry) F() |= Constants::Flags::HALF;
     F() |= CalculateParity(result);
-    
-    // Carry flag is cleared for logical operations
-    // N flag is cleared for logical operations
 }
 
 template <class Memory, class Io>
@@ -1853,13 +1850,7 @@ void CPUImpl<Memory, Io>::ADC_A_B() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(B()) + carry;
     A() = result & 0xFF;
-    
-    F() = 0; // Clear all flags
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if (((old_a & 0x0F) + (B() & 0x0F) + carry) & 0x10) F() |= Constants::Flags::HALF;
-    if (((old_a ^ A()) & (B() ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x100) F() |= Constants::Flags::CARRY;
+    SetFlags_ADC(A(), old_a, B(), carry);
     
     t_cycle += 4;
 }
@@ -1870,13 +1861,7 @@ void CPUImpl<Memory, Io>::ADC_A_C() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(C()) + carry;
     A() = result & 0xFF;
-    
-    F() = 0;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if (((old_a & 0x0F) + (C() & 0x0F) + carry) & 0x10) F() |= Constants::Flags::HALF;
-    if (((old_a ^ A()) & (C() ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x100) F() |= Constants::Flags::CARRY;
+    SetFlags_ADC(A(), old_a, C(), carry);
     
     t_cycle += 4;
 }
@@ -1887,13 +1872,7 @@ void CPUImpl<Memory, Io>::ADC_A_D() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(D()) + carry;
     A() = result & 0xFF;
-    
-    F() = 0;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if (((old_a & 0x0F) + (D() & 0x0F) + carry) & 0x10) F() |= Constants::Flags::HALF;
-    if (((old_a ^ A()) & (D() ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x100) F() |= Constants::Flags::CARRY;
+    SetFlags_ADC(A(), old_a, D(), carry);
     
     t_cycle += 4;
 }
@@ -1904,13 +1883,7 @@ void CPUImpl<Memory, Io>::ADC_A_E() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(E()) + carry;
     A() = result & 0xFF;
-    
-    F() = 0;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if (((old_a & 0x0F) + (E() & 0x0F) + carry) & 0x10) F() |= Constants::Flags::HALF;
-    if (((old_a ^ A()) & (E() ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x100) F() |= Constants::Flags::CARRY;
+    SetFlags_ADC(A(), old_a, E(), carry);
     
     t_cycle += 4;
 }
@@ -1922,13 +1895,7 @@ void CPUImpl<Memory, Io>::ADC_A_H() {
     uint8_t h_val = GetEffectiveH();
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(h_val) + carry;
     A() = result & 0xFF;
-    
-    F() = 0;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if (((old_a & 0x0F) + (h_val & 0x0F) + carry) & 0x10) F() |= Constants::Flags::HALF;
-    if (((old_a ^ A()) & (h_val ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x100) F() |= Constants::Flags::CARRY;
+    SetFlags_ADC(A(), old_a, h_val, carry);
     
     t_cycle += 4;
 }
@@ -1940,13 +1907,7 @@ void CPUImpl<Memory, Io>::ADC_A_L() {
     uint8_t l_val = GetEffectiveL();
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(l_val) + carry;
     A() = result & 0xFF;
-    
-    F() = 0;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if (((old_a & 0x0F) + (l_val & 0x0F) + carry) & 0x10) F() |= Constants::Flags::HALF;
-    if (((old_a ^ A()) & (l_val ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x100) F() |= Constants::Flags::CARRY;
+    SetFlags_ADC(A(), old_a, l_val, carry);
     
     t_cycle += 4;
 }
@@ -1959,13 +1920,7 @@ void CPUImpl<Memory, Io>::ADC_A_mHL() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(value) + carry;
     A() = result & 0xFF;
-    
-    F() = 0;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if (((old_a & 0x0F) + (value & 0x0F) + carry) & 0x10) F() |= Constants::Flags::HALF;
-    if (((old_a ^ A()) & (value ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x100) F() |= Constants::Flags::CARRY;
+    SetFlags_ADC(A(), old_a, value, carry);
     
     t_cycle += GetMemoryAccessCycles();
 }
@@ -1976,13 +1931,7 @@ void CPUImpl<Memory, Io>::ADC_A_A() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(A()) + carry;
     A() = result & 0xFF;
-    
-    F() = 0;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if (((old_a & 0x0F) + (old_a & 0x0F) + carry) & 0x10) F() |= Constants::Flags::HALF;
-    if (((old_a ^ A()) & (old_a ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x100) F() |= Constants::Flags::CARRY;
+    SetFlags_ADC(A(), old_a, old_a, carry);
     
     t_cycle += 4;
 }
@@ -2061,13 +2010,7 @@ void CPUImpl<Memory, Io>::SBC_A_B() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(B()) - carry;
     A() = result & 0xFF;
-    
-    F() = Constants::Flags::SUBTRACT;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if ((old_a & 0x0F) < ((B() & 0x0F) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_a ^ B()) & (old_a ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    SetFlags_SBC(A(), old_a, B(), carry);
     
     t_cycle += 4;
 }
@@ -2078,13 +2021,7 @@ void CPUImpl<Memory, Io>::SBC_A_C() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(C()) - carry;
     A() = result & 0xFF;
-    
-    F() = Constants::Flags::SUBTRACT;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if ((old_a & 0x0F) < ((C() & 0x0F) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_a ^ C()) & (old_a ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    SetFlags_SBC(A(), old_a, C(), carry);
     
     t_cycle += 4;
 }
@@ -2095,13 +2032,7 @@ void CPUImpl<Memory, Io>::SBC_A_D() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(D()) - carry;
     A() = result & 0xFF;
-    
-    F() = Constants::Flags::SUBTRACT;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if ((old_a & 0x0F) < ((D() & 0x0F) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_a ^ D()) & (old_a ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    SetFlags_SBC(A(), old_a, D(), carry);
     
     t_cycle += 4;
 }
@@ -2112,13 +2043,7 @@ void CPUImpl<Memory, Io>::SBC_A_E() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(E()) - carry;
     A() = result & 0xFF;
-    
-    F() = Constants::Flags::SUBTRACT;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if ((old_a & 0x0F) < ((E() & 0x0F) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_a ^ E()) & (old_a ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    SetFlags_SBC(A(), old_a, E(), carry);
     
     t_cycle += 4;
 }
@@ -2130,13 +2055,7 @@ void CPUImpl<Memory, Io>::SBC_A_H() {
     uint8_t h_val = GetEffectiveH();
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(h_val) - carry;
     A() = result & 0xFF;
-    
-    F() = Constants::Flags::SUBTRACT;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if ((old_a & 0x0F) < ((h_val & 0x0F) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_a ^ h_val) & (old_a ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    SetFlags_SBC(A(), old_a, h_val, carry);
     
     t_cycle += 4;
 }
@@ -2148,13 +2067,7 @@ void CPUImpl<Memory, Io>::SBC_A_L() {
     uint8_t l_val = GetEffectiveL();
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(l_val) - carry;
     A() = result & 0xFF;
-    
-    F() = Constants::Flags::SUBTRACT;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if ((old_a & 0x0F) < ((l_val & 0x0F) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_a ^ l_val) & (old_a ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    SetFlags_SBC(A(), old_a, l_val, carry);
     
     t_cycle += 4;
 }
@@ -2167,13 +2080,7 @@ void CPUImpl<Memory, Io>::SBC_A_mHL() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(value) - carry;
     A() = result & 0xFF;
-    
-    F() = Constants::Flags::SUBTRACT;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if ((old_a & 0x0F) < ((value & 0x0F) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_a ^ value) & (old_a ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    SetFlags_SBC(A(), old_a, value, carry);
     
     t_cycle += GetMemoryAccessCycles();
 }
@@ -2184,13 +2091,7 @@ void CPUImpl<Memory, Io>::SBC_A_A() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(A()) - carry;
     A() = result & 0xFF;
-    
-    F() = Constants::Flags::SUBTRACT;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if ((old_a & 0x0F) < ((old_a & 0x0F) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_a ^ old_a) & (old_a ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    SetFlags_SBC(A(), old_a, old_a, carry);
     
     t_cycle += 4;
 }
@@ -2198,42 +2099,42 @@ void CPUImpl<Memory, Io>::SBC_A_A() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::AND_B() {
     A() &= B();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), true);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::AND_C() {
     A() &= C();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), true);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::AND_D() {
     A() &= D();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), true);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::AND_E() {
     A() &= E();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), true);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::AND_H() {
     A() &= GetEffectiveH();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), true);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::AND_L() {
     A() &= GetEffectiveL();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), true);
     t_cycle += 4;
 }
 
@@ -2241,56 +2142,56 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::AND_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     A() &= memory[address];
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), true);
     t_cycle += GetMemoryAccessCycles();
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::AND_A() {
     A() &= A();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), true);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::XOR_B() {
     A() ^= B();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::XOR_C() {
     A() ^= C();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::XOR_D() {
     A() ^= D();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::XOR_E() {
     A() ^= E();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::XOR_H() {
     A() ^= GetEffectiveH();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::XOR_L() {
     A() ^= GetEffectiveL();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
@@ -2298,56 +2199,56 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::XOR_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     A() ^= memory[address];
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += GetMemoryAccessCycles();
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::XOR_A() {
     A() ^= A(); // Result is always 0
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OR_B() {
     A() |= B();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OR_C() {
     A() |= C();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OR_D() {
     A() |= D();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OR_E() {
     A() |= E();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OR_H() {
     A() |= GetEffectiveH();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OR_L() {
     A() |= GetEffectiveL();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
@@ -2355,42 +2256,42 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OR_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     A() |= memory[address];
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += GetMemoryAccessCycles();
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OR_A() {
     A() |= A();
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CP_B() {
     uint8_t result = A() - B();
-    SetFlags_SUB(result, A(), B());
+    SetFlags_CP(result, A(), B());
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CP_C() {
     uint8_t result = A() - C();
-    SetFlags_SUB(result, A(), C());
+    SetFlags_CP(result, A(), C());
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CP_D() {
     uint8_t result = A() - D();
-    SetFlags_SUB(result, A(), D());
+    SetFlags_CP(result, A(), D());
     t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CP_E() {
     uint8_t result = A() - E();
-    SetFlags_SUB(result, A(), E());
+    SetFlags_CP(result, A(), E());
     t_cycle += 4;
 }
 
@@ -2398,7 +2299,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CP_H() {
     uint8_t h_val = GetEffectiveH();
     uint8_t result = A() - h_val;
-    SetFlags_SUB(result, A(), h_val);
+    SetFlags_CP(result, A(), h_val);
     t_cycle += 4;
 }
 
@@ -2406,7 +2307,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CP_L() {
     uint8_t l_val = GetEffectiveL();
     uint8_t result = A() - l_val;
-    SetFlags_SUB(result, A(), l_val);
+    SetFlags_CP(result, A(), l_val);
     t_cycle += 4;
 }
 
@@ -2415,14 +2316,14 @@ void CPUImpl<Memory, Io>::CP_mHL() {
     uint16_t address = GetEffectiveHL_Memory();
     uint8_t value = memory[address];
     uint8_t result = A() - value;
-    SetFlags_SUB(result, A(), value);
+    SetFlags_CP(result, A(), value);
     t_cycle += GetMemoryAccessCycles();
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CP_A() {
     uint8_t result = A() - A();
-    SetFlags_SUB(result, A(), A());
+    SetFlags_CP(result, A(), A());
     t_cycle += 4;
 }
 
@@ -2676,13 +2577,7 @@ void CPUImpl<Memory, Io>::ADC_A_n() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(value) + carry;
     A() = result & 0xFF;
-    
-    F() = 0;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if (((old_a & 0x0F) + (value & 0x0F) + carry) & 0x10) F() |= Constants::Flags::HALF;
-    if (((old_a ^ A()) & (value ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result & 0x100) F() |= Constants::Flags::CARRY;
+    SetFlags_ADC(A(), old_a, value, carry);
     
     t_cycle += 7;
 }
@@ -2832,13 +2727,7 @@ void CPUImpl<Memory, Io>::SBC_A_n() {
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(value) - carry;
     A() = result & 0xFF;
-    
-    F() = Constants::Flags::SUBTRACT;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if ((old_a & 0x0F) < ((value & 0x0F) + carry)) F() |= Constants::Flags::HALF;
-    if (((old_a ^ value) & (old_a ^ A()) & 0x80) != 0) F() |= Constants::Flags::PARITY;
-    if (result < 0) F() |= Constants::Flags::CARRY;
+    SetFlags_SBC(A(), old_a, value, carry);
     
     t_cycle += 7;
 }
@@ -2909,7 +2798,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::AND_n() {
     uint8_t value = memory[PC()++];
     A() &= value;
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), true);
     t_cycle += 7;
 }
 
@@ -2978,7 +2867,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::XOR_n() {
     uint8_t value = memory[PC()++];
     A() ^= value;
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 7;
 }
 
@@ -3045,7 +2934,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OR_n() {
     uint8_t value = memory[PC()++];
     A() |= value;
-    SetFlags_LOGIC(A());
+    SetFlags_LOGIC(A(), false);
     t_cycle += 7;
 }
 
@@ -3113,7 +3002,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CP_n() {
     uint8_t value = memory[PC()++];
     uint8_t result = A() - value;
-    SetFlags_SUB(result, A(), value);
+    SetFlags_CP(result, A(), value);
     t_cycle += 7;
 }
 

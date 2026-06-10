@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "notes": [
+    "This manifest documents the local asset contract for cpu_suite_runner.",
+    "The runner currently has built-in cases for zexdoc and zexall; keep this file in sync as cases are added.",
+    "Do not commit third-party binaries unless redistribution terms are verified."
+  ],
+  "cases": [
+    {
+      "name": "zexdoc",
+      "adapter": "cpm_com",
+      "asset": "cpu/zexdoc.com",
+      "source_url": "https://github.com/agn453/ZEXALL",
+      "license": "verify-before-vendoring",
+      "sha256": "34923a7ed82285d3038b2d54bd64899e12173eebb61f9d07b4fc72e78af2ae8f",
+      "entry": "0x0100",
+      "timeout_instructions": 10000000000,
+      "expected_output": ["Z80", "OK"],
+      "reject_output": ["ERROR", "FAILED", "FAIL"]
+    },
+    {
+      "name": "zexall",
+      "adapter": "cpm_com",
+      "asset": "cpu/zexall.com",
+      "source_url": "https://github.com/agn453/ZEXALL",
+      "license": "verify-before-vendoring",
+      "sha256": "6e2da55147a04f28d303d5da6a1e6b771557ac244653590a0f24a2d39c8537e8",
+      "entry": "0x0100",
+      "timeout_instructions": 10000000000,
+      "expected_output": ["Z80", "OK"],
+      "reject_output": ["ERROR", "FAILED", "FAIL"]
+    }
+  ]
+}

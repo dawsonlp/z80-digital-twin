@@ -279,6 +279,8 @@ private:
     void SetFlags_SBC(uint8_t result, uint8_t operand1, uint8_t operand2, uint8_t carry);
     void SetFlags_CP(uint8_t result, uint8_t operand1, uint8_t operand2);
     void SetFlags_LOGIC(uint8_t result, bool half_carry);
+    void SetFlags_INC(uint8_t result, uint8_t old_value);
+    void SetFlags_DEC(uint8_t result, uint8_t old_value);
     void SetFlags_ADD16(uint16_t result, uint16_t operand1, uint16_t operand2);
     void SetFlags_ADC16(uint16_t result, uint16_t operand1, uint16_t operand2, uint8_t carry);
     void SetFlags_SBC16(uint16_t result, uint16_t operand1, uint16_t operand2, uint8_t carry);

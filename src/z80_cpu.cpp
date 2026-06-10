@@ -693,11 +693,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::INC_B() {
     uint8_t old_b = B();
     B()++;
-    F() &= 0x01; // Preserve carry
-    if (B() == 0) F() |= 0x40; // Zero
-    if (B() & 0x80) F() |= 0x80; // Sign
-    if ((old_b & 0x0F) == 0x0F) F() |= 0x10; // Half-carry
-    if (old_b == 0x7F) F() |= 0x04; // Overflow
+    SetFlags_INC(B(), old_b);
     t_cycle += 4;
 }
 
@@ -705,12 +701,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::DEC_B() {
     uint8_t old_b = B();
     B()--;
-    F() &= 0x01; // Preserve carry
-    F() |= 0x02; // Set N flag
-    if (B() == 0) F() |= 0x40; // Zero
-    if (B() & 0x80) F() |= 0x80; // Sign
-    if ((old_b & 0x0F) == 0) F() |= 0x10; // Half-carry
-    if (old_b == 0x80) F() |= 0x04; // Overflow
+    SetFlags_DEC(B(), old_b);
     t_cycle += 4;
 }
 
@@ -766,11 +757,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::INC_C() {
     uint8_t old_c = C();
     C()++;
-    F() &= 0x01; // Preserve carry
-    if (C() == 0) F() |= 0x40; // Zero
-    if (C() & 0x80) F() |= 0x80; // Sign
-    if ((old_c & 0x0F) == 0x0F) F() |= 0x10; // Half-carry
-    if (old_c == 0x7F) F() |= 0x04; // Overflow
+    SetFlags_INC(C(), old_c);
     t_cycle += 4;
 }
 
@@ -778,12 +765,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::DEC_C() {
     uint8_t old_c = C();
     C()--;
-    F() &= 0x01; // Preserve carry
-    F() |= 0x02; // Set N flag
-    if (C() == 0) F() |= 0x40; // Zero
-    if (C() & 0x80) F() |= 0x80; // Sign
-    if ((old_c & 0x0F) == 0) F() |= 0x10; // Half-carry
-    if (old_c == 0x80) F() |= 0x04; // Overflow
+    SetFlags_DEC(C(), old_c);
     t_cycle += 4;
 }
 
@@ -839,11 +821,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::INC_D() {
     uint8_t old_d = D();
     D()++;
-    F() &= 0x01; // Preserve carry
-    if (D() == 0) F() |= 0x40; // Zero
-    if (D() & 0x80) F() |= 0x80; // Sign
-    if ((old_d & 0x0F) == 0x0F) F() |= 0x10; // Half-carry
-    if (old_d == 0x7F) F() |= 0x04; // Overflow
+    SetFlags_INC(D(), old_d);
     t_cycle += 4;
 }
 
@@ -851,12 +829,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::DEC_D() {
     uint8_t old_d = D();
     D()--;
-    F() &= 0x01; // Preserve carry
-    F() |= 0x02; // Set N flag
-    if (D() == 0) F() |= 0x40; // Zero
-    if (D() & 0x80) F() |= 0x80; // Sign
-    if ((old_d & 0x0F) == 0) F() |= 0x10; // Half-carry
-    if (old_d == 0x80) F() |= 0x04; // Overflow
+    SetFlags_DEC(D(), old_d);
     t_cycle += 4;
 }
 
@@ -913,11 +886,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::INC_E() {
     uint8_t old_e = E();
     E()++;
-    F() &= 0x01; // Preserve carry
-    if (E() == 0) F() |= 0x40; // Zero
-    if (E() & 0x80) F() |= 0x80; // Sign
-    if ((old_e & 0x0F) == 0x0F) F() |= 0x10; // Half-carry
-    if (old_e == 0x7F) F() |= 0x04; // Overflow
+    SetFlags_INC(E(), old_e);
     t_cycle += 4;
 }
 
@@ -925,12 +894,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::DEC_E() {
     uint8_t old_e = E();
     E()--;
-    F() &= 0x01; // Preserve carry
-    F() |= 0x02; // Set N flag
-    if (E() == 0) F() |= 0x40; // Zero
-    if (E() & 0x80) F() |= 0x80; // Sign
-    if ((old_e & 0x0F) == 0) F() |= 0x10; // Half-carry
-    if (old_e == 0x80) F() |= 0x04; // Overflow
+    SetFlags_DEC(E(), old_e);
     t_cycle += 4;
 }
 
@@ -990,11 +954,7 @@ void CPUImpl<Memory, Io>::INC_H() {
     uint8_t& h_reg = GetEffectiveH();
     uint8_t old_h = h_reg;
     h_reg++;
-    F() &= 0x01; // Preserve carry
-    if (h_reg == 0) F() |= 0x40; // Zero
-    if (h_reg & 0x80) F() |= 0x80; // Sign
-    if ((old_h & 0x0F) == 0x0F) F() |= 0x10; // Half-carry
-    if (old_h == 0x7F) F() |= 0x04; // Overflow
+    SetFlags_INC(h_reg, old_h);
     t_cycle += 4;
 }
 
@@ -1003,12 +963,7 @@ void CPUImpl<Memory, Io>::DEC_H() {
     uint8_t& h_reg = GetEffectiveH();
     uint8_t old_h = h_reg;
     h_reg--;
-    F() &= 0x01; // Preserve carry
-    F() |= 0x02; // Set N flag
-    if (h_reg == 0) F() |= 0x40; // Zero
-    if (h_reg & 0x80) F() |= 0x80; // Sign
-    if ((old_h & 0x0F) == 0) F() |= 0x10; // Half-carry
-    if (old_h == 0x80) F() |= 0x04; // Overflow
+    SetFlags_DEC(h_reg, old_h);
     t_cycle += 4;
 }
 
@@ -1096,11 +1051,7 @@ void CPUImpl<Memory, Io>::INC_L() {
     uint8_t& l_reg = GetEffectiveL();
     uint8_t old_l = l_reg;
     l_reg++;
-    F() &= 0x01; // Preserve carry
-    if (l_reg == 0) F() |= 0x40; // Zero
-    if (l_reg & 0x80) F() |= 0x80; // Sign
-    if ((old_l & 0x0F) == 0x0F) F() |= 0x10; // Half-carry
-    if (old_l == 0x7F) F() |= 0x04; // Overflow
+    SetFlags_INC(l_reg, old_l);
     t_cycle += 4;
 }
 
@@ -1109,12 +1060,7 @@ void CPUImpl<Memory, Io>::DEC_L() {
     uint8_t& l_reg = GetEffectiveL();
     uint8_t old_l = l_reg;
     l_reg--;
-    F() &= 0x01; // Preserve carry
-    F() |= 0x02; // Set N flag
-    if (l_reg == 0) F() |= 0x40; // Zero
-    if (l_reg & 0x80) F() |= 0x80; // Sign
-    if ((old_l & 0x0F) == 0) F() |= 0x10; // Half-carry
-    if (old_l == 0x80) F() |= 0x04; // Overflow
+    SetFlags_DEC(l_reg, old_l);
     t_cycle += 4;
 }
 
@@ -1175,11 +1121,7 @@ void CPUImpl<Memory, Io>::INC_mHL() {
     uint8_t old_value = value;
     value++;
     memory[address] = value;
-    F() &= 0x01; // Preserve carry
-    if (value == 0) F() |= 0x40; // Zero
-    if (value & 0x80) F() |= 0x80; // Sign
-    if ((old_value & 0x0F) == 0x0F) F() |= 0x10; // Half-carry
-    if (old_value == 0x7F) F() |= 0x04; // Overflow
+    SetFlags_INC(value, old_value);
     // INC (HL)=11 T; INC (IX/IY+d)=23 T (body 19 + DD/FD prefix M1 charged above).
     t_cycle += (current_state == CPUState::NORMAL) ? 11 : 19;
 }
@@ -1191,12 +1133,7 @@ void CPUImpl<Memory, Io>::DEC_mHL() {
     uint8_t old_value = value;
     value--;
     memory[address] = value;
-    F() &= 0x01; // Preserve carry
-    F() |= 0x02; // Set N flag
-    if (value == 0) F() |= 0x40; // Zero
-    if (value & 0x80) F() |= 0x80; // Sign
-    if ((old_value & 0x0F) == 0) F() |= 0x10; // Half-carry
-    if (old_value == 0x80) F() |= 0x04; // Overflow
+    SetFlags_DEC(value, old_value);
     // DEC (HL)=11 T; DEC (IX/IY+d)=23 T (body 19 + DD/FD prefix M1 charged above).
     t_cycle += (current_state == CPUState::NORMAL) ? 11 : 19;
 }
@@ -1261,11 +1198,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::INC_A() {
     uint8_t old_a = A();
     A()++;
-    F() &= 0x01; // Preserve carry
-    if (A() == 0) F() |= 0x40; // Zero
-    if (A() & 0x80) F() |= 0x80; // Sign
-    if ((old_a & 0x0F) == 0x0F) F() |= 0x10; // Half-carry
-    if (old_a == 0x7F) F() |= 0x04; // Overflow
+    SetFlags_INC(A(), old_a);
     t_cycle += 4;
 }
 
@@ -1273,12 +1206,7 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::DEC_A() {
     uint8_t old_a = A();
     A()--;
-    F() &= 0x01; // Preserve carry
-    F() |= 0x02; // Set N flag
-    if (A() == 0) F() |= 0x40; // Zero
-    if (A() & 0x80) F() |= 0x80; // Sign
-    if ((old_a & 0x0F) == 0) F() |= 0x10; // Half-carry
-    if (old_a == 0x80) F() |= 0x04; // Overflow
+    SetFlags_DEC(A(), old_a);
     t_cycle += 4;
 }
 
@@ -1764,6 +1692,20 @@ void CPUImpl<Memory, Io>::SetFlags_LOGIC(uint8_t result, bool half_carry) {
     F() = Flags_SZXY(result);
     if (half_carry) F() |= Constants::Flags::HALF;
     F() |= CalculateParity(result);
+}
+
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetFlags_INC(uint8_t result, uint8_t old_value) {
+    F() = (F() & Constants::Flags::CARRY) | Flags_SZXY(result);
+    if ((old_value & 0x0F) == 0x0F) F() |= Constants::Flags::HALF;
+    if (old_value == 0x7F) F() |= Constants::Flags::PARITY;
+}
+
+template <class Memory, class Io>
+void CPUImpl<Memory, Io>::SetFlags_DEC(uint8_t result, uint8_t old_value) {
+    F() = (F() & Constants::Flags::CARRY) | Flags_SZXY(result) | Constants::Flags::SUBTRACT;
+    if ((old_value & 0x0F) == 0) F() |= Constants::Flags::HALF;
+    if (old_value == 0x80) F() |= Constants::Flags::PARITY;
 }
 
 template <class Memory, class Io>

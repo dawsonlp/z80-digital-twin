@@ -3661,14 +3661,17 @@ void CPUImpl<Memory, Io>::RLD() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LDI() {
     // ED A0 - Load and increment
-    memory[DE()] = memory[HL()];
+    const uint8_t value = memory[HL()];
+    memory[DE()] = value;
     HL()++;
     DE()++;
     BC()--;
     
-    // Set flags
-    F() &= (Constants::Flags::CARRY | Constants::Flags::ZERO | Constants::Flags::SIGN); // Preserve C, Z, S
+    const uint8_t sum = static_cast<uint8_t>(A() + value);
+    F() &= (Constants::Flags::CARRY | Constants::Flags::ZERO | Constants::Flags::SIGN);
     if (BC() != 0) F() |= Constants::Flags::PARITY; // P/V = (BC != 0)
+    if (sum & 0x08) F() |= Constants::Flags::X;
+    if (sum & 0x02) F() |= Constants::Flags::Y;
     
     t_cycle += 16;
 }
@@ -3676,17 +3679,21 @@ void CPUImpl<Memory, Io>::LDI() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CPI() {
     // ED A1 - Compare and increment
-    uint8_t result = A() - memory[HL()];
+    const uint8_t value = memory[HL()];
+    const uint8_t result = static_cast<uint8_t>(A() - value);
+    const bool half = (A() & 0x0F) < (value & 0x0F);
+    const uint8_t xy = static_cast<uint8_t>(result - (half ? 1 : 0));
     HL()++;
     BC()--;
     
-    // Set flags
     F() &= Constants::Flags::CARRY; // Preserve carry only
     F() |= Constants::Flags::SUBTRACT; // N flag set for compare
     if (result == 0) F() |= Constants::Flags::ZERO;
     if (result & 0x80) F() |= Constants::Flags::SIGN;
-    if ((A() & 0x0F) < (memory[HL()-1] & 0x0F)) F() |= Constants::Flags::HALF;
+    if (half) F() |= Constants::Flags::HALF;
     if (BC() != 0) F() |= Constants::Flags::PARITY; // P/V = (BC != 0)
+    if (xy & 0x08) F() |= Constants::Flags::X;
+    if (xy & 0x02) F() |= Constants::Flags::Y;
     
     t_cycle += 16;
 }
@@ -3728,14 +3735,17 @@ void CPUImpl<Memory, Io>::OUTI() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LDD() {
     // ED A8 - Load and decrement
-    memory[DE()] = memory[HL()];
+    const uint8_t value = memory[HL()];
+    memory[DE()] = value;
     HL()--;
     DE()--;
     BC()--;
     
-    // Set flags
-    F() &= (Constants::Flags::CARRY | Constants::Flags::ZERO | Constants::Flags::SIGN); // Preserve C, Z, S
+    const uint8_t sum = static_cast<uint8_t>(A() + value);
+    F() &= (Constants::Flags::CARRY | Constants::Flags::ZERO | Constants::Flags::SIGN);
     if (BC() != 0) F() |= Constants::Flags::PARITY; // P/V = (BC != 0)
+    if (sum & 0x08) F() |= Constants::Flags::X;
+    if (sum & 0x02) F() |= Constants::Flags::Y;
     
     t_cycle += 16;
 }
@@ -3743,17 +3753,21 @@ void CPUImpl<Memory, Io>::LDD() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CPD() {
     // ED A9 - Compare and decrement
-    uint8_t result = A() - memory[HL()];
+    const uint8_t value = memory[HL()];
+    const uint8_t result = static_cast<uint8_t>(A() - value);
+    const bool half = (A() & 0x0F) < (value & 0x0F);
+    const uint8_t xy = static_cast<uint8_t>(result - (half ? 1 : 0));
     HL()--;
     BC()--;
     
-    // Set flags
     F() &= Constants::Flags::CARRY; // Preserve carry only
     F() |= Constants::Flags::SUBTRACT; // N flag set for compare
     if (result == 0) F() |= Constants::Flags::ZERO;
     if (result & 0x80) F() |= Constants::Flags::SIGN;
-    if ((A() & 0x0F) < (memory[HL()+1] & 0x0F)) F() |= Constants::Flags::HALF;
+    if (half) F() |= Constants::Flags::HALF;
     if (BC() != 0) F() |= Constants::Flags::PARITY; // P/V = (BC != 0)
+    if (xy & 0x08) F() |= Constants::Flags::X;
+    if (xy & 0x02) F() |= Constants::Flags::Y;
     
     t_cycle += 16;
 }

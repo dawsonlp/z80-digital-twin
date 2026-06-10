@@ -715,7 +715,8 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::RLCA() {
     uint8_t old_bit7 = (A() & 0x80) ? 1 : 0;
     A() = (A() << 1) | old_bit7;
-    F() = (F() & 0xEC) | old_bit7;
+    F() = (F() & (Constants::Flags::SIGN | Constants::Flags::ZERO | Constants::Flags::PARITY)) |
+          (A() & (Constants::Flags::X | Constants::Flags::Y)) | old_bit7;
     t_cycle += 4;
 }
 
@@ -779,7 +780,8 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::RRCA() {
     uint8_t old_bit0 = A() & 0x01;
     A() = (A() >> 1) | (old_bit0 << 7);
-    F() = (F() & 0xEC) | old_bit0;
+    F() = (F() & (Constants::Flags::SIGN | Constants::Flags::ZERO | Constants::Flags::PARITY)) |
+          (A() & (Constants::Flags::X | Constants::Flags::Y)) | old_bit0;
     t_cycle += 4;
 }
 
@@ -844,7 +846,8 @@ void CPUImpl<Memory, Io>::RLA() {
     uint8_t old_carry = F() & 0x01;
     uint8_t new_carry = (A() & 0x80) ? 1 : 0;
     A() = (A() << 1) | old_carry;
-    F() = (F() & 0xEC) | new_carry;
+    F() = (F() & (Constants::Flags::SIGN | Constants::Flags::ZERO | Constants::Flags::PARITY)) |
+          (A() & (Constants::Flags::X | Constants::Flags::Y)) | new_carry;
     t_cycle += 4;
 }
 
@@ -909,7 +912,8 @@ void CPUImpl<Memory, Io>::RRA() {
     uint8_t old_carry = F() & 0x01;
     uint8_t new_carry = A() & 0x01;
     A() = (A() >> 1) | (old_carry << 7);
-    F() = (F() & 0xEC) | new_carry;
+    F() = (F() & (Constants::Flags::SIGN | Constants::Flags::ZERO | Constants::Flags::PARITY)) |
+          (A() & (Constants::Flags::X | Constants::Flags::Y)) | new_carry;
     t_cycle += 4;
 }
 
@@ -3179,10 +3183,7 @@ uint8_t CPUImpl<Memory, Io>::RotateLeftCircular(uint8_t value) {
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = (value << 1) | bit7;
     
-    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
-                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
+    F() = Flags_SZXY(result);
     F() |= CalculateParity(result);
     if (bit7) F() |= Constants::Flags::CARRY;
     
@@ -3194,10 +3195,7 @@ uint8_t CPUImpl<Memory, Io>::RotateRightCircular(uint8_t value) {
     uint8_t bit0 = value & 0x01;
     uint8_t result = (value >> 1) | (bit0 << 7);
     
-    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
-                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
+    F() = Flags_SZXY(result);
     F() |= CalculateParity(result);
     if (bit0) F() |= Constants::Flags::CARRY;
     
@@ -3210,10 +3208,7 @@ uint8_t CPUImpl<Memory, Io>::RotateLeft(uint8_t value) {
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = (value << 1) | old_carry;
     
-    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
-                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
+    F() = Flags_SZXY(result);
     F() |= CalculateParity(result);
     if (bit7) F() |= Constants::Flags::CARRY;
     
@@ -3226,10 +3221,7 @@ uint8_t CPUImpl<Memory, Io>::RotateRight(uint8_t value) {
     uint8_t bit0 = value & 0x01;
     uint8_t result = (value >> 1) | (old_carry << 7);
     
-    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
-                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
+    F() = Flags_SZXY(result);
     F() |= CalculateParity(result);
     if (bit0) F() |= Constants::Flags::CARRY;
     
@@ -3241,10 +3233,7 @@ uint8_t CPUImpl<Memory, Io>::ShiftLeftArithmetic(uint8_t value) {
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = value << 1;
     
-    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
-                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
+    F() = Flags_SZXY(result);
     F() |= CalculateParity(result);
     if (bit7) F() |= Constants::Flags::CARRY;
     
@@ -3257,10 +3246,7 @@ uint8_t CPUImpl<Memory, Io>::ShiftRightArithmetic(uint8_t value) {
     uint8_t bit7 = value & 0x80; // Preserve sign bit
     uint8_t result = (value >> 1) | bit7;
     
-    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
-                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
+    F() = Flags_SZXY(result);
     F() |= CalculateParity(result);
     if (bit0) F() |= Constants::Flags::CARRY;
     
@@ -3273,10 +3259,7 @@ uint8_t CPUImpl<Memory, Io>::ShiftLeftLogical(uint8_t value) {
     uint8_t bit7 = (value & 0x80) ? 1 : 0;
     uint8_t result = (value << 1) | 0x01;
     
-    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
-                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
+    F() = Flags_SZXY(result);
     F() |= CalculateParity(result);
     if (bit7) F() |= Constants::Flags::CARRY;
     
@@ -3288,10 +3271,7 @@ uint8_t CPUImpl<Memory, Io>::ShiftRightLogical(uint8_t value) {
     uint8_t bit0 = value & 0x01;
     uint8_t result = value >> 1; // Logical shift - bit 7 becomes 0
     
-    F() &= 0x28; // recompute S,Z,P/V,H,N,C from the result below; keep only the
-                 // undocumented F5/F3 (bits 5,3). (S/Z/P were wrongly preserved.)
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
+    F() = Flags_SZXY(result);
     F() |= CalculateParity(result);
     if (bit0) F() |= Constants::Flags::CARRY;
     
@@ -3521,14 +3501,7 @@ void CPUImpl<Memory, Io>::NEG() {
     // ED 44 - Negate A (2's complement)
     uint8_t old_a = A();
     A() = (~A()) + 1;  // 2's complement negation
-    
-    // Set flags
-    F() = Constants::Flags::SUBTRACT; // N flag always set for NEG
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
-    if ((old_a & 0x0F) != 0) F() |= Constants::Flags::HALF; // Half-carry from bit 3
-    if (old_a == 0x80) F() |= Constants::Flags::PARITY; // Overflow if A was 0x80
-    if (old_a != 0) F() |= Constants::Flags::CARRY; // Carry if A was not 0
+    SetFlags_SUB(A(), 0, old_a);
     
     t_cycle += 8;
 }
@@ -3624,10 +3597,7 @@ void CPUImpl<Memory, Io>::RRD() {
     A() = (A() & 0xF0) | mem_low;
     memory[HL()] = (a_low << 4) | mem_high;
     
-    // Set flags
-    F() &= Constants::Flags::CARRY; // Preserve carry only
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
+    F() = (F() & Constants::Flags::CARRY) | Flags_SZXY(A());
     F() |= CalculateParity(A());
     
     t_cycle += 18;
@@ -3645,10 +3615,7 @@ void CPUImpl<Memory, Io>::RLD() {
     A() = (A() & 0xF0) | mem_high;
     memory[HL()] = (mem_low << 4) | a_low;
     
-    // Set flags
-    F() &= Constants::Flags::CARRY; // Preserve carry only
-    if (A() == 0) F() |= Constants::Flags::ZERO;
-    if (A() & 0x80) F() |= Constants::Flags::SIGN;
+    F() = (F() & Constants::Flags::CARRY) | Flags_SZXY(A());
     F() |= CalculateParity(A());
     
     t_cycle += 18;
@@ -4079,9 +4046,7 @@ void CPUImpl<Memory, Io>::SLL_mHL() {
     memory[HL()] = result;
     
     // Set flags
-    F() = 0; // Clear all flags
-    if (result == 0) F() |= Constants::Flags::ZERO;
-    if (result & 0x80) F() |= Constants::Flags::SIGN;
+    F() = Flags_SZXY(result);
     F() |= CalculateParity(result);
     if (bit7) F() |= Constants::Flags::CARRY;
     // H and N flags are reset (already 0)

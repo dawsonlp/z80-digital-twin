@@ -145,6 +145,10 @@ target_link_libraries(bit_flags_test PRIVATE z80_cpu)
 add_executable(block_flags_test tests/block_flags_test.cpp)
 target_link_libraries(block_flags_test PRIVATE z80_cpu)
 
+# Result-derived flag source verification for NEG/RRD/RLD/rotates/shifts
+add_executable(result_flag_sources_test tests/result_flag_sources_test.cpp)
+target_link_libraries(result_flag_sources_test PRIVATE z80_cpu)
+
 # DAA decimal-adjust verification (BCD results + S/Z/P/H/C flags)
 add_executable(daa_test tests/daa_test.cpp)
 target_link_libraries(daa_test PRIVATE z80_cpu)
@@ -242,7 +246,8 @@ target_link_libraries(cpu_suite_runner PRIVATE z80_cpu)
 foreach(test
         cpu_test observable_memory_test io_policy_test interrupt_test
         rotate_flags_test alu_flags_test word_arithmetic_flags_test daa_test
-        inc_dec_flags_test bit_flags_test block_flags_test instruction_timing_test refresh_register_test timing_test
+        inc_dec_flags_test bit_flags_test block_flags_test result_flag_sources_test
+        instruction_timing_test refresh_register_test timing_test
         machine_test screen_decode_test
         video_test keyboard_test raster_test floating_bus_test tape_test beeper_test
         spectrum_boot_test spectrum_debug_test debug_session_test

@@ -302,7 +302,7 @@ private:
     uint8_t ShiftRightArithmetic(uint8_t value);
     uint8_t ShiftLeftLogical(uint8_t value);
     uint8_t ShiftRightLogical(uint8_t value);
-    void TestBit(uint8_t value, uint8_t bit);
+    void TestBit(uint8_t value, uint8_t bit, uint8_t xy_source);
     uint8_t ResetBit(uint8_t value, uint8_t bit);
     uint8_t SetBit(uint8_t value, uint8_t bit);
     

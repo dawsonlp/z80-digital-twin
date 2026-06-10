@@ -3073,11 +3073,12 @@ void CPUImpl<Memory, Io>::ExecuteCBInstruction(uint8_t opcode) {
         
         if (reg_code == 6) {
             // Memory operation
-            uint8_t value = GetCBMemory(reg_code);
+            const uint16_t address = GetEffectiveHL_Memory();
+            uint8_t value = memory[address];
             
             switch (operation) {
                 case 1: // BIT - test bit
-                    TestBit(value, bit_num);
+                    TestBit(value, bit_num, static_cast<uint8_t>(address >> 8));
                     // Timing: BIT (HL)=12 cycles, DD CB/FD CB BIT=20 cycles (total including prefixes)
                     if (current_state == CPUState::DD_CB_PREFIX || current_state == CPUState::FD_CB_PREFIX) {
                         t_cycle += 20; // DD CB/FD CB BIT operations take 20 cycles total
@@ -3086,7 +3087,7 @@ void CPUImpl<Memory, Io>::ExecuteCBInstruction(uint8_t opcode) {
                     }
                     break;
                 case 2: // RES - reset bit
-                    SetCBMemory(reg_code, ResetBit(value, bit_num));
+                    memory[address] = ResetBit(value, bit_num);
                     // Timing: RES (HL)=15 cycles, DD CB/FD CB RES=23 cycles (total including prefixes)
                     if (current_state == CPUState::DD_CB_PREFIX || current_state == CPUState::FD_CB_PREFIX) {
                         t_cycle += 23; // DD CB/FD CB RES operations take 23 cycles total
@@ -3095,7 +3096,7 @@ void CPUImpl<Memory, Io>::ExecuteCBInstruction(uint8_t opcode) {
                     }
                     break;
                 case 3: // SET - set bit
-                    SetCBMemory(reg_code, SetBit(value, bit_num));
+                    memory[address] = SetBit(value, bit_num);
                     // Timing: SET (HL)=15 cycles, DD CB/FD CB SET=23 cycles (total including prefixes)
                     if (current_state == CPUState::DD_CB_PREFIX || current_state == CPUState::FD_CB_PREFIX) {
                         t_cycle += 23; // DD CB/FD CB SET operations take 23 cycles total
@@ -3110,7 +3111,7 @@ void CPUImpl<Memory, Io>::ExecuteCBInstruction(uint8_t opcode) {
             
             switch (operation) {
                 case 1: // BIT - test bit
-                    TestBit(reg, bit_num);
+                    TestBit(reg, bit_num, reg);
                     t_cycle += 8; // BIT register takes 8 cycles
                     break;
                 case 2: // RES - reset bit
@@ -3298,12 +3299,13 @@ uint8_t CPUImpl<Memory, Io>::ShiftRightLogical(uint8_t value) {
 }
 
 template <class Memory, class Io>
-void CPUImpl<Memory, Io>::TestBit(uint8_t value, uint8_t bit) {
+void CPUImpl<Memory, Io>::TestBit(uint8_t value, uint8_t bit, uint8_t xy_source) {
     uint8_t bit_mask = 1 << bit;
     bool bit_set = (value & bit_mask) != 0;
     
     F() &= Constants::Flags::CARRY; // Preserve carry only
     F() |= Constants::Flags::HALF;  // H flag always set for BIT
+    F() |= xy_source & (Constants::Flags::X | Constants::Flags::Y);
     
     if (!bit_set) F() |= Constants::Flags::ZERO;
     if (bit == 7 && bit_set) F() |= Constants::Flags::SIGN;

@@ -2,16 +2,15 @@
 
 **Version:** 2.0
 **Date:** June 5, 2026
-**Status:** Implemented — the v2.0 design is realized (see [STATUS.md](STATUS.md)).
-Platform/policy model: [ARCHITECTURE.md](ARCHITECTURE.md). (The memory plug is
-now `ObservableMemory`; any older "DebugMemory" mentions below mean the same
-thing.)
+**Status:** Implemented — the v2.0 design is realized (see [STATUS.md](../reference/status.md)).
+Platform/policy model: [Architecture](architecture.md). The debugger/machine
+memory plug is now `ObservableMemory`.
 
 > **v2.0 rewrite note.** This document replaces a v1.0 draft whose central
 > premise — a CPU-fed EventBus driving runtime-loadable plugins with
 > virtualized memory — was mismatched against the actual CPU and against this
 > project's defining property (raw execution speed). v2.0 grounds the design in
-> the real [z80_cpu.h](src/z80_cpu.h) API, makes the **debugger own the
+> the real [z80_cpu.h](../../src/z80_cpu.h) API, makes the **debugger own the
 > execution loop**, and scopes the first version to a **core debugger** with
 > the plugin system explicitly deferred.
 
@@ -25,16 +24,16 @@ breakpoints inline, and reads CPU state directly each frame to render registers,
 disassembly, memory, and I/O. Memory is a **pluggable compile-time policy**: the
 production/benchmark build keeps the current fast `std::array` plug (codegen
 unchanged, 2 GHz-equivalent performance intact), while the debugger plugs in a
-`DebugMemory` that exposes exact write events via a hook. No event bus, and the
+`ObservableMemory` that exposes exact write events via a hook. No event bus, and the
 production hot path carries no indirection.
 
 **Key properties**
 - **Platforms:** macOS, Linux, Windows (single C++23 codebase).
 - **Execution model:** Debugger-driven loop; CPU is a passive steppable engine.
 - **Memory model:** Pluggable policy — `CPUImpl<FastMemory>` for production
-  (unchanged), `CPUImpl<DebugMemory>` for the debugger (hooked writes).
+  (unchanged), `CPUImpl<ObservableMemory>` for the debugger (hooked writes).
 - **Observation model:** Registers/memory/I/O read directly each frame; memory
-  writes observed via the `DebugMemory` hook. No EventBus.
+  writes observed via the `ObservableMemory` hook. No EventBus.
 - **Scope (v1):** Core debugger. Plugin extensibility is a documented future
   phase (§14), not built now.
 
@@ -66,12 +65,12 @@ production hot path carries no indirection.
 
 ## 3. Constraints Imposed by the Existing CPU
 
-The debugger is built **on top of** [z80_cpu.h](src/z80_cpu.h) as it exists. The
+The debugger is built **on top of** [z80_cpu.h](../../src/z80_cpu.h) as it exists. The
 following facts drive every design decision below; ignoring them is how the
 previous draft went wrong.
 
 ### 3.1 `Step()` is per-opcode-byte, not per-instruction
-[`CPU::Step()`](src/z80_cpu.cpp#L70) consumes **one opcode byte**. For prefixed
+[`CPU::Step()`](../../src/z80_cpu.cpp#L70) consumes **one opcode byte**. For prefixed
 instructions it only latches a prefix state and returns:
 
 ```
@@ -89,8 +88,8 @@ today (see §4.2).
 ### 3.2 No event/observer mechanism exists — so memory becomes a pluggable policy
 Memory is a private `std::array<uint8_t, 65536>`; instruction handlers write it
 via raw `memory[addr] = ...` in **189 places**
-([z80_cpu.cpp:589](src/z80_cpu.cpp#L589),
-[:852](src/z80_cpu.cpp#L852), [:1013](src/z80_cpu.cpp#L1013), …). Crucially,
+([z80_cpu.cpp:589](../../src/z80_cpu.cpp#L589),
+[:852](../../src/z80_cpu.cpp#L852), [:1013](../../src/z80_cpu.cpp#L1013), …). Crucially,
 **every one of those is a plain `memory[...]` subscript** — there are no
 `.data()`, `&memory`, iterator, `memcpy`, or compound-assignment uses (verified
 by grep). So the only contract the CPU requires of "memory" is `operator[]` for
@@ -103,8 +102,9 @@ plug is fully inlined and the current run is byte-for-byte unchanged** — there
 no runtime indirection and no per-access branch on the production path. See §5
 for the templating and §3.2.1 for the debug plug.
 
-#### 3.2.1 The `Memory` policy contract and the debug plug
-Any plug must satisfy a minimal contract — read and write by address:
+#### 3.2.1 The `Memory` policy contract and the observable plug
+Any plug must satisfy a minimal contract — read and write by address. This is an
+illustrative sketch of the policy shape, not the full current header:
 
 ```cpp
 // Policy concept (informal): readable/writable by uint16_t address.
@@ -114,13 +114,13 @@ struct FastMemory {                                    // production plug == tod
     uint8_t& operator[](uint16_t a)       { return data[a]; }   // direct, inlinable
 };
 
-class DebugMemory {                                    // debugger plug
+class ObservableMemory {                                    // debugger plug
     std::array<uint8_t, 65536> data;
     WriteHook hook;                                    // void(uint16_t, uint8_t old, uint8_t neu)
 public:
     uint8_t operator[](uint16_t a) const { return data[a]; }
     struct Ref {                                       // write-intercepting proxy
-        DebugMemory& m; uint16_t a;
+        ObservableMemory& m; uint16_t a;
         operator uint8_t() const { return m.data[a]; }
         Ref& operator=(uint8_t v) {
             uint8_t old = m.data[a]; m.data[a] = v;
@@ -133,7 +133,7 @@ public:
 };
 ```
 
-`DebugMemory` yields **exact** memory-write events (address, old, new) — used for
+`ObservableMemory` yields **exact** memory-write events (address, old, new) — used for
 change-highlighting (§7.2) and memory write-watchpoints (§8.2). Its speed is
 irrelevant: the debugger drives the CPU at interactive rates (and a tuned plug
 comfortably sustains 4 MHz realtime with breakpoints). The production
@@ -141,22 +141,22 @@ comfortably sustains 4 MHz realtime with breakpoints). The production
 
 ### 3.3 I/O *does* funnel through accessors
 Unlike memory, IN/OUT instructions go through
-[`ReadPort`/`WritePort`](src/z80_cpu.h#L157) and the block-I/O ops
-([z80_cpu.cpp:2393](src/z80_cpu.cpp#L2393),
-[:2457](src/z80_cpu.cpp#L2457)). This is the one clean tap point and is what a
+[`ReadPort`/`WritePort`](../../src/z80_cpu.h#L157) and the block-I/O ops
+([z80_cpu.cpp:2393](../../src/z80_cpu.cpp#L2393),
+[:2457](../../src/z80_cpu.cpp#L2457)). This is the one clean tap point and is what a
 *future* I/O-virtualization layer (§14) would use. For v1 the I/O panel simply
 reads `io_ports[]` each frame via `ReadPort`.
 
 ### 3.4 State is exposed via non-const reference accessors
 Registers are reached through `uint16_t& BC()`, `uint8_t& A()`, etc.
-([z80_cpu.h:98-121](src/z80_cpu.h#L98-L121)) — there are **no const overloads**.
+([z80_cpu.h:98-121](../../src/z80_cpu.h#L98-L121)) — there are **no const overloads**.
 The debugger owns the `CPU` and holds it by non-const reference, so reading
 state works; we simply will not pretend panels operate on a `const CPU&`.
 `Reset()`, `IsHalted()`, `GetCycleCount()`, `ReadMemory()`, `ReadPort()` are
 already available and sufficient for read-out.
 
 ### 3.5 `RunUntilCycle` runs to completion
-[`RunUntilCycle`](src/z80_cpu.cpp#L64) loops `Step()` until a target cycle or
+[`RunUntilCycle`](../../src/z80_cpu.cpp#L64) loops `Step()` until a target cycle or
 HALT, synchronously. Calling it directly from the render thread would freeze the
 UI for the duration. The debugger uses **bounded run-slices** instead (§4.1).
 
@@ -262,15 +262,15 @@ class CPUImpl {
 };
 
 using CPU      = CPUImpl<FastMemory>;    // production / benchmark — identical codegen
-using DebugCPU = CPUImpl<DebugMemory>;   // debugger — hooked writes
+using DebugCPU = CPUImpl<ObservableMemory>;   // debugger — hooked writes
 ```
 
 **Refactor shape (mechanical, repo-wide):**
-- The 3000-line [z80_cpu.cpp](src/z80_cpu.cpp) keeps its structure; each method
+- The 3000-line [z80_cpu.cpp](../../src/z80_cpu.cpp) keeps its structure; each method
   definition gains a `template <class Memory>` prefix and `CPUImpl<Memory>::`
   qualifier.
 - Keep definitions in the `.cpp` via **explicit instantiation** at the bottom
-  (`template class CPUImpl<FastMemory>; template class CPUImpl<DebugMemory>;`) so
+  (`template class CPUImpl<FastMemory>; template class CPUImpl<ObservableMemory>;`) so
   compile times and the file layout stay close to today — no need to move
   everything into headers.
 - The instruction dispatch tables become member-pointer arrays of
@@ -280,7 +280,7 @@ using DebugCPU = CPUImpl<DebugMemory>;   // debugger — hooked writes
 inlines `memory[a]` to the same direct `std::array` access as today. The
 template is resolved at compile time, so there is no virtual dispatch and no
 per-access branch anywhere on the production path. The numbers in
-[design_decisions.md](design_decisions.md) hold by construction.
+[design_decisions.md](../archive/early-design-decisions.md) hold by construction.
 
 > **Note (I/O):** `io_ports` is left as a plain array in v1 — I/O already funnels
 > through `ReadPort`/`WritePort` (§3.3), so a future I/O policy can be added the
@@ -327,11 +327,11 @@ fixed golden table, plus spot-checks against a reference disassembler.
 
 ### 7.1 Single source of truth
 CPU registers, memory, and I/O live solely in the CPU. Panels derive everything
-from it each frame. Memory-write notifications come from the `DebugMemory` plug's
+from it each frame. Memory-write notifications come from the `ObservableMemory` plug's
 hook (§3.2.1), not from polling.
 
-### 7.2 Memory change detection (via the DebugMemory hook)
-The debugger installs a write hook on the `DebugMemory` plug. Each `memory[a] =
+### 7.2 Memory change detection (via the ObservableMemory hook)
+The debugger installs a write hook on the `ObservableMemory` plug. Each `memory[a] =
 v` fires `hook(a, old, v)`, which the debug session records into a per-frame
 "recently written" set; the memory viewer highlights those cells and clears the
 set after rendering. This gives **exact** change detection (no false negatives,
@@ -353,7 +353,7 @@ Stored in a hash set keyed by address for O(1) lookup in the run loop (§4.1).
 setting `mode = PAUSED` and recording the hit address — not via an event bus.
 
 ### 8.2 Memory write-watchpoints (v1-feasible via the hook)
-Because the `DebugMemory` plug delivers exact write events (§3.2.1), watchpoints
+Because the `ObservableMemory` plug delivers exact write events (§3.2.1), watchpoints
 are cheap to add: the hook checks the written address against a watch set and
 pauses the run when matched. Whether this lands in v1 or just-after is a scoping
 call, but the mechanism is already present — it is no longer blocked on
@@ -412,10 +412,10 @@ the Metal/legacy-GL branching the v1 draft introduced unnecessarily).
   - `z80_cpu` — the core, now templated on the `Memory` policy (§5.2) with
     `using CPU = CPUImpl<FastMemory>` preserving existing usage; explicit
     instantiation keeps it a normal compiled unit.
-  - `z80_debugger` — the debugger executable; instantiates `CPUImpl<DebugMemory>`
+  - `z80_debugger` — the debugger executable; instantiates `CPUImpl<ObservableMemory>`
     and links the core directly (no shared-library boundary in v1).
   - `z80_debugger_tests` — disassembler golden tests, breakpoint/step logic, and
-    a parity test that `FastMemory` and `DebugMemory` runs produce identical CPU
+    a parity test that `FastMemory` and `ObservableMemory` runs produce identical CPU
     state for the same program.
 
 The debugger links the CPU core as a normal static dependency. The "core as
@@ -430,7 +430,7 @@ with the plugin system (§14).
   lines and the visible memory window are rendered/diffed.
 - **Execution:** Free-run uses bounded slices (§4.1). The inline breakpoint
   check is a single hash-set lookup per instruction. The debug build's per-write
-  hook (`DebugMemory`) is fine at interactive/4 MHz-realtime rates; the
+  hook (`ObservableMemory`) is fine at interactive/4 MHz-realtime rates; the
   production build (`FastMemory`) carries no hook and matches the original
   benchmark by construction (§5.2).
 - **Tuning knob:** the per-frame instruction budget trades responsiveness
@@ -457,10 +457,10 @@ the core debugger.
 
 - **Plugin system + EventBus.** Plugins (bitmap viewer, audio, keyboard
   injection, profilers) would consume CPU events. The infrastructure is already
-  the right shape: the `DebugMemory` plug's write hook (§3.2.1) is the natural
+  the right shape: the `ObservableMemory` plug's write hook (§3.2.1) is the natural
   event source, and a future `Memory` plug can fan out to subscribers instead of
   a single hook. No hot-path instrumentation of the production build is ever
-  needed — plugins live entirely in the `CPUImpl<DebugMemory>` world.
+  needed — plugins live entirely in the `CPUImpl<ObservableMemory>` world.
 - **I/O device virtualization.** Add an `IO` policy alongside the `Memory`
   policy (§5.2 note), or route `ReadPort`/`WritePort` (§3.3) to handlers —
   feasible and isolated, unneeded until a plugin hosts a device.
@@ -480,7 +480,7 @@ src/
 ├── z80_cpu.cpp        # templated defs + explicit instantiation (§5.2)
 └── memory/
     ├── fast_memory.h  # production plug (the current std::array)
-    └── debug_memory.h # hooked plug for the debugger (§3.2.1)
+    └── memory/observable_memory.h # hooked memory plug for debugger/machine use
 
 debugger/
 ├── disasm/        disassembler.{h,cpp}, opcode tables
@@ -495,7 +495,7 @@ debugger/
 ```
 
 `exec/debug_session` is the new core abstraction the v1 draft lacked: it holds
-the `DebugCPU&`, installs the `DebugMemory` write hook, owns the breakpoint set
+the `DebugCPU&`, installs the `ObservableMemory` write hook, owns the breakpoint set
 and run mode, and exposes `StepOneInstruction / StepOver / RunSlice / Pause /
 Reset`. UI calls into it; panels read CPU state through it.
 
@@ -516,7 +516,7 @@ Reset`. UI calls into it; panels read CPU state through it.
 - [ ] Symbol table loads from `.sym`; bad entries are non-fatal.
 - [ ] **Benchmark unchanged:** `CPUImpl<FastMemory>` free-run performance equals
       pre-refactor numbers (compile-time policy, no production indirection).
-- [ ] **Plug parity:** `FastMemory` and `DebugMemory` runs produce identical CPU
+- [ ] **Plug parity:** `FastMemory` and `ObservableMemory` runs produce identical CPU
       state for the same program (validates the templating refactor).
 
 ---

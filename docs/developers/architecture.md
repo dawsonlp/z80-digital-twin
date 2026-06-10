@@ -83,7 +83,7 @@ Each picks its environment at compile time; nothing bleeds across; the bare
 - **`ObservableMemory`** — a **multi-observer write hook** (a small list of
   `(addr, old, new)` callbacks). Used by the debugger *and* machines; both attach
   observers, so a *running* machine is also debuggable. This **subsumes** the
-  earlier single-hook `DebugMemory` (which becomes this).
+  earlier single-hook debug memory plug.
 
 Reads are never hooked, so observation costs nothing on fetch/operand traffic.
 
@@ -190,7 +190,7 @@ if desired. New capabilities follow §2's sibling rule.
 
 ---
 
-*Companion docs: [DEBUGGER_DESIGN.md](DEBUGGER_DESIGN.md) (debugger),
-[SPECTRUM_DESIGN.md](SPECTRUM_DESIGN.md) (the Spectrum machine + ULA/PAL timing),
-[DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md) (reverse-engineering vision),
-[STATUS.md](STATUS.md) (current state).*
+*Companion docs: [DEBUGGER_DESIGN.md](debugger-design.md) (debugger),
+[SPECTRUM_DESIGN.md](spectrum-machine-design.md) (the Spectrum machine + ULA/PAL timing),
+[DEBUGGER_ROADMAP.md](reverse-engineering-roadmap.md) (reverse-engineering vision),
+[STATUS.md](../reference/status.md) (current state).*

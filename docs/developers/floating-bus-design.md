@@ -3,15 +3,15 @@
 **Status:** **implemented** (2026-06-08), verified by `floating_bus_test` and the
 direct probe; `kFloatingBusReadT` left at 0 pending `fbustest` calibration. The
 first ULA-timing feature toward §C of the
-[compatibility plan](COMPATIBILITY_TEST_PLAN.md) — Arkanoid, Sidewize, Cobra,
+[compatibility plan](../testers/compatibility-plan.md) — Arkanoid, Sidewize, Cobra,
 Short Circuit, Aquaplane — plus the `fbustest` suite (§B). See §7 for the
 post-implementation findings (notably: Arkanoid has a *separate*, earlier blocker).
 **Date:** 2026-06-08
 
-See also: [SPECTRUM_DESIGN.md](SPECTRUM_DESIGN.md) §6 (PAL/ULA timing model),
-[machine/spectrum/ula.h](machine/spectrum/ula.h) (where this lands),
-[src/io/callback_io.h](src/io/callback_io.h) (the I/O seam),
-[HEADLESS_INSTRUMENTATION.md](HEADLESS_INSTRUMENTATION.md) (how we verify it).
+See also: [SPECTRUM_DESIGN.md](spectrum-machine-design.md) §6 (PAL/ULA timing model),
+[machine/spectrum/ula.h](../../machine/spectrum/ula.h) (where this lands),
+[src/io/callback_io.h](../../src/io/callback_io.h) (the I/O seam),
+[HEADLESS_INSTRUMENTATION.md](../testers/headless-instrumentation.md) (how we verify it).
 
 ---
 
@@ -38,7 +38,7 @@ correctness demands:
 | **Aquaplane** (§C) | rolling-sea raster effect | beam position correct across the display |
 
 Today our ULA returns `0xFF` for every undecoded port
-([ula.h:82-90](machine/spectrum/ula.h#L82-L90)), so every one of these is blocked;
+([ula.h:82-90](../../machine/spectrum/ula.h#L82-L90)), so every one of these is blocked;
 Arkanoid's sync loop never sees its expected value and pins in a tiny loop — the
 hang the probe reproduces. **We design to `fbustest` (exact), not to Arkanoid
 (forgiving)** — getting the strict oracle green makes the §C games correct as a
@@ -59,14 +59,14 @@ I/O policy CallbackIo                 — generic bridge: forwards IN/OUT to han
 DEVICE     Ula::read_port (via OnIn)  — Spectrum-only; decodes ULA ports HERE
 ```
 
-[callback_io.h](src/io/callback_io.h) is explicit about this: it exists to keep
+[callback_io.h](../../src/io/callback_io.h) is explicit about this: it exists to keep
 "machine-specific port decoding (e.g. the ZX Spectrum ULA … in the machine layer)
 out of the CPU core," and its `kFloating = 0xFF` is the **generic open-bus
 default** for a machine with no devices.
 
 **The floating bus is a behaviour of the Spectrum's ULA/bus, not of the Z80's I/O
 mechanism.** So it belongs in the `Ula` handler — which is already Spectrum-only
-code under [machine/spectrum/](machine/spectrum/). Consequences:
+code under [machine/spectrum/](../../machine/spectrum/). Consequences:
 
 - **Zero blast radius for non-Spectrum machines.** Any other `Machine<Cpu>` uses
   `CPUImpl` with a different `Io` policy (or simply installs no `OnIn` handler)
@@ -119,7 +119,7 @@ This is the single source of truth for the `t → (line, within-line slot,
 address)` map. Floating bus reads `address` from live RAM; **contended memory
 (separate, larger feature) will reuse the same `active`/timing map** to compute
 its 6,5,4,3,2,1,0,0 stall. Rendering keeps its existing per-line resolution
-([ula.h `screen_byte`](machine/spectrum/ula.h#L143)) — but all three share the
+([ula.h `screen_byte`](../../machine/spectrum/ula.h#L143)) — but all three share the
 `timing.h` constants as the *only* place geometry is defined, so there is one set
 of numbers to calibrate, not three.
 
@@ -127,7 +127,7 @@ of numbers to calibrate, not three.
 
 ## 4. The fetch model — T-state → byte on the bus
 
-From [SPECTRUM_DESIGN.md](SPECTRUM_DESIGN.md#L143) §6, one 224-T scanline is:
+From [Spectrum Machine Design](spectrum-machine-design.md) §6, one 224-T scanline is:
 
 ```
 | 128 T display (256 px) | 24 T right border | 48 T retrace | 24 T left border |
@@ -161,7 +161,7 @@ two cells at a time, in a repeating **8-T pattern** (4 fetched bytes + 4 idle �
 | 4–7 | idle → `0xFF` |
 
 where `k = within_line / 8` (0..15) and columns are 0..31. Addresses come from the
-existing interleaved helpers ([video.h:47-56](machine/spectrum/video.h#L47-L56)).
+existing interleaved helpers ([video.h:47-56](../../machine/spectrum/video.h#L47-L56)).
 
 **Value source: live RAM (`read_(addr)`), deliberately — not** the per-line
 beam-accurate `screen_byte()`. Floating bus is a present-instant probe: the byte
@@ -184,7 +184,7 @@ rendering — a different question.)
 
 The floating-bus value depends on the **exact T-state the port read samples the
 bus**. So the question is what `clock_()` reports at the instant `Ula::read_port`
-runs. Tracing the core ([z80_cpu.cpp](src/z80_cpu.cpp)) settles it:
+runs. Tracing the core ([z80_cpu.cpp](../../src/z80_cpu.cpp)) settles it:
 
 **The CPU uses an instruction-atomic timing model: `io.In()` is called *first*,
 and the instruction's T-states are added in one lump *after*.** Examples:
@@ -243,7 +243,7 @@ only thing left to calibrate against `fbustest`.
 
 - **Surface:** ~13 handlers (`IN A,(n)`; `IN {B,C,D,E,H,L,F,A},(C)`;
   `INI/IND/INIR/INDR`) — purely reordering an existing add, no logic change.
-- **Safety net:** [tests/instruction_timing_test.cpp](tests/instruction_timing_test.cpp)
+- **Safety net:** [tests/instruction_timing_test.cpp](../../tests/instruction_timing_test.cpp)
   asserts per-instruction totals; since totals are preserved, it green-lights the
   reorder and guards against a slip.
 - **Bonus:** the same split for the `OUT` family later gives contention and
@@ -300,7 +300,7 @@ absolute cycle `1,000,000`; this instruction begins at **frame-relative T-state
 **The contrast that makes it a raster clock.** Run the *same* instruction during
 the top border (start ≈ 5,000 ⇒ `t ≈ 5,002`): `line = 22 < 64`, so `beam_fetch_at`
 returns **not active** → `floating_bus()` returns **`0xFF`**. Same code, different
-T-state → different value. Today [ula.h:83](machine/spectrum/ula.h#L83) returns
+T-state → different value. Today [ula.h:83](../../machine/spectrum/ula.h#L83) returns
 `0xFF` *unconditionally*, so the loop never breaks and the CPU pins in the 78-byte
 loop the probe showed.
 
@@ -308,7 +308,7 @@ loop the probe showed.
 
 ## 7. Acceptance & verification — results
 
-**Unit test — PASS.** [tests/floating_bus_test.cpp](tests/floating_bus_test.cpp)
+**Unit test — PASS.** [tests/floating_bus_test.cpp](../../tests/floating_bus_test.cpp)
 (registered in CTest) drives the clock to known T-states with sentinels in the
 display file and asserts: display slots 0–3 read bitmap/attr/bitmap/attr of the
 right cells, idle slots 4–7 and the border/retrace/top/bottom all float to

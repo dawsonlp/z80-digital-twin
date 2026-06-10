@@ -2,10 +2,11 @@
 
 **Status:** In progress. **L1 (execution coverage)** and **L2 (self-modifying-
 code detection)** are implemented, unit-tested, and surfaced in the UI (see
-[STATUS.md](STATUS.md)). L3+ remain future work.
+[STATUS.md](../reference/status.md)). L3+ remain future work.
 **Relationship to current work:** extends the existing debugger (see
-[DEBUGGER_DESIGN.md](DEBUGGER_DESIGN.md)). The near-term focus has shifted to
-simulated hardware (Spectrum ULA); L3+ resume after that.
+[DEBUGGER_DESIGN.md](debugger-design.md)). This is now paired with the
+development workbench roadmap: direct assembly-to-machine loading on one side,
+and machine-state-to-documented-source recovery on the other.
 
 ---
 
@@ -32,6 +33,17 @@ Two capabilities anchor the vision and recur throughout:
 - **Self-modifying code, called out loudly.** SMC is where static tools fail and
   where the interesting tricks live. We detect it exactly and surface it
   prominently.
+- **A reversible development loop.** Source can be assembled into the running
+  machine; RAM can be lifted back into documented source; both paths are checked
+  against bytes, symbols, and observed execution.
+
+The target loop is:
+
+```
+source -> assemble -> load into RAM -> run/trace -> annotate
+   ▲                                            │
+   └──── reassemble + verify <- export source <-┘
+```
 
 ---
 
@@ -41,10 +53,11 @@ This isn't a rewrite — every layer hangs off something that already exists:
 
 | Existing piece | What it enables |
 |---|---|
-| Debugger owns the step loop ([debug_session](debugger/exec/debug_session.h)) | Record every executed instruction start — the coverage map (L1). One line in `StepInstruction`. |
-| `DebugMemory` write hook ([debug_memory.h](src/memory/debug_memory.h)) delivers exact (addr, old, new) | Cross-reference writes against the code map → SMC detection (L2), for free. |
-| Disassembler exposes `branch_target` + `symbols_used` ([disassembler.h](debugger/disasm/disassembler.h)) | Build the call/jump graph and cross-references (L7) without re-parsing text. |
-| `SymbolTable` with typed symbols + JSON I/O ([symbol_table.h](debugger/symbols/symbol_table.h)) | The seed of the annotation database (L3): grow it into comments, data typing, equates. |
+| Debugger owns the step loop ([debug_session](../../debugger/exec/debug_session.h)) | Record every executed instruction start — the coverage map (L1). One line in `StepInstruction`. |
+| `ObservableMemory` write hook ([observable_memory.h](../../src/memory/observable_memory.h)) delivers exact (addr, old, new) | Cross-reference writes against the code map → SMC detection (L2), for free. |
+| Disassembler exposes `branch_target` + `symbols_used` ([disassembler.h](../../debugger/disasm/disassembler.h)) | Build the call/jump graph and cross-references (L7) without re-parsing text. |
+| `SymbolTable` with typed symbols + JSON I/O ([symbol_table.h](../../debugger/symbols/symbol_table.h)) | The seed of the annotation database (L3): grow it into comments, data typing, equates, imported assembler labels, and discovered labels. |
+| `LoadProgram`, memory writes, and exposed register access | Load assembled output or raw binary inserts into a running machine, then set PC/SP/registers for a controlled start state. |
 | Pluggable memory + live re-read each frame | The disassembly always reflects *current* bytes — better than a static disassembler for SMC. |
 
 The reverse-engineering layer is mostly **consuming and persisting** what the
@@ -94,7 +107,7 @@ Small.
 read-out; a 64 KB minimap/heatmap (executed vs untouched vs data).
 
 ### L2 — Self-modifying-code detection  *(called out loudly)*
-**What:** When the `DebugMemory` hook reports a write to an address currently
+**What:** When the `ObservableMemory` hook reports a write to an address currently
 classified as executed-code (or declared-code), raise an **SMC event**: record
 { written address, old byte, new byte, the PC of the instruction that wrote it,
 cycle/timestamp }. Keep a timeline.
@@ -107,7 +120,7 @@ address in disassembly and memory; optional **break-on-SMC**; a running count in
 the status bar; "instruction at X modified instruction at Y" with before/after
 disassembly.
 
-**The "before" value is free — no instruction trapping.** The `DebugMemory`
+**The "before" value is free — no instruction trapping.** The `ObservableMemory`
 proxy reads the existing byte the instant before it overwrites it and passes it
 to the hook as `old_value`. The pre-overwrite byte is therefore captured at the
 natural trap point — the write itself — and nothing intercepts or snapshots
@@ -121,7 +134,7 @@ of array touches, an `if(hook)` branch, one `std::function` call, an O(1)
 coverage-map check, and — only on a genuine code-write — a vector append. At full
 Spectrum speed (~50–100K writes/s) that is well under 1% overhead; the debug
 build runs comfortably faster than 3.5 MHz real-time (the FastMemory path
-benchmarks ~2 GHz-equivalent; even a several-times-slower DebugMemory stays
+benchmarks ~2 GHz-equivalent; even a several-times-slower ObservableMemory stays
 ~100× above the Spectrum). The session adds one store per instruction to
 snapshot the writer PC.
 
@@ -163,7 +176,7 @@ export.
 **What:** Emit a `.asm`/`.z80` file: `ORG` directives, `EQU`s, labels, `DB`/`DW`/
 `DM` for data regions, instructions for code, and the user's comments — in a
 chosen assembler dialect (default likely **sjasmplus**, already referenced in
-[design_decisions.md](design_decisions.md); pasmo/z80asm as options).
+[design_decisions.md](../archive/early-design-decisions.md); pasmo/z80asm as options).
 
 **Why:** The payoff — exploration becomes a saved, editable, buildable source
 artifact. Partial export (a range/region) supported.
@@ -185,6 +198,8 @@ addresses. Medium; depends on a chosen toolchain being present.
 ### L7 — Higher-level analysis
 **What:** Build on the trace and the graph:
 - **Call graph & basic blocks** (entry = CALL/JP target, end = RET/branch).
+- **Observed execution flow** — record taken branches, returns, loop hot spots,
+  and entry points separately from statically possible branch targets.
 - **Function detection** → auto-propose `FUNCTION` symbols.
 - **Auto-labels** for unnamed targets (`L_1234`) and data (`D_5C00`), user-renamable.
 - **Data inference** — printable-run → string; sequence-of-valid-code-addresses →
@@ -195,6 +210,48 @@ addresses. Medium; depends on a chosen toolchain being present.
 **Why:** Accelerates the archaeology; turns raw coverage into structure.
 
 **Fit/effort:** Larger, incremental; each item independently useful.
+
+### L8 — Live assemble/load/run workflow
+**What:** Add the forward development path that complements reverse engineering:
+invoke a configured assembler on source, collect output bytes and map/listing
+symbols, inject the bytes into RAM, import labels into the symbol table, and
+optionally set PC/SP/registers before execution.
+
+**Why:** This turns the debugger into a development workbench, not only an
+inspection tool. It also gives exported source a practical destination: edit,
+assemble, reload, and verify behavior in the same running machine.
+
+**Required behavior:**
+- One default assembler dialect first; additional dialects only after the first
+  path is byte-reproducible.
+- Clear diagnostics when the assembler is missing, exits non-zero, or emits no
+  bytes.
+- Explicit load address/range, with guardrails for ROM/writable-ROM behavior.
+- Symbol import from map/listing output where available.
+- Optional CPU-state preset: PC, SP, registers, interrupt state, and reset/run
+  choice.
+- Provenance stored in the project/session file: source path, assembler command,
+  output hash, load address, and symbol source.
+
+### L9 — RAM-to-documented-source workflow
+**What:** Make the reverse path explicit: start from a RAM capture and CPU state,
+use execution evidence and annotations to classify bytes, generate a documented
+assembly listing, export it, reassemble it, and compare generated bytes back to
+the captured memory.
+
+**Why:** This is the measurable version of "go from RAM to documented assembly
+source." The output is not trusted because it looks plausible; it is trusted
+only for ranges that round-trip.
+
+**Required behavior:**
+- Capture memory ranges with hashes and machine-state context.
+- Separate observed code, declared code, declared data, inferred data, and
+  unknown bytes.
+- Preserve uncertainty in the listing rather than silently guessing.
+- Emit verification reports that map byte mismatches back to source lines and
+  memory addresses.
+- Support partial export so users can stabilize one routine or loader stage at a
+  time.
 
 ---
 
@@ -208,7 +265,10 @@ Comment    : { address, kind: Line|Block, text }
 Equate     : { name, value, kind: const|port }
 Xref       : derived: address -> [referencing addresses, with ref kind: call/jump/read/write]
 SmcEvent   : { write_addr, old, new, writer_pc, cycle }
-Annotations: SymbolTable + comments + data regions + equates + (cached) xrefs + code/data map
+FlowEvent   : { pc, next_pc, kind: fallthrough|jump|call|return|rst|interrupt, cycle }
+LoadArtifact: { kind: source|binary|snapshot, path, hash, load_addr, length, symbols }
+CpuState    : registers + flags + interrupt state + cycle count
+Annotations : SymbolTable + comments + data regions + equates + (cached) xrefs + code/data map
 ```
 
 The `CoverageMap` is cheap (a few bytes × 64 KB). `Annotations` is the saved
@@ -221,9 +281,10 @@ project state.
 Extend the current JSON `.sym` concept into a richer, human-readable,
 diff-friendly **project file** (e.g. `program.z80proj`) that references the
 binary and stores symbols + comments + data typing + equates + (optionally) the
-captured coverage map and SMC log. Keep it JSON for consistency with today's
-loader and so it's git-friendly and shareable — the accumulated RE work becomes
-a portable, collaborative artifact.
+captured coverage map, flow trace, SMC log, load artifacts, CPU-state presets,
+tape position, and UI/debugger settings. Keep it JSON for consistency with
+today's loader and so it's git-friendly and shareable — the accumulated RE work
+becomes a portable, collaborative artifact.
 
 (The current `.sym` files remain valid as the symbols-only subset.)
 
@@ -270,15 +331,15 @@ L3 annotations ──▶ L4 listing ──▶ L5 export ──▶ L6 round-trip 
       │
       ▼
 L7 analysis (call graph, auto-labels, inference)  [draws on L1 + disassembler graph]
+      │
+      ▼
+L8 live assemble/load/run ◀────▶ L9 RAM-to-documented-source workflow
 ```
 
 L1 is the keystone and the cheapest; it unlocks L2 (the marquee feature) and
-feeds everything. L5+L6 are the "treasure trove" payoff. L7 is open-ended polish
-that pays off continuously.
-
-**Not yet.** This is deliberately parked behind the near-term usability work.
-The intent is to record the destination so the small near-term choices stay
-compatible with it.
+feeds everything. L5+L6 are the source-export payoff. L7 adds structure from
+observed behavior. L8 and L9 make the workbench bidirectional: assembled source
+can enter the machine, and understood RAM can leave as documented source.
 
 ---
 
@@ -290,6 +351,11 @@ compatible with it.
   modified this byte" is already available.
 - **Keep the annotation model JSON and additive** — today's `.sym` is the first
   slice of the eventual project file; don't paint it into a corner.
+- **Preserve load provenance** — when bytes enter RAM from source, binary insert,
+  tape, or snapshot, record where they came from and how they were transformed.
+- **Keep CLI parity for UI flows** — assembly load, binary insert, source export,
+  and round-trip verification need command-line forms so testers can reproduce
+  failures.
 
 These cost almost nothing today and make the laboratory a small step away rather
 than a rewrite.

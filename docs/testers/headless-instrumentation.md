@@ -9,9 +9,9 @@ This is the "how do I explore anything without a UI" guide. The worked example
 is a real bug: *Underwurlde* loaded a stub then froze in a tight loop. We
 reproduce, diagnose, and confirm the fix entirely headlessly.
 
-See also: [ARCHITECTURE.md](ARCHITECTURE.md) (the layering this builds on),
-[SPECTRUM_DESIGN.md](SPECTRUM_DESIGN.md) (the ULA/timing), and
-[DEBUGGER_DESIGN.md](DEBUGGER_DESIGN.md) (the session/coverage model).
+See also: [ARCHITECTURE.md](../developers/architecture.md) (the layering this builds on),
+[SPECTRUM_DESIGN.md](../developers/spectrum-machine-design.md) (the ULA/timing), and
+[DEBUGGER_DESIGN.md](../developers/debugger-design.md) (the session/coverage model).
 
 ---
 

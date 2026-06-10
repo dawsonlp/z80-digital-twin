@@ -1,9 +1,9 @@
 # Z80 Digital Twin - TODO List
 
 > **Status (2026-06-06): partially superseded.** Symbol tables, disassembly with
-> labels, and debugging are implemented — see [STATUS.md](STATUS.md). The
+> labels, and debugging are implemented — see [STATUS.md](../reference/status.md). The
 > "annotated, reassemblable source" goal is tracked as L5 in
-> [DEBUGGER_ROADMAP.md](DEBUGGER_ROADMAP.md). This file is kept for the
+> [DEBUGGER_ROADMAP.md](../developers/reverse-engineering-roadmap.md). This file is kept for the
 > still-open **assembler integration** and **binary loading** notes below.
 
 ## High Priority Development Tasks

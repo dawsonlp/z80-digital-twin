@@ -1,11 +1,21 @@
 # ZX Spectrum Hardware (ULA) — Design
 
-**Status:** DRAFT / in progress — design only, **not yet implemented**.
-**Date:** 2026-06-06
+**Audience:** developers working on the Spectrum machine.
+**Purpose:** preserve the design rationale and timing model for the implemented
+48K Spectrum capability.
+**Last reviewed:** 2026-06-09.
+**Status:** implemented in stages. Earlier milestone sections are retained as
+the design record; see §12-13 and [Status](../reference/status.md) for current
+capability.
 **Relationship:** the Spectrum is the first *machine* capability in the platform
-([ARCHITECTURE.md](ARCHITECTURE.md)); it runs over the same CPU as the
-debugger ([DEBUGGER_DESIGN.md](DEBUGGER_DESIGN.md)) and is debuggable while
-running. Current state: [STATUS.md](STATUS.md).
+([Architecture](architecture.md)); it runs over the same CPU as the debugger
+([Debugger Design](debugger-design.md)) and is debuggable while running.
+
+**Current implementation summary:** the machine boots a 48K ROM, renders border
+and display, handles keyboard matrix input, plays `.tap`/`.tzx` tape signal
+through EAR, records beeper edges to PCM, protects ROM writes, supports floating
+bus reads, and can be driven headlessly or through the debugger. The major
+remaining timing feature is contended memory.
 
 ---
 
@@ -15,7 +25,7 @@ Turn the digital twin into a runnable ZX Spectrum 48K — boot the ROM, show a
 real display — while every debugger capability (breakpoints, coverage, SMC)
 keeps working on the *running* machine.
 
-**Milestone 1 (this design's scope):**
+**Original milestone 1 (now complete):**
 - CPU prerequisites (§3): **maskable-interrupt injection** and the **I/O
   compile-time policy** (which also delivers 16-bit port addressing).
 - A **device abstraction** and a **Machine** running the CPU on the PAL frame
@@ -23,8 +33,9 @@ keeps working on the *running* machine.
 - **ULA video** by **full-frame redraw** (§7): bitmap + attributes → texture.
 - **Border** (`OUT 0xFE`) and the **50 Hz frame interrupt**.
 
-Enough to boot the 48K ROM to its copyright screen. **Keyboard, beeper audio,
-tape, and cycle-accurate timing/contention are deferred** (§9).
+Enough to boot the 48K ROM to its copyright screen. Keyboard, beeper, tape,
+beam-aware rendering, and floating bus were added later; contention remains
+deferred.
 
 ## 2. Decisions made (with the user)
 
@@ -39,8 +50,8 @@ tape, and cycle-accurate timing/contention are deferred** (§9).
    T-state rendering for cycle accuracy (§7).
 4. **Model PAL/ULA timing closely** (§6), including beam-return (retrace) times,
    toward eventual cycle accuracy.
-5. **Milestone 1 = prerequisites + screen + border + 50 Hz INT** (keyboard/sound
-   next).
+5. **Milestone 1 = prerequisites + screen + border + 50 Hz INT**. Later
+   milestones added keyboard, tape, sound, ROM protection, and floating bus.
 
 ## 3. CPU prerequisites (hard blockers)
 
@@ -98,13 +109,12 @@ This is a memory-policy-sized refactor; sequence it like that one (§11).
 
 ## 4. Memory observation (debugger capability)
 
-`ObservableMemory` (the multi-observer evolution of `DebugMemory`,
-ARCHITECTURE §5) powers the debugger's dirty/SMC/watch features. **Video does
-not use it** — milestone-1 rendering reads screen RAM directly each frame (§7),
-and the future cycle-accurate ULA reads memory *as the CPU executes*. So the ULA
-does not subscribe as a memory observer; the observer list stays a debugger
-concern. (A running Spectrum is still fully debuggable because it uses
-`ObservableMemory`.)
+`ObservableMemory` (the multi-observer evolution of the original debugger memory
+plug; see [Architecture](architecture.md) §5) powers the debugger's
+dirty/SMC/watch features. Milestone-1 rendering read screen RAM directly each
+frame (§7). The implemented beam-aware path also uses `ObservableMemory`
+observers so the ULA and debugger can both see writes from the same running CPU
+configuration.
 
 ## 5. Device abstraction & Machine
 
@@ -227,24 +237,27 @@ state**, and unconnected bits / unmapped ports read as open bus (`0xFF`).
   return anything you `OUT`.
 - The ULA responds to all even ports (A0 = 0); `0xFE` is canonical.
 
-## 9. Deferred (later milestones)
+## 9. Deferred / Completed Later
 
-- **Keyboard** (M2) — 8×5 matrix; host-key mapping (incl. CAPS/SYMBOL SHIFT).
-- **Beeper audio** (M3) — `OUT 0xFE` bit 4 → square wave from toggle timestamps;
-  audio backend choice open (miniaudio / SDL / PortAudio, or WAV first).
-- **Tape (EAR in)** — load `.tap`/`.tzx` via bit 6 of `IN 0xFE`.
-- **Cycle-accurate timing + memory/IO contention** — per-scanline rendering (§7)
-  plus ULA contention of CPU access to `0x4000–0x7FFF` during display fetch.
+- **Keyboard** — done: 8×5 matrix; host-key mapping incl. CAPS/SYMBOL SHIFT.
+- **Beeper audio** — done: `OUT 0xFE` bit 4 → T-cycle edge timeline → PCM.
+- **Tape (EAR in)** — done for supported `.tap`/`.tzx` signal blocks.
+- **Floating bus** — done; calibration against external `fbustest` remains.
+- **Cycle-accurate contention** — still deferred: ULA contention of CPU access to
+  `0x4000–0x7FFF` during display fetch.
 - **128K paging** — bank-aware memory model.
 
 ## 10. Open questions / pending
 
-- **Screen decoder** — final port/interface (logic reviewed; awaiting the file).
-- **`/INT` hold width** and exact within-line phase / contention pattern — verify
-  against Chris Smith's ULA book when timing accuracy is implemented.
-- **Audio backend** — choose at the beeper milestone.
+- **Contention pattern and exact phase** — implement and verify before promoting
+  multicolour/raster compatibility tests.
+- **Floating-bus sample offset** — calibrate against external `fbustest`.
+- **TZX flow-control semantics** — implement full branch/call behavior if needed
+  by multi-stage loaders.
 
-## 11. Next steps (ordered)
+## 11. Original implementation sequence
+
+This sequence is preserved as the build record; most items are complete.
 
 1. **`ObservableMemory`** — make the write hook multi-observer; migrate
    `DebugSession`; unit test (two observers both fire). *(headless)*
@@ -331,5 +344,5 @@ analysis.
 
 ---
 
-*Draft — refined collaboratively; next refinement point is the screen-decoder
-interface.*
+*Design record refined collaboratively; current work is tracked in
+[Roadmap](roadmap.md).*

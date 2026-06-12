@@ -119,6 +119,8 @@ docs/rtf/
 imgui.ini
 
 # ROM images (kept locally, not committed — typically copyrighted)
+/roms/
+/roms
 *.rom
 
 # Tape / snapshot images (games — kept locally, not committed; copyrighted)

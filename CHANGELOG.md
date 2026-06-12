@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.0.3 - 2026-06-12
+
+### Changed
+
+- Cleaned up prefixed-instruction T-state accounting so CB, ED, DDCB, and FDCB
+  handlers add only the cycles remaining after already-fetched prefix bytes.
+- Split I/O-visible `OUT` timing to match the existing `IN` timing model, so
+  device callbacks observe the intended I/O M-cycle while preserving instruction
+  totals.
+- Updated the floating-bus timing design notes to match the current core timing
+  contract.
+
+### Verified
+
+- Full CTest suite passes with local unit tests.
+- ZEXALL passed through `cpu_suite_runner` using the local compatibility asset.
+
 ## v1.0.2 - 2026-06-10
 
 ### Fixed

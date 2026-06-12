@@ -186,37 +186,38 @@ The floating-bus value depends on the **exact T-state the port read samples the
 bus**. So the question is what `clock_()` reports at the instant `Ula::read_port`
 runs. Tracing the core ([z80_cpu.cpp](../../src/z80_cpu.cpp)) settles it:
 
-**The CPU uses an instruction-atomic timing model: `io.In()` is called *first*,
-and the instruction's T-states are added in one lump *after*.** Examples:
+The CPU must not use an instruction-atomic timing model for I/O-visible events.
+The relevant fetch cycles are charged before `io.In()`/`io.Out()`, so a device
+sampling `clock_()` sees the I/O M-cycle rather than the start of the instruction.
+Examples:
 
 ```cpp
 void IN_A_n() {                              // 0xDB
     uint8_t port = memory[PC()++];
-    A() = io.In((A() << 8) | port);          // <-- handler runs HERE
-    t_cycle += 11;                           // <-- all 11 T charged AFTER
+    t_cycle += 7;                            // M1 + operand
+    A() = io.In((A() << 8) | port);          // <-- handler runs at I/O M-cycle
+    t_cycle += 4;
 }
 void IN_B_C() {                              // ED 40 (prefix charged +4 in prior Step)
-    B() = io.In(BC());                       // <-- handler runs HERE
+    t_cycle += 4;                            // second M1
+    B() = io.In(BC());                       // <-- handler runs at I/O M-cycle
     ... flags ...
-    t_cycle += 12;                           // (dispatcher then does t_cycle -= 4)
+    t_cycle += 4;
 }
 ```
 
-INI/IND/INIR/INDR are identical (`io.In()` then `t_cycle += 16`). So at
-`read_port` time `clock_()` reports the T-state at the **start of the I/O
-instruction**, not at its bus-sample M-cycle. The real sample is in the *last*
-M-cycle (M3), several T later — and the gap **differs per instruction form**:
+INI/IND/INIR/INDR follow the same rule with their block-I/O opcode M1 charged
+before the port read. At `read_port` time `clock_()` reports the start of the
+I/O M-cycle:
 
 | Form | total T | fetch before I/O M-cycle | `t_cycle` at `io.In()` | ⇒ offset to I/O M-cycle |
 |---|---|---|---|---|
-| `IN A,(n)` (0xDB) | 11 | M1(4)+operand(3) = 7 | start + 0 | **+7** |
-| `IN r,(C)` (ED) | 12 | M1(4)+M1(4) = 8 | start + 4 *(prefix pre-charged)* | **+4** |
+| `IN A,(n)` (0xDB) | 11 | M1(4)+operand(3) = 7 | start + 7 | **0** |
+| `IN r,(C)` (ED) | 12 | M1(4)+M1(4) = 8 | start + 8 | **0** |
 
-**Conclusion: the core does not expose the bus-sample T-state, and a single
-ULA-side `kFloatingBusReadT` constant is off by 3 T (6 px) between the two `IN`
-forms.** 3 T straddles slots in the 8-T pattern (§4), so a constant tuned to make
-`fbustest` exact for one form is wrong for software using the other. This is the
-"small core hook" flagged earlier — now pinned down precisely.
+**Conclusion: the core exposes a consistent I/O M-cycle timestamp, so the ULA
+needs only the within-M3 latch constant `kFloatingBusReadT` for floating-bus
+sampling.**
 
 ### Decision: charge the pre-I/O fetch cycles *before* `io.In()` (committed)
 
@@ -235,14 +236,15 @@ void IN_A_n() {
 }
 ```
 
-For the ED forms, add the second-M1 (`+4`) before `io.In()` and the remainder
-after, so `clock_()` reads `start + 8` (the I/O M-cycle) while the handler total
-and the dispatcher's `-= 4` prefix discount are unchanged. After this, **one**
-within-M3 latch constant `kFloatingBusReadT` (same for every form, ~+2..3) is the
-only thing left to calibrate against `fbustest`.
+For the ED forms, the ED prefix M1 is charged by `Step()` when the prefix byte is
+fetched. The handler adds the second-M1 (`+4`) before `io.In()`/`io.Out()` and
+the remaining I/O-cycle time after, so `clock_()` reads `start + 8` (the I/O
+M-cycle). After this, **one** within-M3 latch constant `kFloatingBusReadT` (same
+for every form, ~+2..3) is the only thing left to calibrate against `fbustest`.
 
-- **Surface:** ~13 handlers (`IN A,(n)`; `IN {B,C,D,E,H,L,F,A},(C)`;
-  `INI/IND/INIR/INDR`) — purely reordering an existing add, no logic change.
+- **Surface:** `IN A,(n)`, `OUT (n),A`, ED `IN/OUT` register-port handlers,
+  and `INI/IND/OUTI/OUTD` families — purely reordering existing cycle adds, no
+  logic change.
 - **Safety net:** [tests/instruction_timing_test.cpp](../../tests/instruction_timing_test.cpp)
   asserts per-instruction totals; since totals are preserved, it green-lights the
   reorder and guards against a slip.

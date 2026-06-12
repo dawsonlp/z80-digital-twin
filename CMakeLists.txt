@@ -5,7 +5,7 @@
 #
 
 cmake_minimum_required(VERSION 3.20)
-project(Z80DigitalTwin VERSION 1.0.2 LANGUAGES CXX)
+project(Z80DigitalTwin VERSION 1.0.3 LANGUAGES CXX)
 
 # =============================================================================
 # Project Configuration

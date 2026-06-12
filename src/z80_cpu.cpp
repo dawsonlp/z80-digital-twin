@@ -163,11 +163,9 @@ void CPUImpl<Memory, Io>::Step() {
             
         case CPUState::CB_PREFIX:
             // Execute CB-prefixed instruction using compact decoder. The CB
-            // prefix fetch above already charged its 4 T M1; the body returns the
-            // full instruction time (including that M1), so discount it once to
-            // avoid double-counting the prefix fetch.
+            // prefix fetch above already charged its 4 T M1; the body adds only
+            // the remaining cycles.
             ExecuteCBInstruction(opcode);
-            t_cycle -= 4;
             current_state = CPUState::NORMAL;
             break;
             
@@ -196,11 +194,9 @@ void CPUImpl<Memory, Io>::Step() {
             
         case CPUState::ED_PREFIX:
             // Execute ED-prefixed instruction. The ED prefix fetch above charged
-            // its 4 T M1; the bodies return the full instruction time (including
-            // that M1), so discount it once. (Block-repeat ops run one iteration
-            // per step, so this applies per iteration too.)
+            // its 4 T M1; the body adds only the remaining cycles. Block-repeat
+            // ops run one iteration per step.
             (this->*ED_opcodes[opcode])();
-            t_cycle -= 4;
             current_state = CPUState::NORMAL;
             break;
             
@@ -234,9 +230,8 @@ void CPUImpl<Memory, Io>::Step() {
 
                 // Execute the CB instruction with stored displacement. The DD and
                 // CB prefix fetches above each charged 4 T (two M1s); the body
-                // returns the full DDCB time including both, so discount 8 once.
+                // adds only the remaining cycles.
                 ExecuteCBInstruction(cb_opcode);
-                t_cycle -= 8;
 
                 current_state = CPUState::NORMAL;
             }
@@ -251,9 +246,8 @@ void CPUImpl<Memory, Io>::Step() {
                 
                 // Execute the CB instruction with stored displacement. The FD and
                 // CB prefix fetches above each charged 4 T (two M1s); the body
-                // returns the full FDCB time including both, so discount 8 once.
+                // adds only the remaining cycles.
                 ExecuteCBInstruction(cb_opcode);
-                t_cycle -= 8;
 
                 current_state = CPUState::NORMAL;
             }
@@ -2595,8 +2589,9 @@ template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OUT_n_A() {
     uint8_t port = memory[PC()++];
     // OUT (n),A drives A onto the high address byte (full 16-bit port).
+    t_cycle += 7;
     io.Out((static_cast<uint16_t>(A()) << 8) | port, A());
-    t_cycle += 11;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
@@ -3024,11 +3019,11 @@ void CPUImpl<Memory, Io>::ExecuteCBInstruction(uint8_t opcode) {
             }
             
             SetCBMemory(reg_code, result);
-            // Timing: CB (HL)=15 cycles, DD CB/FD CB=23 cycles (total including prefixes)
+            // Timing remainders after prefix M1s: CB (HL)=11, DD CB/FD CB=15.
             if (current_state == CPUState::DD_CB_PREFIX || current_state == CPUState::FD_CB_PREFIX) {
-                t_cycle += 23; // DD CB/FD CB operations take 23 cycles total
+                t_cycle += 15;
             } else {
-                t_cycle += 15; // CB (HL) operations take 15 cycles
+                t_cycle += 11;
             }
         } else {
             // Register operation or DD CB/FD CB with register destination
@@ -3052,7 +3047,7 @@ void CPUImpl<Memory, Io>::ExecuteCBInstruction(uint8_t opcode) {
                 // Store result in both memory and register
                 SetCBMemory(6, result);
                 GetCBRegister(reg_code) = result;
-                t_cycle += 23; // DD CB/FD CB operations take 23 cycles total
+                t_cycle += 15;
             } else {
                 // Normal CB register operation
                 uint8_t& reg = GetCBRegister(reg_code);
@@ -3068,7 +3063,7 @@ void CPUImpl<Memory, Io>::ExecuteCBInstruction(uint8_t opcode) {
                     case 7: reg = ShiftRightLogical(reg); break;
                 }
                 
-                t_cycle += 8; // CB register operations take 8 cycles
+                t_cycle += 4;
             }
         }
     } else {
@@ -3083,29 +3078,29 @@ void CPUImpl<Memory, Io>::ExecuteCBInstruction(uint8_t opcode) {
             switch (operation) {
                 case 1: // BIT - test bit
                     TestBit(value, bit_num, static_cast<uint8_t>(address >> 8));
-                    // Timing: BIT (HL)=12 cycles, DD CB/FD CB BIT=20 cycles (total including prefixes)
+                    // Timing remainders after prefix M1s: BIT (HL)=8, DDCB/FDCB BIT=12.
                     if (current_state == CPUState::DD_CB_PREFIX || current_state == CPUState::FD_CB_PREFIX) {
-                        t_cycle += 20; // DD CB/FD CB BIT operations take 20 cycles total
+                        t_cycle += 12;
                     } else {
-                        t_cycle += 12; // BIT (HL) takes 12 cycles
+                        t_cycle += 8;
                     }
                     break;
                 case 2: // RES - reset bit
                     memory[address] = ResetBit(value, bit_num);
-                    // Timing: RES (HL)=15 cycles, DD CB/FD CB RES=23 cycles (total including prefixes)
+                    // Timing remainders after prefix M1s: RES (HL)=11, DDCB/FDCB RES=15.
                     if (current_state == CPUState::DD_CB_PREFIX || current_state == CPUState::FD_CB_PREFIX) {
-                        t_cycle += 23; // DD CB/FD CB RES operations take 23 cycles total
+                        t_cycle += 15;
                     } else {
-                        t_cycle += 15; // RES (HL) takes 15 cycles
+                        t_cycle += 11;
                     }
                     break;
                 case 3: // SET - set bit
                     memory[address] = SetBit(value, bit_num);
-                    // Timing: SET (HL)=15 cycles, DD CB/FD CB SET=23 cycles (total including prefixes)
+                    // Timing remainders after prefix M1s: SET (HL)=11, DDCB/FDCB SET=15.
                     if (current_state == CPUState::DD_CB_PREFIX || current_state == CPUState::FD_CB_PREFIX) {
-                        t_cycle += 23; // DD CB/FD CB SET operations take 23 cycles total
+                        t_cycle += 15;
                     } else {
-                        t_cycle += 15; // SET (HL) takes 15 cycles
+                        t_cycle += 11;
                     }
                     break;
             }
@@ -3116,15 +3111,15 @@ void CPUImpl<Memory, Io>::ExecuteCBInstruction(uint8_t opcode) {
             switch (operation) {
                 case 1: // BIT - test bit
                     TestBit(reg, bit_num, reg);
-                    t_cycle += 8; // BIT register takes 8 cycles
+                    t_cycle += 4;
                     break;
                 case 2: // RES - reset bit
                     reg = ResetBit(reg, bit_num);
-                    t_cycle += 8; // RES register takes 8 cycles
+                    t_cycle += 4;
                     break;
                 case 3: // SET - set bit
                     reg = SetBit(reg, bit_num);
-                    t_cycle += 8; // SET register takes 8 cycles
+                    t_cycle += 4;
                     break;
             }
         }
@@ -3311,7 +3306,7 @@ uint8_t CPUImpl<Memory, Io>::SetBit(uint8_t value, uint8_t bit) {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::ED_NOP() {
     // Default handler for undefined ED instructions
-    t_cycle += 8; // Most ED instructions take 8 cycles minimum
+    t_cycle += 4; // ED prefix M1 was already charged
 }
 
 template <class Memory, class Io>
@@ -3323,7 +3318,7 @@ void CPUImpl<Memory, Io>::SBC_HL_DE() {
     HL() = static_cast<uint16_t>(old_hl - operand - carry);
     SetFlags_SBC16(HL(), old_hl, operand, carry);
     
-    t_cycle += 15;
+    t_cycle += 11;
 }
 
 template <class Memory, class Io>
@@ -3335,7 +3330,7 @@ void CPUImpl<Memory, Io>::ADC_HL_DE() {
     HL() = static_cast<uint16_t>(old_hl + operand + carry);
     SetFlags_ADC16(HL(), old_hl, operand, carry);
     
-    t_cycle += 15;
+    t_cycle += 11;
 }
 
 // =============================================================================
@@ -3351,7 +3346,7 @@ void CPUImpl<Memory, Io>::SBC_HL_BC() {
     HL() = static_cast<uint16_t>(old_hl - operand - carry);
     SetFlags_SBC16(HL(), old_hl, operand, carry);
     
-    t_cycle += 15;
+    t_cycle += 11;
 }
 
 template <class Memory, class Io>
@@ -3363,7 +3358,7 @@ void CPUImpl<Memory, Io>::ADC_HL_BC() {
     HL() = static_cast<uint16_t>(old_hl + operand + carry);
     SetFlags_ADC16(HL(), old_hl, operand, carry);
     
-    t_cycle += 15;
+    t_cycle += 11;
 }
 
 template <class Memory, class Io>
@@ -3374,7 +3369,7 @@ void CPUImpl<Memory, Io>::SBC_HL_HL() {
     HL() = static_cast<uint16_t>(old_hl - old_hl - carry);
     SetFlags_SBC16(HL(), old_hl, old_hl, carry);
     
-    t_cycle += 15;
+    t_cycle += 11;
 }
 
 template <class Memory, class Io>
@@ -3385,7 +3380,7 @@ void CPUImpl<Memory, Io>::ADC_HL_HL() {
     HL() = static_cast<uint16_t>(old_hl + old_hl + carry);
     SetFlags_ADC16(HL(), old_hl, old_hl, carry);
     
-    t_cycle += 15;
+    t_cycle += 11;
 }
 
 template <class Memory, class Io>
@@ -3397,7 +3392,7 @@ void CPUImpl<Memory, Io>::SBC_HL_SP() {
     HL() = static_cast<uint16_t>(old_hl - operand - carry);
     SetFlags_SBC16(HL(), old_hl, operand, carry);
     
-    t_cycle += 15;
+    t_cycle += 11;
 }
 
 template <class Memory, class Io>
@@ -3409,7 +3404,7 @@ void CPUImpl<Memory, Io>::ADC_HL_SP() {
     HL() = static_cast<uint16_t>(old_hl + operand + carry);
     SetFlags_ADC16(HL(), old_hl, operand, carry);
     
-    t_cycle += 15;
+    t_cycle += 11;
 }
 
 // =============================================================================
@@ -3423,7 +3418,7 @@ void CPUImpl<Memory, Io>::LD_mnn_BC() {
     PC() += 2;
     memory[address] = BC() & 0xFF;        // Low byte
     memory[address + 1] = (BC() >> 8);    // High byte
-    t_cycle += 20;
+    t_cycle += 16;
 }
 
 template <class Memory, class Io>
@@ -3432,7 +3427,7 @@ void CPUImpl<Memory, Io>::LD_BC_mnn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     BC() = memory[address] | (memory[address + 1] << 8);
-    t_cycle += 20;
+    t_cycle += 16;
 }
 
 template <class Memory, class Io>
@@ -3442,7 +3437,7 @@ void CPUImpl<Memory, Io>::LD_mnn_DE() {
     PC() += 2;
     memory[address] = DE() & 0xFF;        // Low byte
     memory[address + 1] = (DE() >> 8);    // High byte
-    t_cycle += 20;
+    t_cycle += 16;
 }
 
 template <class Memory, class Io>
@@ -3451,7 +3446,7 @@ void CPUImpl<Memory, Io>::LD_DE_mnn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     DE() = memory[address] | (memory[address + 1] << 8);
-    t_cycle += 20;
+    t_cycle += 16;
 }
 
 template <class Memory, class Io>
@@ -3461,7 +3456,7 @@ void CPUImpl<Memory, Io>::LD_mnn_HL_ED() {
     PC() += 2;
     memory[address] = HL() & 0xFF;        // Low byte
     memory[address + 1] = (HL() >> 8);    // High byte
-    t_cycle += 20;
+    t_cycle += 16;
 }
 
 template <class Memory, class Io>
@@ -3470,7 +3465,7 @@ void CPUImpl<Memory, Io>::LD_HL_mnn_ED() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     HL() = memory[address] | (memory[address + 1] << 8);
-    t_cycle += 20;
+    t_cycle += 16;
 }
 
 template <class Memory, class Io>
@@ -3480,7 +3475,7 @@ void CPUImpl<Memory, Io>::LD_mnn_SP() {
     PC() += 2;
     memory[address] = SP() & 0xFF;        // Low byte
     memory[address + 1] = (SP() >> 8);    // High byte
-    t_cycle += 20;
+    t_cycle += 16;
 }
 
 template <class Memory, class Io>
@@ -3489,7 +3484,7 @@ void CPUImpl<Memory, Io>::LD_SP_mnn() {
     uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
     PC() += 2;
     SP() = memory[address] | (memory[address + 1] << 8);
-    t_cycle += 20;
+    t_cycle += 16;
 }
 
 // =============================================================================
@@ -3503,7 +3498,7 @@ void CPUImpl<Memory, Io>::NEG() {
     A() = (~A()) + 1;  // 2's complement negation
     SetFlags_SUB(A(), 0, old_a);
     
-    t_cycle += 8;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
@@ -3511,21 +3506,21 @@ void CPUImpl<Memory, Io>::RETN() {
     // ED 45 - Return from non-maskable interrupt
     PC() = PopWord();
     IFF1() = IFF2(); // Restore interrupt state
-    t_cycle += 14;
+    t_cycle += 10;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IM_0() {
     // ED 46 - Set interrupt mode 0
     _interrupt_mode = 0;
-    t_cycle += 8;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_I_A() {
     // ED 47 - Load A to I register
     I() = A();
-    t_cycle += 9;
+    t_cycle += 5;
 }
 
 template <class Memory, class Io>
@@ -3533,21 +3528,21 @@ void CPUImpl<Memory, Io>::RETI() {
     // ED 4D - Return from interrupt
     PC() = PopWord();
     IFF1() = IFF2(); // Restore interrupt state
-    t_cycle += 14;
+    t_cycle += 10;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_R_A() {
     // ED 4F - Load A to R register
     R() = A();
-    t_cycle += 9;
+    t_cycle += 5;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IM_1() {
     // ED 56 - Set interrupt mode 1
     _interrupt_mode = 1;
-    t_cycle += 8;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
@@ -3561,14 +3556,14 @@ void CPUImpl<Memory, Io>::LD_A_I() {
     if (A() & 0x80) F() |= Constants::Flags::SIGN;
     if (IFF2()) F() |= Constants::Flags::PARITY; // P/V = IFF2
     
-    t_cycle += 9;
+    t_cycle += 5;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IM_2() {
     // ED 5E - Set interrupt mode 2
     _interrupt_mode = 2;
-    t_cycle += 8;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
@@ -3582,7 +3577,7 @@ void CPUImpl<Memory, Io>::LD_A_R() {
     if (A() & 0x80) F() |= Constants::Flags::SIGN;
     if (IFF2()) F() |= Constants::Flags::PARITY; // P/V = IFF2
     
-    t_cycle += 9;
+    t_cycle += 5;
 }
 
 template <class Memory, class Io>
@@ -3600,7 +3595,7 @@ void CPUImpl<Memory, Io>::RRD() {
     F() = (F() & Constants::Flags::CARRY) | Flags_SZXY(A());
     F() |= CalculateParity(A());
     
-    t_cycle += 18;
+    t_cycle += 14;
 }
 
 template <class Memory, class Io>
@@ -3618,7 +3613,7 @@ void CPUImpl<Memory, Io>::RLD() {
     F() = (F() & Constants::Flags::CARRY) | Flags_SZXY(A());
     F() |= CalculateParity(A());
     
-    t_cycle += 18;
+    t_cycle += 14;
 }
 
 // =============================================================================
@@ -3640,7 +3635,7 @@ void CPUImpl<Memory, Io>::LDI() {
     if (sum & 0x08) F() |= Constants::Flags::X;
     if (sum & 0x02) F() |= Constants::Flags::Y;
     
-    t_cycle += 16;
+    t_cycle += 12;
 }
 
 template <class Memory, class Io>
@@ -3662,7 +3657,7 @@ void CPUImpl<Memory, Io>::CPI() {
     if (xy & 0x08) F() |= Constants::Flags::X;
     if (xy & 0x02) F() |= Constants::Flags::Y;
     
-    t_cycle += 16;
+    t_cycle += 12;
 }
 
 template <class Memory, class Io>
@@ -3670,7 +3665,7 @@ void CPUImpl<Memory, Io>::INI() {
     // ED A2 - Input and increment
     // I/O timing split (see FLOATING_BUS_DESIGN.md §5): charge the opcode M1 (5 T
     // for block I/O; the prefix M1 was charged by Step's dispatch) before the port
-    // read, the remaining 11 T after. Handler total stays 16.
+    // read, the remaining 7 T after. Prefix + handler total stays 16.
     t_cycle += 5;
     memory[HL()] = io.In(BC());
     HL()++;
@@ -3681,12 +3676,13 @@ void CPUImpl<Memory, Io>::INI() {
     if (B() == 0) F() |= Constants::Flags::ZERO;
     if (B() & 0x80) F() |= Constants::Flags::SIGN;
 
-    t_cycle += 11;   // (5 charged before the I/O read; total 16) see INI split
+    t_cycle += 7;   // (5 charged before the I/O read; body total 12)
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OUTI() {
     // ED A3 - Output and increment
+    t_cycle += 5;                   // opcode M1 before the I/O write (see INI split)
     io.Out(BC(), memory[HL()]);
     HL()++;
     B()--;
@@ -3696,7 +3692,7 @@ void CPUImpl<Memory, Io>::OUTI() {
     if (B() == 0) F() |= Constants::Flags::ZERO;
     if (B() & 0x80) F() |= Constants::Flags::SIGN;
     
-    t_cycle += 16;
+    t_cycle += 7;
 }
 
 template <class Memory, class Io>
@@ -3714,7 +3710,7 @@ void CPUImpl<Memory, Io>::LDD() {
     if (sum & 0x08) F() |= Constants::Flags::X;
     if (sum & 0x02) F() |= Constants::Flags::Y;
     
-    t_cycle += 16;
+    t_cycle += 12;
 }
 
 template <class Memory, class Io>
@@ -3736,7 +3732,7 @@ void CPUImpl<Memory, Io>::CPD() {
     if (xy & 0x08) F() |= Constants::Flags::X;
     if (xy & 0x02) F() |= Constants::Flags::Y;
     
-    t_cycle += 16;
+    t_cycle += 12;
 }
 
 template <class Memory, class Io>
@@ -3752,12 +3748,13 @@ void CPUImpl<Memory, Io>::IND() {
     if (B() == 0) F() |= Constants::Flags::ZERO;
     if (B() & 0x80) F() |= Constants::Flags::SIGN;
 
-    t_cycle += 11;   // (5 charged before the I/O read; total 16)
+    t_cycle += 7;   // (5 charged before the I/O read; body total 12)
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OUTD() {
     // ED AB - Output and decrement
+    t_cycle += 5;                   // opcode M1 before the I/O write (see INI split)
     io.Out(BC(), memory[HL()]);
     HL()--;
     B()--;
@@ -3767,7 +3764,7 @@ void CPUImpl<Memory, Io>::OUTD() {
     if (B() == 0) F() |= Constants::Flags::ZERO;
     if (B() & 0x80) F() |= Constants::Flags::SIGN;
     
-    t_cycle += 16;
+    t_cycle += 7;
 }
 
 template <class Memory, class Io>
@@ -3783,8 +3780,8 @@ void CPUImpl<Memory, Io>::LDIR() {
     //     long LDIR could not be broken by the 50 Hz frame interrupt.)
     //   * A single step never advances more than one iteration's T-states, so
     //     the frame clock can't overrun a whole frame on one instruction.
-    // Timing per iteration: LDI is 16 T; the repeat adds 5 (21 T), the final
-    // iteration is 16 T — matching the hardware.
+    // Timing per iteration: prefix + LDI body is 16 T; the repeat adds 5 (21 T),
+    // the final iteration is 16 T — matching the hardware.
     LDI();
     if (BC() != 0) { PC() -= 2; t_cycle += 5; }
 }
@@ -3855,9 +3852,8 @@ void CPUImpl<Memory, Io>::IN_B_C() {
     // ED 40 - Input from port C to B
     // I/O timing split (see FLOATING_BUS_DESIGN.md §5): the ED prefix M1 (4 T) was
     // charged by Step's dispatch; charge the opcode M1 (4 T) BEFORE the port read
-    // so a device sampling the clock sees the I/O M-cycle, and the remaining 8 T
-    // after. Handler total stays 12 (the dispatcher's -=4 prefix discount is
-    // unchanged), so instruction_timing_test stays green.
+    // so a device sampling the clock sees the I/O M-cycle, and the remaining 4 T
+    // after. Prefix + handler total stays 12.
     t_cycle += 4;
     B() = io.In(BC());
 
@@ -3867,14 +3863,15 @@ void CPUImpl<Memory, Io>::IN_B_C() {
     if (B() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(B());
 
-    t_cycle += 8;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OUT_C_B() {
     // ED 41 - Output B to port C
+    t_cycle += 4;
     io.Out(BC(), B());
-    t_cycle += 12;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
@@ -3889,14 +3886,15 @@ void CPUImpl<Memory, Io>::IN_C_C() {
     if (C() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(C());
 
-    t_cycle += 8;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OUT_C_C() {
     // ED 49 - Output C to port C
+    t_cycle += 4;
     io.Out(BC(), C());
-    t_cycle += 12;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
@@ -3911,14 +3909,15 @@ void CPUImpl<Memory, Io>::IN_D_C() {
     if (D() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(D());
 
-    t_cycle += 8;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OUT_C_D() {
     // ED 51 - Output D to port C
+    t_cycle += 4;
     io.Out(BC(), D());
-    t_cycle += 12;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
@@ -3933,14 +3932,15 @@ void CPUImpl<Memory, Io>::IN_E_C() {
     if (E() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(E());
 
-    t_cycle += 8;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OUT_C_E() {
     // ED 59 - Output E to port C
+    t_cycle += 4;
     io.Out(BC(), E());
-    t_cycle += 12;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
@@ -3955,14 +3955,15 @@ void CPUImpl<Memory, Io>::IN_H_C() {
     if (H() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(H());
 
-    t_cycle += 8;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OUT_C_H() {
     // ED 61 - Output H to port C
+    t_cycle += 4;
     io.Out(BC(), H());
-    t_cycle += 12;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
@@ -3977,14 +3978,15 @@ void CPUImpl<Memory, Io>::IN_L_C() {
     if (L() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(L());
 
-    t_cycle += 8;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OUT_C_L() {
     // ED 69 - Output L to port C
+    t_cycle += 4;
     io.Out(BC(), L());
-    t_cycle += 12;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
@@ -3999,14 +4001,15 @@ void CPUImpl<Memory, Io>::IN_F_C() {
     if (value & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(value);
 
-    t_cycle += 8;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OUT_C_0() {
     // ED 71 - Output 0 to port C (undocumented)
+    t_cycle += 4;
     io.Out(BC(), 0);
-    t_cycle += 12;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
@@ -4021,14 +4024,15 @@ void CPUImpl<Memory, Io>::IN_A_C() {
     if (A() & 0x80) F() |= Constants::Flags::SIGN;
     F() |= CalculateParity(A());
 
-    t_cycle += 8;
+    t_cycle += 4;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OUT_C_A() {
     // ED 79 - Output A to port C
+    t_cycle += 4;
     io.Out(BC(), A());
-    t_cycle += 12;
+    t_cycle += 4;
 }
 
 // =============================================================================
@@ -4051,7 +4055,7 @@ void CPUImpl<Memory, Io>::SLL_mHL() {
     if (bit7) F() |= Constants::Flags::CARRY;
     // H and N flags are reset (already 0)
     
-    t_cycle += 15;
+    t_cycle += 11;
 }
 
 // =============================================================================

@@ -28,6 +28,9 @@ the headless test suite.
 - Tape and beeper: `tape_test`, `beeper_test`.
 - Debugger core: `debug_session_test`, `disassembler_test`,
   `symbol_table_test`, `spectrum_debug_test`.
+- External assembler/disassembler checks: `disassembly_assembler` and
+  `disassembly_section`; see [Disassembly Verification](disassembly-verification.md)
+  for Pasmo setup, supported ranges and retained artifacts.
 - ROM boot smoke: `spectrum_boot_test`.
 
 `spectrum_boot_test` skips cleanly when no 48K ROM is available.

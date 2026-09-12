@@ -75,6 +75,8 @@ add_library(z80_debugger_core STATIC
     debugger/exec/debug_session.h
     debugger/disasm/disassembler.cpp
     debugger/disasm/disassembler.h
+    debugger/disasm/pasmo_source.cpp
+    debugger/disasm/pasmo_source.h
     debugger/symbols/symbol_table.cpp
     debugger/symbols/symbol_table.h
 )
@@ -132,6 +134,10 @@ target_link_libraries(alu_flags_test PRIVATE z80_cpu)
 # 16-bit ADD/ADC/SBC flag verification (high-byte X/Y and preservation rules)
 add_executable(word_arithmetic_flags_test tests/word_arithmetic_flags_test.cpp)
 target_link_libraries(word_arithmetic_flags_test PRIVATE z80_cpu)
+
+# Register-pair aliasing contract (16-bit pair <-> high/low 8-bit registers)
+add_executable(register_aliasing_test tests/register_aliasing_test.cpp)
+target_link_libraries(register_aliasing_test PRIVATE z80_cpu)
 
 # 8-bit INC/DEC flag verification (result-derived X/Y across register/memory forms)
 add_executable(inc_dec_flags_test tests/inc_dec_flags_test.cpp)
@@ -214,6 +220,26 @@ target_link_libraries(debug_session_test PRIVATE z80_debugger_core)
 add_executable(disassembler_test tests/disassembler_test.cpp)
 target_link_libraries(disassembler_test PRIVATE z80_debugger_core)
 
+add_executable(z80_disassemble tools/disassemble/main.cpp)
+target_link_libraries(z80_disassemble PRIVATE z80_debugger_core)
+
+# External assembler gates remain separate from CPU execution tests. Ordinary
+# offline builds work without Pasmo; absent tools are explicitly skipped.
+find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
+find_program(Z80_PASMO_EXECUTABLE NAMES pasmo DOC "Pasmo 0.5.5 executable for assembly verification")
+if(Python3_Interpreter_FOUND)
+    foreach(gate assembler section)
+        add_test(NAME disassembly_${gate}
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/assembly_roundtrip.py
+                --gate ${gate} --pasmo ${Z80_PASMO_EXECUTABLE}
+                --disassembler $<TARGET_FILE:z80_disassemble>
+                --artifacts ${CMAKE_BINARY_DIR}/disassembly-artifacts/${gate})
+        set_tests_properties(disassembly_${gate} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
+    endforeach()
+else()
+    message(STATUS "Python3 absent: external disassembly gates are not registered")
+endif()
+
 # Symbol table (JSON .sym load/save, resolver, forgiving parse)
 add_executable(symbol_table_test tests/symbol_table_test.cpp)
 target_link_libraries(symbol_table_test PRIVATE z80_debugger_core)
@@ -245,7 +271,7 @@ target_link_libraries(cpu_suite_runner PRIVATE z80_cpu)
 # =============================================================================
 foreach(test
         cpu_test observable_memory_test io_policy_test interrupt_test
-        rotate_flags_test alu_flags_test word_arithmetic_flags_test daa_test
+        rotate_flags_test alu_flags_test word_arithmetic_flags_test register_aliasing_test daa_test
         inc_dec_flags_test bit_flags_test block_flags_test result_flag_sources_test
         instruction_timing_test refresh_register_test timing_test
         machine_test screen_decode_test

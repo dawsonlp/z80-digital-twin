@@ -1,0 +1,176 @@
+{
+  "name": "lsp-z80",
+  "displayName": "Z80 Language Support (Pasmo)",
+  "description": "Visual Studio Code client for the editor-independent lsp-z80 language server.",
+  "version": "0.1.0",
+  "publisher": "lsp-z80",
+  "private": true,
+  "engines": {
+    "vscode": "^1.136.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "keywords": [
+    "z80",
+    "assembly",
+    "assembler",
+    "pasmo",
+    "lsp"
+  ],
+  "main": "./dist/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "virtualWorkspaces": false,
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "The extension launches a configured executable and allows it to read workspace source files."
+    }
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "z80",
+        "aliases": [
+          "Z80 Assembly",
+          "z80"
+        ],
+        "extensions": [
+          ".z80",
+          ".z80asm",
+          ".z80inc"
+        ],
+        "filenamePatterns": [
+          "*.z80.asm",
+          "*.z80.inc"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "z80",
+        "scopeName": "source.z80.pasmo",
+        "path": "./syntaxes/z80.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "lsp-z80.restartServer",
+        "title": "Z80: Restart Language Server"
+      },
+      {
+        "command": "lsp-z80.showOutput",
+        "title": "Z80: Show Language Server Output"
+      }
+    ],
+    "configuration": {
+      "title": "Z80 Language Support",
+      "type": "object",
+      "properties": {
+        "lsp-z80.dialect": {
+          "type": "string",
+          "enum": [
+            "pasmo"
+          ],
+          "enumDescriptions": [
+            "Pasmo syntax and semantics. This is the only dialect currently implemented by lsp-z80."
+          ],
+          "default": "pasmo",
+          "scope": "resource",
+          "markdownDescription": "Z80 assembler dialect requested from the language server. The setting is explicit so additional dialects or a conservative auto-detection mode can be added without changing the `z80` language identity."
+        },
+        "lsp-z80.server.path": {
+          "type": "string",
+          "default": "lsp-z80",
+          "scope": "machine-overridable",
+          "markdownDescription": "Command or absolute path used to start the editor-independent language server. Supports `~` and `${workspaceFolder}`."
+        },
+        "lsp-z80.server.arguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "machine-overridable",
+          "markdownDescription": "Arguments passed directly to the language server process."
+        },
+        "lsp-z80.includePaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "Additional directories searched for Pasmo includes. Relative paths and `${workspaceFolder}` are resolved from the first workspace folder."
+        },
+        "lsp-z80.predefinedSymbols": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "Symbols treated as predefined during analysis."
+        },
+        "lsp-z80.diagnostics": {
+          "type": "object",
+          "default": {},
+          "scope": "resource",
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warning",
+              "information",
+              "hint",
+              "off"
+            ]
+          },
+          "markdownDescription": "Severity overrides keyed by diagnostic code, for example `pasmo.non-standard-hex`."
+        },
+        "lsp-z80.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "scope": "window",
+          "description": "Traces messages exchanged with the language server in the Z80 Language Server output channel."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "check": "npm run check-types && npm run lint-manifest",
+    "check-types": "tsc --noEmit",
+    "lint-manifest": "node scripts/check-manifest.mjs",
+    "compile": "npm run check && node esbuild.mjs",
+    "compile-tests": "tsc --noEmit false --outDir out",
+    "watch": "node esbuild.mjs --watch",
+    "package": "npm run check && node esbuild.mjs --production",
+    "pretest": "npm run compile && npm run compile-tests",
+    "test": "node out/test/runTest.js",
+    "vscode:prepublish": "npm run package",
+    "vsix": "npm run package && vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "vscode-languageclient": "10.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/mocha": "10.0.10",
+    "@types/vscode": "1.136.0",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "3.9.2",
+    "esbuild": "0.28.2",
+    "mocha": "12.0.0",
+    "typescript": "7.0.2"
+  }
+}

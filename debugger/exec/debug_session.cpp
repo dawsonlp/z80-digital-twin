@@ -68,7 +68,7 @@ void DebugSession::RecordCoverage(uint16_t start) {
         coverage_[a] |= flag;
     };
     mark(start, kExecOpcode);
-    for (uint8_t i = 1; i < ins.length; ++i)
+    for (uint32_t i = 1; i < ins.length; ++i)
         mark(static_cast<uint16_t>(start + i), kExecOperand);
 }
 

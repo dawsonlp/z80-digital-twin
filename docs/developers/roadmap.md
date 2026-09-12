@@ -2,7 +2,12 @@
 
 **Audience:** developers choosing implementation work.
 **Purpose:** keep current priorities separate from historical TODOs.
-**Last reviewed:** 2026-06-10.
+**Last reviewed:** 2026-07-16.
+
+The [Source Architecture Feedback](source-architecture-feedback.md) is the
+current review basis for structural work. Its consolidation findings take
+priority over major feature expansion until they are resolved or consciously
+accepted as constraints.
 
 ## Recently completed
 
@@ -16,8 +21,22 @@
 
 ## Now
 
+### Architecture consolidation
+
+- Establish one authoritative Spectrum runtime for the viewer, debugger, and
+  probe instead of allowing their machine behavior to drift independently.
+- Define one whole-instruction stepping and machine-time contract, including
+  interrupt and `HALT` behavior.
+- Close executor/disassembler opcode disagreements and add consistency checks
+  that make future drift visible.
+- Make the policy/install surface and developer documentation match the behavior
+  the project actually supports.
+
 ### Development workbench
 
+- Extend the integrated [`lsp-z80`](../../lsp-z80/) subproject without making
+  source editing depend on a running emulator. Consume assembler and runtime
+  facts through explicit, provenance-aware integration boundaries.
 - Add a source-to-machine loop: edit Z80 assembly, invoke a configured assembler,
   load the produced bytes directly into the running machine, import generated
   labels/symbols, and optionally set PC/SP/register state before running.
@@ -27,8 +46,8 @@
 - Add session state save/load for debugger work: CPU registers, RAM image or
   patches, breakpoints, symbols, annotations, selected machine model, tape
   position, and relevant UI/debugger settings.
-- Treat assembler choice and paths as configuration, not hard-coded behavior.
-  Pick one default dialect first, then keep room for others.
+- Use Pasmo as the first assembler and dialect, but keep invocation and output
+  parsing behind a toolchain boundary so other assemblers remain possible.
 
 ### Reverse engineering
 

@@ -36,8 +36,9 @@ using SymbolResolver = std::function<std::optional<std::string>(uint16_t)>;
 /// @brief A decoded instruction.
 struct Instruction {
     uint16_t address = 0;              ///< Address it was decoded at.
-    uint8_t length = 1;                ///< Byte length (1..4).
-    std::array<uint8_t, 4> bytes{};    ///< Raw bytes (first `length` valid).
+    uint32_t length = 1;               ///< Bytes consumed, including repeated prefixes.
+    std::array<uint8_t, 4> bytes{};     ///< First min(length, 4) raw bytes for display.
+    bool complete = true;             ///< False when the supplied byte range ends mid-instruction.
     std::string mnemonic;              ///< Operation, e.g. "LD", "ADD", "BIT".
     std::string operands;              ///< Operands, e.g. "A, (IX+0x05)" ("" if none).
     std::string text;                  ///< Rendered line: mnemonic [+ ' ' + operands].
@@ -51,11 +52,14 @@ public:
     /// @param read    Byte accessor over program memory (e.g. cpu.ReadMemory).
     /// @param address Address of the first opcode byte.
     /// @param resolve Optional address->label resolver (defaults to none).
+    /// @param available Bound reads to this many bytes (1..65536); incomplete
+    ///        input is reported explicitly, including an all-prefix memory image.
     [[nodiscard]] Instruction Decode(const ByteReader& read, uint16_t address,
-                                     const SymbolResolver& resolve = {}) const;
+                                     const SymbolResolver& resolve = {},
+                                     uint32_t available = 65536) const;
 
     /// @brief Byte length of the instruction at @p address (for step-over etc.).
-    [[nodiscard]] uint8_t InstructionLength(const ByteReader& read,
+    [[nodiscard]] uint32_t InstructionLength(const ByteReader& read,
                                             uint16_t address) const {
         return Decode(read, address).length;
     }

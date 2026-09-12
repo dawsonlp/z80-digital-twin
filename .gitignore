@@ -68,7 +68,7 @@ MinSizeRel/
 .claude/
 
 # IDE and editor files
-.vscode/
+/.vscode/
 .vs/
 *.swp
 *.swo
@@ -128,3 +128,7 @@ imgui.ini
 *.tap
 *.z80
 *.sna
+
+# Z80 source files belong in the language-tooling subproject; elsewhere `.z80`
+# remains reserved for local emulator snapshot assets.
+!lsp-z80/**/*.z80

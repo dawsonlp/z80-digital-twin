@@ -233,7 +233,7 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
             // Bytes
             ImGui::TableSetColumnIndex(3);
             std::string hexbytes;
-            for (int b = 0; b < ins.length && b < 4; ++b)
+            for (uint32_t b = 0; b < ins.length && b < 4; ++b)
                 hexbytes += std::format("{:02X} ", ins.bytes[b]);
             ImGui::TextUnformatted(hexbytes.c_str());
 

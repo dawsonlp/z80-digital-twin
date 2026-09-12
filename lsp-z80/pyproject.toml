@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lsp-z80"
+version = "0.1.0"
+description = "A small, dependency-free Language Server Protocol implementation for Pasmo Z80 assembly"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+lsp-z80 = "lsp_z80.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

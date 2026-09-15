@@ -12,6 +12,7 @@
 
 #include "z80_cpu.h"
 #include "memory/observable_memory.h"
+#include "memory/metadata_memory.h"
 
 #include <cstdint>
 #include <iostream>
@@ -51,6 +52,16 @@ void run_to_halt(Cpu& cpu) {
 }
 
 } // namespace
+
+template<class Memory>
+concept HasInstructionMetadata = requires(Memory memory) {
+    memory.Revision(uint16_t{});
+    memory.ReadInstructionByte(uint16_t{});
+};
+static_assert(!HasInstructionMetadata<z80::FastMemory>);
+static_assert(!HasInstructionMetadata<z80::ObservableMemory>);
+static_assert(HasInstructionMetadata<z80::MetadataMemory>);
+static_assert(sizeof(z80::FastMemory) == 65536);
 
 int main() {
     using namespace z80;
@@ -116,8 +127,15 @@ int main() {
     {
         CPUImpl<FastMemory>       fast;
         CPUImpl<ObservableMemory> obs;
+        CPUImpl<MetadataMemory> rich;
         run_to_halt(fast);
         run_to_halt(obs);
+        rich.GetMemory().BeginInstructionCapture();
+        run_to_halt(rich);
+        rich.GetMemory().EndInstructionCapture();
+        check(fast.GetCycleCount() == rich.GetCycleCount() && fast.PC() == rich.PC() &&
+              fast.A() == rich.A() && fast.IsHalted() == rich.IsHalted(),
+              "metadata policy preserves CPU results and T-states with capture enabled");
 
         check(fast.GetCycleCount() == obs.GetCycleCount(), "equal cycle counts");
         check(fast.A() == obs.A(),   "equal A");
@@ -127,7 +145,8 @@ int main() {
         bool mem_equal = true;
         for (uint32_t a = 0; a < 0x10000; ++a) {
             if (fast.ReadMemory(static_cast<uint16_t>(a)) !=
-                obs.ReadMemory(static_cast<uint16_t>(a))) {
+                obs.ReadMemory(static_cast<uint16_t>(a)) ||
+                fast.ReadMemory(static_cast<uint16_t>(a)) != rich.ReadMemory(static_cast<uint16_t>(a))) {
                 mem_equal = false;
                 break;
             }
@@ -138,7 +157,8 @@ int main() {
     // --- 4. Write protection + blocked-write events ------------------------
     std::cout << "\n[4] Write protection refuses writes and reports the attempt\n";
     {
-        ObservableMemory mem;
+        auto verify_protection = []<class Memory>() {
+        Memory mem;
         mem[0x0000] = 0xF3;                 // seed (writable: no protection yet)
         int blocked = 0; uint16_t b_addr = 0; uint8_t b_cur = 0, b_try = 0;
         mem.AddBlockedWriteObserver([&](uint16_t a, uint8_t cur, uint8_t att) {
@@ -163,6 +183,18 @@ int main() {
         mem[0x0000] = 0x77;                 // now writable
         check(static_cast<uint8_t>(mem[0x0000]) == 0x77, "ClearWriteProtect re-enables writes");
         check(committed == 2, "previously-protected write now commits");
+        if constexpr (HasInstructionMetadata<Memory>) {
+            uint64_t seen_revision = 0;
+            mem.AddWriteObserver([&](uint16_t address, uint8_t, uint8_t) {
+                seen_revision = mem.Revision(address);
+            });
+            mem[0x4001] = 0x80;
+            check(seen_revision != 0 && seen_revision == mem.Revision(0x4001),
+                  "committed observers see updated metadata");
+        }
+        };
+        verify_protection.template operator()<ObservableMemory>();
+        verify_protection.template operator()<MetadataMemory>();
     }
 
     std::cout << "\n==================================\n";

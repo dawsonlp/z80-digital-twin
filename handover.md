@@ -1,5 +1,34 @@
 # Z80 Digital Twin handover
 
+## Current continuation — 14 September 2026
+
+The next increment is now implemented on **`feature/spectrum-dev-loop`**, based
+on `98cf7fb`. The changes are in the working tree; no commit or push has been
+made for this increment. The older sections below describe the preceding
+disassembly investigation and retain its historical context.
+
+Start with [the Spectrum example](examples/spectrum-dev/README.md), the
+[development plan](docs/developers/spectrum-development-loop-plan.md), and the
+[verification record](docs/testers/spectrum-development-loop-verification.md).
+VS Code editing/completion/navigation, real Pasmo build artifacts, validated
+standalone Spectrum loading, symbols, visible red-to-green rebuilds and
+failed-build blocking have been exercised. Final checks: 33 CTest passes,
+2 external CPU-suite skips, 18 LSP test passes, plus CLI/GUI checks.
+
+The local configured workspace is `build/spectrum-dev.code-workspace`.
+Pasmo is available at `build/tools/pasmo-0.5.5/pasmo`, the local language-server
+executable at `lsp-z80/.venv/bin/lsp-z80`, and the current GUI at
+`build/z80_debugger`. These are generated local prerequisites, not committed
+artifacts. The workspace's terminal environment supplies the tool and ROM
+paths; recreate a task terminal if it reports a stale environment.
+
+Runtime-informed disassembly is still the next product stage. No architectural
+question blocked the first loop. Live reload, BASIC-dependent startup and
+timing/HALT corrections remain deferred. Reset currently cold-boots the ROM;
+restart a standalone program with the build/run task.
+
+## Historical handover — 12 September 2026
+
 Updated **12 September 2026**. This document captures the current development
 direction, work completed in this conversation, and the shortest route back to
 productive work. Source files and Git state were checked on this date; the test

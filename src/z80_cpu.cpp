@@ -5,6 +5,7 @@
 
 #include "z80_cpu.h"
 #include "memory/observable_memory.h"
+#include "memory/metadata_memory.h"
 #include "io/latched_io.h"
 #include "io/observable_io.h"
 #include "io/callback_io.h"
@@ -68,7 +69,7 @@ bool CPUImpl<Memory, Io>::Interrupt(uint8_t bus) {
     // Maskable interrupt: accepted only when enabled and not in the one-
     // instruction shadow of an EI (so an `EI : RET` handler tail can't be
     // re-entered between the two).
-    if (!_IFF1 || ei_defer_) return false;
+    if (!_IFF1 || ei_defer_ || !InstructionComplete()) return false;
 
     // Acceptance wakes a halted CPU. PC already points past the HALT (the fetch
     // advanced it), so it is the correct return address.
@@ -120,13 +121,27 @@ void CPUImpl<Memory, Io>::RunUntilCycle(uint64_t target_cycle) {
 }
 
 template <class Memory, class Io>
+InstructionResult CPUImpl<Memory, Io>::StepInstruction(uint32_t stage_budget) {
+    const uint64_t before = t_cycle;
+    if (_halted) return {InstructionStop::Halted, 0, 0, false};
+    for (uint32_t stages = 0; stages < stage_budget; ++stages) {
+        Step();
+        if (InstructionComplete()) {
+            return {_halted ? InstructionStop::Halted : InstructionStop::Complete,
+                    t_cycle - before, stages + 1, true};
+        }
+    }
+    return {InstructionStop::BudgetExhausted, t_cycle - before, stage_budget, false};
+}
+
+template <class Memory, class Io>
 void CPUImpl<Memory, Io>::Step() {
     // EI defers interrupt acceptance until *after* the following instruction.
     // Capture the flag here; clear it once that following instruction completes.
     const bool ei_was_pending = ei_defer_;
 
     // Fetch instruction opcode
-    uint8_t opcode = memory[PC()++];
+    uint8_t opcode = ReadInstructionByte(PC()++);
 
     // R (memory-refresh) register: its low 7 bits increment on every M1 opcode
     // fetch; bit 7 is preserved (only LD R,A changes it). Each Step() fetches one
@@ -226,7 +241,7 @@ void CPUImpl<Memory, Io>::Step() {
             // The opcode we just read is the displacement, we need to read the actual CB opcode
             {
                 current_displacement = static_cast<int8_t>(opcode);  // Store displacement
-                uint8_t cb_opcode = memory[PC()++];  // Read the actual CB instruction
+                uint8_t cb_opcode = ReadInstructionByte(PC()++);  // Read the actual CB instruction
 
                 // Execute the CB instruction with stored displacement. The DD and
                 // CB prefix fetches above each charged 4 T (two M1s); the body
@@ -242,7 +257,7 @@ void CPUImpl<Memory, Io>::Step() {
             // The opcode we just read is the displacement, we need to read the actual CB opcode
             {
                 current_displacement = static_cast<int8_t>(opcode);  // Store displacement
-                uint8_t cb_opcode = memory[PC()++];  // Read the actual CB instruction
+                uint8_t cb_opcode = ReadInstructionByte(PC()++);  // Read the actual CB instruction
                 
                 // Execute the CB instruction with stored displacement. The FD and
                 // CB prefix fetches above each charged 4 T (two M1s); the body
@@ -256,7 +271,7 @@ void CPUImpl<Memory, Io>::Step() {
 
     // If an EI was pending before this instruction (and this instruction was not
     // itself the EI), the one-instruction deferral window has now closed.
-    if (ei_was_pending) ei_defer_ = false;
+    if (ei_was_pending && InstructionComplete()) ei_defer_ = false;
 }
 
 // =============================================================================
@@ -664,7 +679,7 @@ void CPUImpl<Memory, Io>::NOP() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_BC_nn() {
-    WZ() = memory[PC()] | (memory[PC()+1] << 8);
+    WZ() = ReadInstructionByte(PC()) | (ReadInstructionByte(PC()+1) << 8);
     BC() = WZ();
     PC() += 2;
     t_cycle += 10;
@@ -701,7 +716,7 @@ void CPUImpl<Memory, Io>::DEC_B() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_B_n() {
-    B() = memory[PC()++];
+    B() = ReadInstructionByte(PC()++);
     t_cycle += 7;
 }
 
@@ -766,7 +781,7 @@ void CPUImpl<Memory, Io>::DEC_C() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_C_n() {
-    C() = memory[PC()++];
+    C() = ReadInstructionByte(PC()++);
     t_cycle += 7;
 }
 
@@ -781,7 +796,7 @@ void CPUImpl<Memory, Io>::RRCA() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::DJNZ() {
-    int8_t displacement = memory[PC()++];
+    int8_t displacement = ReadInstructionByte(PC()++);
     B()--;
     if (B() != 0) {
         WZ() = PC() + displacement;
@@ -794,7 +809,7 @@ void CPUImpl<Memory, Io>::DJNZ() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_DE_nn() {
-    WZ() = memory[PC()] | (memory[PC()+1] << 8);
+    WZ() = ReadInstructionByte(PC()) | (ReadInstructionByte(PC()+1) << 8);
     DE() = WZ();
     PC() += 2;
     t_cycle += 10;
@@ -831,7 +846,7 @@ void CPUImpl<Memory, Io>::DEC_D() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_D_n() {
-    D() = memory[PC()++];
+    D() = ReadInstructionByte(PC()++);
     t_cycle += 7;
 }
 
@@ -847,7 +862,7 @@ void CPUImpl<Memory, Io>::RLA() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JR() {
-    int8_t displacement = memory[PC()++];
+    int8_t displacement = ReadInstructionByte(PC()++);
     WZ() = PC() + displacement;
     PC() = WZ();
     t_cycle += 12;
@@ -897,7 +912,7 @@ void CPUImpl<Memory, Io>::DEC_E() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_E_n() {
-    E() = memory[PC()++];
+    E() = ReadInstructionByte(PC()++);
     t_cycle += 7;
 }
 
@@ -913,7 +928,7 @@ void CPUImpl<Memory, Io>::RRA() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JR_NZ() {
-    int8_t displacement = memory[PC()++];
+    int8_t displacement = ReadInstructionByte(PC()++);
     if (!(F() & 0x40)) { // Zero flag not set
         WZ() = PC() + displacement;
         PC() = WZ();
@@ -925,7 +940,7 @@ void CPUImpl<Memory, Io>::JR_NZ() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_HL_nn() {
-    WZ() = memory[PC()] | (memory[PC()+1] << 8);
+    WZ() = ReadInstructionByte(PC()) | (ReadInstructionByte(PC()+1) << 8);
     GetEffectiveHL_Register() = WZ();
     PC() += 2;
     t_cycle += 10; // Base instruction timing - prefix adds its own 4 cycles
@@ -933,7 +948,7 @@ void CPUImpl<Memory, Io>::LD_HL_nn() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_mnn_HL() {
-    WZ() = memory[PC()] | (memory[PC()+1] << 8);
+    WZ() = ReadInstructionByte(PC()) | (ReadInstructionByte(PC()+1) << 8);
     PC() += 2;
     uint16_t& hl_reg = GetEffectiveHL_Register();
     memory[WZ()] = hl_reg & 0xFF;        // Low byte
@@ -967,7 +982,7 @@ void CPUImpl<Memory, Io>::DEC_H() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_H_n() {
-    GetEffectiveH() = memory[PC()++];
+    GetEffectiveH() = ReadInstructionByte(PC()++);
     t_cycle += 7;
 }
 
@@ -1007,7 +1022,7 @@ void CPUImpl<Memory, Io>::DAA() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JR_Z() {
-    int8_t displacement = memory[PC()++];
+    int8_t displacement = ReadInstructionByte(PC()++);
     if (F() & 0x40) { // Zero flag set
         WZ() = PC() + displacement;
         PC() = WZ();
@@ -1031,7 +1046,7 @@ void CPUImpl<Memory, Io>::ADD_HL_HL() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_HL_mnn() {
-    WZ() = memory[PC()] | (memory[PC()+1] << 8);
+    WZ() = ReadInstructionByte(PC()) | (ReadInstructionByte(PC()+1) << 8);
     PC() += 2;
     uint16_t& hl_reg = GetEffectiveHL_Register();
     hl_reg = memory[WZ()] | (memory[WZ() + 1] << 8);
@@ -1064,7 +1079,7 @@ void CPUImpl<Memory, Io>::DEC_L() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_L_n() {
-    GetEffectiveL() = memory[PC()++];
+    GetEffectiveL() = ReadInstructionByte(PC()++);
     t_cycle += 7;
 }
 
@@ -1080,7 +1095,7 @@ void CPUImpl<Memory, Io>::CPL() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JR_NC() {
-    int8_t displacement = memory[PC()++];
+    int8_t displacement = ReadInstructionByte(PC()++);
     if (!(F() & 0x01)) { // Carry flag not set
         WZ() = PC() + displacement;
         PC() = WZ();
@@ -1092,7 +1107,7 @@ void CPUImpl<Memory, Io>::JR_NC() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_SP_nn() {
-    WZ() = memory[PC()] | (memory[PC()+1] << 8);
+    WZ() = ReadInstructionByte(PC()) | (ReadInstructionByte(PC()+1) << 8);
     SP() = WZ();
     PC() += 2;
     t_cycle += 10;
@@ -1100,7 +1115,7 @@ void CPUImpl<Memory, Io>::LD_SP_nn() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_mnn_A() {
-    WZ() = memory[PC()] | (memory[PC()+1] << 8);
+    WZ() = ReadInstructionByte(PC()) | (ReadInstructionByte(PC()+1) << 8);
     PC() += 2;
     memory[WZ()] = A();
     t_cycle += 13;
@@ -1139,7 +1154,7 @@ void CPUImpl<Memory, Io>::DEC_mHL() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_mHL_n() {
     uint16_t address = GetEffectiveHL_Memory();
-    memory[address] = memory[PC()++];
+    memory[address] = ReadInstructionByte(PC()++);
     // LD (HL),n=10 T; LD (IX/IY+d),n=19 T (body 15 + DD/FD prefix M1 charged above).
     t_cycle += (current_state == CPUState::NORMAL) ? 10 : 15;
 }
@@ -1155,7 +1170,7 @@ void CPUImpl<Memory, Io>::SCF() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JR_C() {
-    int8_t displacement = memory[PC()++];
+    int8_t displacement = ReadInstructionByte(PC()++);
     if (F() & 0x01) { // Carry flag set
         WZ() = PC() + displacement;
         PC() = WZ();
@@ -1180,7 +1195,7 @@ void CPUImpl<Memory, Io>::ADD_HL_SP() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_A_mnn() {
-    WZ() = memory[PC()] | (memory[PC()+1] << 8);
+    WZ() = ReadInstructionByte(PC()) | (ReadInstructionByte(PC()+1) << 8);
     PC() += 2;
     A() = memory[WZ()];
     t_cycle += 13;
@@ -1210,7 +1225,7 @@ void CPUImpl<Memory, Io>::DEC_A() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_A_n() {
-    A() = memory[PC()++];
+    A() = ReadInstructionByte(PC()++);
     t_cycle += 7;
 }
 
@@ -2341,10 +2356,10 @@ uint16_t CPUImpl<Memory, Io>::GetEffectiveHL_Memory() {
             return HL();
         case CPUState::DD_PREFIX:
             // Displacement consumed atomically as part of instruction execution
-            return IX() + static_cast<int8_t>(memory[PC()++]);
+            return IX() + static_cast<int8_t>(ReadInstructionByte(PC()++));
         case CPUState::FD_PREFIX:
             // Displacement consumed atomically as part of instruction execution
-            return IY() + static_cast<int8_t>(memory[PC()++]);
+            return IY() + static_cast<int8_t>(ReadInstructionByte(PC()++));
         case CPUState::DD_CB_PREFIX:
             // For DD CB instructions, displacement was already stored
             return IX() + current_displacement;
@@ -2435,7 +2450,7 @@ void CPUImpl<Memory, Io>::POP_BC() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JP_NZ_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(0)) { // NZ
         PC() = address;
@@ -2445,14 +2460,14 @@ void CPUImpl<Memory, Io>::JP_NZ_nn() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JP_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() = address;
     t_cycle += 10;
 }
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CALL_NZ_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(0)) { // NZ
         PushWord(PC());
@@ -2471,7 +2486,7 @@ void CPUImpl<Memory, Io>::PUSH_BC() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::ADD_A_n() {
-    uint8_t value = memory[PC()++];
+    uint8_t value = ReadInstructionByte(PC()++);
     uint8_t old_a = A();
     A() += value;
     SetFlags_ADD(A(), old_a, value);
@@ -2503,7 +2518,7 @@ void CPUImpl<Memory, Io>::RET() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JP_Z_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(1)) { // Z
         PC() = address;
@@ -2520,7 +2535,7 @@ void CPUImpl<Memory, Io>::PREFIX_CB() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CALL_Z_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(1)) { // Z
         PushWord(PC());
@@ -2533,7 +2548,7 @@ void CPUImpl<Memory, Io>::CALL_Z_nn() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CALL_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     PushWord(PC());
     PC() = address;
@@ -2542,7 +2557,7 @@ void CPUImpl<Memory, Io>::CALL_nn() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::ADC_A_n() {
-    uint8_t value = memory[PC()++];
+    uint8_t value = ReadInstructionByte(PC()++);
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     uint16_t result = static_cast<uint16_t>(A()) + static_cast<uint16_t>(value) + carry;
@@ -2577,7 +2592,7 @@ void CPUImpl<Memory, Io>::POP_DE() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JP_NC_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(2)) { // NC
         PC() = address;
@@ -2587,7 +2602,7 @@ void CPUImpl<Memory, Io>::JP_NC_nn() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OUT_n_A() {
-    uint8_t port = memory[PC()++];
+    uint8_t port = ReadInstructionByte(PC()++);
     // OUT (n),A drives A onto the high address byte (full 16-bit port).
     t_cycle += 7;
     io.Out((static_cast<uint16_t>(A()) << 8) | port, A());
@@ -2596,7 +2611,7 @@ void CPUImpl<Memory, Io>::OUT_n_A() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CALL_NC_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(2)) { // NC
         PushWord(PC());
@@ -2615,7 +2630,7 @@ void CPUImpl<Memory, Io>::PUSH_DE() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::SUB_n() {
-    uint8_t value = memory[PC()++];
+    uint8_t value = ReadInstructionByte(PC()++);
     uint8_t old_a = A();
     A() -= value;
     SetFlags_SUB(A(), old_a, value);
@@ -2651,7 +2666,7 @@ void CPUImpl<Memory, Io>::EXX() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JP_C_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(3)) { // C
         PC() = address;
@@ -2661,7 +2676,7 @@ void CPUImpl<Memory, Io>::JP_C_nn() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::IN_A_n() {
-    uint8_t port = memory[PC()++];
+    uint8_t port = ReadInstructionByte(PC()++);
     // IN A,(n) drives A onto the high address byte; A's old value forms the port.
     // I/O timing split (see FLOATING_BUS_DESIGN.md §5): charge the fetch M-cycles
     // (M1=4 + operand=3) BEFORE the port read, so a device sampling the clock
@@ -2674,7 +2689,7 @@ void CPUImpl<Memory, Io>::IN_A_n() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CALL_C_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(3)) { // C
         PushWord(PC());
@@ -2693,7 +2708,7 @@ void CPUImpl<Memory, Io>::PREFIX_DD() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::SBC_A_n() {
-    uint8_t value = memory[PC()++];
+    uint8_t value = ReadInstructionByte(PC()++);
     uint8_t old_a = A();
     uint8_t carry = (F() & Constants::Flags::CARRY) ? 1 : 0;
     int16_t result = static_cast<int16_t>(A()) - static_cast<int16_t>(value) - carry;
@@ -2728,7 +2743,7 @@ void CPUImpl<Memory, Io>::POP_HL() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JP_PO_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(4)) { // PO
         PC() = address;
@@ -2748,7 +2763,7 @@ void CPUImpl<Memory, Io>::EX_mSP_HL() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CALL_PO_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(4)) { // PO
         PushWord(PC());
@@ -2767,7 +2782,7 @@ void CPUImpl<Memory, Io>::PUSH_HL() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::AND_n() {
-    uint8_t value = memory[PC()++];
+    uint8_t value = ReadInstructionByte(PC()++);
     A() &= value;
     SetFlags_LOGIC(A(), true);
     t_cycle += 7;
@@ -2798,7 +2813,7 @@ void CPUImpl<Memory, Io>::JP_HL() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JP_PE_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(5)) { // PE
         PC() = address;
@@ -2817,7 +2832,7 @@ void CPUImpl<Memory, Io>::EX_DE_HL() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CALL_PE_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(5)) { // PE
         PushWord(PC());
@@ -2836,7 +2851,7 @@ void CPUImpl<Memory, Io>::PREFIX_ED() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::XOR_n() {
-    uint8_t value = memory[PC()++];
+    uint8_t value = ReadInstructionByte(PC()++);
     A() ^= value;
     SetFlags_LOGIC(A(), false);
     t_cycle += 7;
@@ -2867,7 +2882,7 @@ void CPUImpl<Memory, Io>::POP_AF() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JP_P_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(6)) { // P
         PC() = address;
@@ -2884,7 +2899,7 @@ void CPUImpl<Memory, Io>::DI() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CALL_P_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(6)) { // P
         PushWord(PC());
@@ -2903,7 +2918,7 @@ void CPUImpl<Memory, Io>::PUSH_AF() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::OR_n() {
-    uint8_t value = memory[PC()++];
+    uint8_t value = ReadInstructionByte(PC()++);
     A() |= value;
     SetFlags_LOGIC(A(), false);
     t_cycle += 7;
@@ -2934,7 +2949,7 @@ void CPUImpl<Memory, Io>::LD_SP_HL() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::JP_M_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(7)) { // M
         PC() = address;
@@ -2952,7 +2967,7 @@ void CPUImpl<Memory, Io>::EI() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CALL_M_nn() {
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     if (CheckCondition(7)) { // M
         PushWord(PC());
@@ -2971,7 +2986,7 @@ void CPUImpl<Memory, Io>::PREFIX_FD() {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::CP_n() {
-    uint8_t value = memory[PC()++];
+    uint8_t value = ReadInstructionByte(PC()++);
     uint8_t result = A() - value;
     SetFlags_CP(result, A(), value);
     t_cycle += 7;
@@ -3414,7 +3429,7 @@ void CPUImpl<Memory, Io>::ADC_HL_SP() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_mnn_BC() {
     // ED 43 - Load BC to memory at 16-bit address
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     memory[address] = BC() & 0xFF;        // Low byte
     memory[address + 1] = (BC() >> 8);    // High byte
@@ -3424,7 +3439,7 @@ void CPUImpl<Memory, Io>::LD_mnn_BC() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_BC_mnn() {
     // ED 4B - Load memory at 16-bit address to BC
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     BC() = memory[address] | (memory[address + 1] << 8);
     t_cycle += 16;
@@ -3433,7 +3448,7 @@ void CPUImpl<Memory, Io>::LD_BC_mnn() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_mnn_DE() {
     // ED 53 - Load DE to memory at 16-bit address
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     memory[address] = DE() & 0xFF;        // Low byte
     memory[address + 1] = (DE() >> 8);    // High byte
@@ -3443,7 +3458,7 @@ void CPUImpl<Memory, Io>::LD_mnn_DE() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_DE_mnn() {
     // ED 5B - Load memory at 16-bit address to DE
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     DE() = memory[address] | (memory[address + 1] << 8);
     t_cycle += 16;
@@ -3452,7 +3467,7 @@ void CPUImpl<Memory, Io>::LD_DE_mnn() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_mnn_HL_ED() {
     // ED 63 - Load HL to memory at 16-bit address (ED version)
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     memory[address] = HL() & 0xFF;        // Low byte
     memory[address + 1] = (HL() >> 8);    // High byte
@@ -3462,7 +3477,7 @@ void CPUImpl<Memory, Io>::LD_mnn_HL_ED() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_HL_mnn_ED() {
     // ED 6B - Load memory at 16-bit address to HL (ED version)
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     HL() = memory[address] | (memory[address + 1] << 8);
     t_cycle += 16;
@@ -3471,7 +3486,7 @@ void CPUImpl<Memory, Io>::LD_HL_mnn_ED() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_mnn_SP() {
     // ED 73 - Load SP to memory at 16-bit address
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     memory[address] = SP() & 0xFF;        // Low byte
     memory[address + 1] = (SP() >> 8);    // High byte
@@ -3481,7 +3496,7 @@ void CPUImpl<Memory, Io>::LD_mnn_SP() {
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::LD_SP_mnn() {
     // ED 7B - Load memory at 16-bit address to SP
-    uint16_t address = memory[PC()] | (memory[PC() + 1] << 8);
+    uint16_t address = ReadInstructionByte(PC()) | (ReadInstructionByte(PC() + 1) << 8);
     PC() += 2;
     SP() = memory[address] | (memory[address + 1] << 8);
     t_cycle += 16;
@@ -4067,12 +4082,14 @@ void CPUImpl<Memory, Io>::SLL_mHL() {
 //  - <FastMemory, OpenBusIo>                   : z80::CPU — production / benchmark
 //  - <ObservableMemory, OpenBusIo>             : memory-observer tests
 //  - <ObservableMemory, ObservableIo<LatchedIo>> : io_policy_test
-//  - <ObservableMemory, ObservableIo<CallbackIo>> : the debugger AND the ZX
-//      Spectrum (DebugCPU == SpectrumCpu — one config, so a DebugSession can
-//      drive a running Spectrum; the ULA hooks the inner CallbackIo's ports)
+//  - <ObservableMemory, ObservableIo<CallbackIo>> : lightweight Spectrum viewer
+//  - <MetadataMemory, OpenBusIo> : metadata plug parity tests
+//  - <MetadataMemory, ObservableIo<CallbackIo>> : debugger and DebugSpectrumMachine
 template class CPUImpl<FastMemory, OpenBusIo>;
 template class CPUImpl<ObservableMemory, OpenBusIo>;
 template class CPUImpl<ObservableMemory, ObservableIo<LatchedIo>>;
 template class CPUImpl<ObservableMemory, ObservableIo<CallbackIo>>;
+template class CPUImpl<MetadataMemory, OpenBusIo>;
+template class CPUImpl<MetadataMemory, ObservableIo<CallbackIo>>;
 
 } // namespace z80

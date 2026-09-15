@@ -24,6 +24,7 @@ DebugSession::DebugSession(DebugCPU& cpu) : cpu_(cpu) {
 }
 
 DebugSession::~DebugSession() {
+    cpu_.GetMemory().EndInstructionCapture();
     cpu_.GetMemory().RemoveWriteObserver(write_observer_id_);
     cpu_.GetMemory().RemoveBlockedWriteObserver(blocked_observer_id_);
 }
@@ -60,30 +61,45 @@ void DebugSession::OnMemoryWrite(uint16_t address, uint8_t old_value,
     }
 }
 
-void DebugSession::RecordCoverage(uint16_t start) {
+void DebugSession::RecordCoverage(uint16_t start, uint32_t decoded_length) {
     if (coverage_[start] & kExecOpcode) return;   // this start is already mapped
-    const Instruction ins = disasm_.Decode(reader_, start);
     auto mark = [&](uint16_t a, uint8_t flag) {
         if ((coverage_[a] & (kExecOpcode | kExecOperand)) == 0) ++covered_bytes_;
         coverage_[a] |= flag;
     };
     mark(start, kExecOpcode);
-    for (uint32_t i = 1; i < ins.length; ++i)
+    for (uint32_t i = 1; i < decoded_length; ++i)
         mark(static_cast<uint16_t>(start + i), kExecOperand);
 }
 
-void DebugSession::ExecuteOneInstruction() {
-    current_instruction_pc_ = cpu_.PC();
-    RecordCoverage(current_instruction_pc_);
-    StepRaw();
+void DebugSession::PrepareExecution() {
+    if (prepare_execution_) {
+        const auto pc = cpu_.PC();
+        const auto cycles = cpu_.GetCycleCount();
+        prepare_execution_();
+        if (pc != cpu_.PC() || cycles != cpu_.GetCycleCount())
+            history_.MachineTransition(pc, cpu_.PC(), cpu_.GetCycleCount() - cycles);
+    }
 }
 
-void DebugSession::StepRaw() {
-    // Step() consumes one opcode byte; loop until the instruction completes.
-    int guard = 0;
-    do {
-        cpu_.Step();
-    } while (!cpu_.InstructionComplete() && ++guard < kStepByteGuard);
+bool DebugSession::ExecuteOneInstruction(uint32_t stage_budget) {
+    if (!instruction_pending_) {
+        current_instruction_pc_ = cpu_.PC();
+        pending_decoded_length_ = disasm_.Decode(reader_, current_instruction_pc_).length;
+        instruction_pending_ = true;
+        instruction_start_cycle_ = cpu_.GetCycleCount();
+        cpu_.GetMemory().BeginInstructionCapture();
+    }
+    const auto result = cpu_.StepInstruction(std::min(stage_budget, uint32_t{4096}));
+    if (result.completed) {
+        cpu_.GetMemory().EndInstructionCapture();
+        history_.Complete(cpu_.GetMemory(), current_instruction_pc_, cpu_.PC(),
+                          cpu_.GetCycleCount() - instruction_start_cycle_);
+        RecordCoverage(current_instruction_pc_, pending_decoded_length_);
+        instruction_pending_ = false;
+    }
+    if (advance_execution_) advance_execution_();
+    return result.completed;
 }
 
 bool DebugSession::BreakpointStopsAt(uint16_t pc) const {
@@ -91,7 +107,10 @@ bool DebugSession::BreakpointStopsAt(uint16_t pc) const {
     return it != breakpoints_.end() && it->second.enabled;
 }
 
-StepResult DebugSession::StepInstruction() {
+StepResult DebugSession::StepInstruction(uint32_t stage_budget) {
+    if (stage_budget == 0) return {StopReason::IncompleteInstruction, 0, cpu_.PC()};
+    const uint64_t before = cpu_.GetCycleCount();
+    PrepareExecution();
     if (cpu_.IsHalted()) {
         state_ = RunState::Halted;
         return {StopReason::AlreadyHalted, 0, cpu_.PC()};
@@ -101,12 +120,13 @@ StepResult DebugSession::StepInstruction() {
     skip_breakpoint_once_.reset();
     smc_break_pending_ = false;
 
-    const uint64_t before = cpu_.GetCycleCount();
-    ExecuteOneInstruction();
+    const bool completed = ExecuteOneInstruction(stage_budget);
     const uint64_t cycles = cpu_.GetCycleCount() - before;
 
     StopReason reason;
-    if (watch_hit_) {
+    if (!completed) {
+        reason = StopReason::IncompleteInstruction;
+    } else if (watch_hit_) {
         reason = StopReason::Watchpoint;
     } else if (smc_break_pending_) {
         reason = StopReason::SelfModified;
@@ -120,6 +140,9 @@ StepResult DebugSession::StepInstruction() {
 }
 
 StepResult DebugSession::StepOver() {
+    if (instruction_pending_) return StepInstruction();
+    const uint64_t before = cpu_.GetCycleCount();
+    PrepareExecution();
     if (cpu_.IsHalted()) {
         state_ = RunState::Halted;
         return {StopReason::AlreadyHalted, 0, cpu_.PC()};
@@ -129,7 +152,9 @@ StepResult DebugSession::StepOver() {
     const Instruction ins = disasm_.Decode(reader_, pc);
     const bool subroutine = (ins.mnemonic == "CALL" || ins.mnemonic == "RST");
     if (!subroutine) {
-        return StepInstruction();   // not a call: a plain single step
+        auto result = StepInstruction();
+        result.cycles = cpu_.GetCycleCount() - before;
+        return result;
     }
 
     // Set a (temporary) breakpoint at the return address and run until reached.
@@ -139,7 +164,6 @@ StepResult DebugSession::StepOver() {
         AddBreakpoint(ret, /*temporary=*/true);
     }
 
-    const uint64_t before = cpu_.GetCycleCount();
     Run();
     StepResult last{StopReason::BudgetExhausted, 0, pc};
     // Bound the synchronous run so a non-returning subroutine cannot hang.
@@ -161,10 +185,6 @@ StepResult DebugSession::StepOver() {
 }
 
 StepResult DebugSession::RunSlice(uint64_t max_instructions) {
-    if (cpu_.IsHalted()) {
-        state_ = RunState::Halted;
-        return {StopReason::Halted, 0, cpu_.PC()};
-    }
     if (state_ != RunState::Running) {
         state_ = RunState::Running;
     }
@@ -175,9 +195,15 @@ StepResult DebugSession::RunSlice(uint64_t max_instructions) {
     StopReason reason = StopReason::BudgetExhausted;
 
     for (uint64_t i = 0; i < max_instructions; ++i) {
+        PrepareExecution();
+        if (cpu_.IsHalted()) {
+            state_ = RunState::Halted;
+            reason = StopReason::Halted;
+            break;
+        }
         const uint16_t pc = cpu_.PC();
 
-        if (BreakpointStopsAt(pc)) {
+        if (!instruction_pending_ && BreakpointStopsAt(pc)) {
             const bool resuming_here =
                 skip_breakpoint_once_ && *skip_breakpoint_once_ == pc;
             if (!resuming_here) {
@@ -197,7 +223,11 @@ StepResult DebugSession::RunSlice(uint64_t max_instructions) {
         // The skip applies to at most the first instruction of the slice.
         skip_breakpoint_once_.reset();
 
-        ExecuteOneInstruction();
+        if (!ExecuteOneInstruction()) {
+            state_ = RunState::Paused;
+            reason = StopReason::IncompleteInstruction;
+            break;
+        }
 
         if (watch_hit_) {
             state_ = RunState::Paused;
@@ -220,10 +250,6 @@ StepResult DebugSession::RunSlice(uint64_t max_instructions) {
 }
 
 StepResult DebugSession::RunForTStates(uint64_t tstate_budget) {
-    if (cpu_.IsHalted()) {
-        state_ = RunState::Halted;
-        return {StopReason::Halted, 0, cpu_.PC()};
-    }
     if (state_ != RunState::Running) {
         state_ = RunState::Running;
     }
@@ -236,9 +262,15 @@ StepResult DebugSession::RunForTStates(uint64_t tstate_budget) {
     // Mirrors RunSlice's per-instruction body, but bounds by elapsed T-states
     // rather than an instruction count (the natural unit for a frame quantum).
     while (cpu_.GetCycleCount() - before < tstate_budget) {
+        PrepareExecution();
+        if (cpu_.IsHalted()) {
+            state_ = RunState::Halted;
+            reason = StopReason::Halted;
+            break;
+        }
         const uint16_t pc = cpu_.PC();
 
-        if (BreakpointStopsAt(pc)) {
+        if (!instruction_pending_ && BreakpointStopsAt(pc)) {
             const bool resuming_here =
                 skip_breakpoint_once_ && *skip_breakpoint_once_ == pc;
             if (!resuming_here) {
@@ -255,7 +287,11 @@ StepResult DebugSession::RunForTStates(uint64_t tstate_budget) {
         }
         skip_breakpoint_once_.reset();
 
-        ExecuteOneInstruction();
+        if (!ExecuteOneInstruction()) {
+            state_ = RunState::Paused;
+            reason = StopReason::IncompleteInstruction;
+            break;
+        }
 
         if (watch_hit_) {
             state_ = RunState::Paused;
@@ -284,6 +320,9 @@ void DebugSession::Reset() {
     watch_hit_.reset();
     skip_breakpoint_once_.reset();
     // A reset is a fresh run: discard the execution coverage and SMC history.
+    instruction_pending_ = false;
+    cpu_.GetMemory().EndInstructionCapture();
+    history_.Clear();
     coverage_.fill(0);
     covered_bytes_ = 0;
     smc_events_.clear();

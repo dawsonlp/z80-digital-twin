@@ -40,6 +40,10 @@ configure. ROMs and game tapes are copyrighted and are not included.
 
 ## Documentation
 
+For the first assembly development loop, open the
+[Spectrum VS Code example](examples/spectrum-dev/README.md): edit source,
+assemble with external Pasmo, and run it in the Spectrum debugger.
+
 Start with [docs/README.md](docs/README.md).
 
 - **Users:** [getting started](docs/users/getting-started.md),

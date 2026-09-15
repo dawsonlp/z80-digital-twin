@@ -50,6 +50,38 @@ DebugCPU make_cpu() {
 int main() {
     std::cout << "DebugSession unit tests\n=======================\n";
 
+    {
+        DebugCPU cpu;
+        std::vector<uint8_t> program(20, 0xDD);
+        program.insert(program.end(), {0x32, 0x00, 0x40}); // LD (4000), A
+        cpu.LoadProgram(program, 0);
+        cpu.GetMemory().SetWriteProtect(0x4000, 0x4000);
+        DebugSession session(cpu);
+        auto r = session.StepInstruction(8);
+        check(r.reason == StopReason::IncompleteInstruction && cpu.PC() == 8,
+              "partial prefix budget is explicit");
+        check(session.CoveredBytes() == 0, "incomplete instruction is not coverage");
+        session.AddBreakpoint(8); // operand/prefix continuation is not a start
+        r = session.RunSlice(1);
+        check(r.reason == StopReason::BudgetExhausted && cpu.PC() == 23,
+              "run resumes original instruction without a mid-prefix breakpoint");
+        check((session.CoverageFlags(0) & kExecOpcode) &&
+              !(session.CoverageFlags(8) & kExecOpcode),
+              "coverage keeps original start across continuation");
+        check(session.BlockedWrites().size() == 1 &&
+              session.BlockedWrites()[0].writer_pc == 0,
+              "write attribution keeps the original instruction PC");
+    }
+    {
+        DebugCPU cpu;
+        for (uint32_t a = 0; a < 65536; ++a) cpu.GetMemory().RawWrite(a, 0xDD);
+        DebugSession session(cpu);
+        auto r = session.RunSlice(1);
+        check(r.reason == StopReason::IncompleteInstruction &&
+              session.State() == RunState::Paused && session.CoveredBytes() == 0,
+              "unending prefixes pause explicitly and do not hang or claim coverage");
+    }
+
     // --- Full-instruction stepping, including across a CB prefix ------------
     std::cout << "\n[1] StepInstruction advances one whole instruction\n";
     {

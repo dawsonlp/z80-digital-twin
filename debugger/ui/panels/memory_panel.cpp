@@ -46,7 +46,7 @@ void MemoryPanel::Draw(UiContext& ctx) {
     ImGui::TextDisabled("changed bytes are highlighted");
 
     ImGui::SameLine();
-    ImGui::TextDisabled("| green=exec  magenta=SMC  amber=blocked-write  blue=read-only");
+    ImGui::TextDisabled("| green=past execution  magenta=SMC  amber=blocked-write  blue=read-only");
 
     DebugCPU& cpu = ctx.cpu();
     DebugSession& session = ctx.session;

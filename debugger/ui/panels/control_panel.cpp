@@ -29,7 +29,7 @@ void ControlPanel::Draw(UiContext& ctx) {
     ImGui::Begin("Control");
 
     const bool halted = ctx.cpu().IsHalted();
-    ImGui::BeginDisabled(halted);
+    ImGui::BeginDisabled(!ctx.session.CanAdvance());
     if (ImGui::Button("Step"))      ctx.commands.step = true;       ImGui::SameLine();
     if (ImGui::Button("Step Over")) ctx.commands.step_over = true;  ImGui::SameLine();
     if (ImGui::Button("Run"))       ctx.commands.run = true;        ImGui::SameLine();

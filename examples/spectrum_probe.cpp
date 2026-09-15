@@ -11,7 +11,7 @@
 // hand-off, or freeze in a tight loop?") without a display.
 //
 // How it works (the three layers this repo is built from):
-//   * SpectrumMachine wires the templated CPU to the ULA, tape, and frame clock
+//   * DebugSpectrumMachine wires the templated CPU to the ULA, tape, and frame clock
 //     (machine/spectrum/spectrum_machine.h) — and is deliberately headless.
 //   * DebugSession (debugger/exec) drives that same CPU one instruction at a time
 //     with full instrumentation: per-address execution coverage, dirty-RAM
@@ -73,18 +73,15 @@ std::vector<uint8_t> find_rom(const std::string& explicit_path) {
 
 // -- The instrumented frame ------------------------------------------------
 //
-// Mirrors SpectrumMachine::run_frame(), but advances the CPU through the
-// DebugSession (the breakpoint-aware, coverage-tracking stepper) instead of the
-// machine's raw inner loop. begin_frame()/end_frame() keep the ULA's border
-// timeline and frame counter correct; Interrupt(0xFF) asserts the 50 Hz /INT
-// (and wakes the ROM from its idle HALT). The session measures everything that
-// happens in between.
-void run_instrumented_frame(sm::SpectrumMachine& machine, DebugSession& session) {
-    machine.ula().begin_frame();
-    machine.cpu().Interrupt(0xFF);       // frame interrupt; wakes HALT if IFF1 set
-    session.Run();
-    session.RunForTStates(sm::timing::kTPerFrame);
-    machine.ula().end_frame();
+// Frame batching uses the same instruction lifecycle as stepping in the UI.
+void run_instrumented_frame(sm::DebugSpectrumMachine& machine, DebugSession& session) {
+    const auto frame = machine.frame_count();
+    while (machine.frame_count() == frame) {
+        const auto r = session.RunSlice(1);
+        if (r.reason == z80::dbg::StopReason::Breakpoint || r.reason == z80::dbg::StopReason::Watchpoint ||
+            r.reason == z80::dbg::StopReason::SelfModified || r.reason == z80::dbg::StopReason::IncompleteInstruction) break;
+        if (r.reason == z80::dbg::StopReason::Halted) machine.advance_execution();
+    }
 }
 
 // -- Keyboard injection (the 8x5 matrix) -----------------------------------
@@ -98,7 +95,7 @@ struct Chord {
     const char* note;   // for logging
 };
 
-void press_chord(sm::SpectrumMachine& machine, DebugSession& session, const Chord& chord,
+void press_chord(sm::DebugSpectrumMachine& machine, DebugSession& session, const Chord& chord,
                  int hold_frames, int gap_frames) {
     machine.ula().release_all_keys();
     for (const kb::Key& k : chord.keys) machine.ula().key_down(k.half_row, k.bit);
@@ -138,7 +135,7 @@ std::vector<Chord> script_to_chords(const std::string& in) {
     return out;
 }
 
-void type_script(sm::SpectrumMachine& machine, DebugSession& session, const std::string& script) {
+void type_script(sm::DebugSpectrumMachine& machine, DebugSession& session, const std::string& script) {
     std::cout << "Typing on the keyboard matrix: \"" << script << "\"\n";
     for (const Chord& chord : script_to_chords(script))
         press_chord(machine, session, chord, /*hold=*/4, /*gap=*/4);
@@ -150,8 +147,8 @@ void type_script(sm::SpectrumMachine& machine, DebugSession& session, const std:
 // and print the 256x192 display area downsampled to one char per 4x8 cell:
 // '#' if the cell holds any non-paper (ink) pixel, ' ' otherwise. Enough to read
 // text and make out sprites headlessly.
-void dump_screen_ascii(const sm::SpectrumMachine& machine) {
-    std::array<uint8_t, sm::SpectrumMachine::kPixels> px{};
+void dump_screen_ascii(const sm::DebugSpectrumMachine& machine) {
+    std::array<uint8_t, sm::DebugSpectrumMachine::kPixels> px{};
     machine.render_indices(px);
 
     std::array<int, 16> hist{};
@@ -192,7 +189,7 @@ struct Window {
     int non_screen_writes = 0;
 };
 
-void report_window(DebugSession& session, sm::SpectrumMachine& machine, int frames, int window) {
+void report_window(DebugSession& session, sm::DebugSpectrumMachine& machine, int frames, int window) {
     std::cout << "\nframe   +code   RAMwr  PC-range        hotpage  border  state\n";
     Window w;
     w.cov_before = session.CoveredBytes();
@@ -290,13 +287,15 @@ int main(int argc, char** argv) {
     const std::vector<uint8_t> rom = find_rom(rom_path);
     if (rom.empty()) { std::cerr << "No ROM found. Pass a path or set Z80_SPEC48_ROM.\n"; return 1; }
 
-    sm::SpectrumMachine machine;
+    sm::DebugSpectrumMachine machine;
     if (!machine.load_rom(rom)) { std::cerr << "Failed to load ROM (<=16 KB).\n"; return 1; }
     machine.set_rom_write_protect(true);
 
     // The DebugSession drives the very CPU the machine runs (same template config),
     // giving full instrumentation over the live machine.
     DebugSession session(machine.cpu());
+    session.SetExecutionHooks([&] { machine.prepare_execution(); },
+                              [&] { machine.advance_execution(); });
 
     if (!tape_path.empty()) {
         const std::vector<uint8_t> tape = read_file(tape_path);

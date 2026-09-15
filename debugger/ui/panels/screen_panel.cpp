@@ -7,7 +7,7 @@
 #include "screen_panel.h"
 #include "ui_context.h"
 
-#include "spectrum/ula.h"
+#include "spectrum/spectrum_machine.h"
 #include "spectrum/video.h"
 #include "spectrum/screen.h"
 
@@ -26,11 +26,10 @@ namespace s = z80::machine::spectrum::screen;
 }
 
 void SpectrumScreenPanel::Draw(UiContext& /*ctx*/) {
-    z80::machine::spectrum::Ula& ula = *ula_;
 
     // Render the current frame to palette indices, then to RGBA8888.
     std::array<uint8_t, v::kFramePixels> indices{};
-    v::render_frame(ula, ula.flash_on(), indices);
+    machine_->render_indices(indices);
 
     std::array<uint32_t, v::kFramePixels> rgba{};
     for (std::size_t i = 0; i < indices.size(); ++i) {
@@ -51,6 +50,9 @@ void SpectrumScreenPanel::Draw(UiContext& /*ctx*/) {
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, v::kFrameWidth, v::kFrameHeight,
                     GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
 
+    // Leave execution controls, registers and disassembly visible on first run.
+    ImGui::SetNextWindowPos(ImVec2(525, 120), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(670, 580), ImGuiCond_FirstUseEver);
     ImGui::Begin("Spectrum Screen");
     ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<intptr_t>(texture_)),
                  ImVec2(v::kFrameWidth * 2.0f, v::kFrameHeight * 2.0f));

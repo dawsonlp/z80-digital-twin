@@ -45,6 +45,7 @@ set(CORE_HEADERS
     src/z80_cpu.h
     src/memory/fast_memory.h
     src/memory/observable_memory.h
+    src/memory/metadata_memory.h
     src/io/open_bus_io.h
     src/io/latched_io.h
     src/io/observable_io.h
@@ -73,6 +74,8 @@ target_compile_features(z80_cpu PUBLIC cxx_std_23)
 add_library(z80_debugger_core STATIC
     debugger/exec/debug_session.cpp
     debugger/exec/debug_session.h
+    debugger/exec/instruction_history.h
+    debugger/disasm/address_listing.h
     debugger/disasm/disassembler.cpp
     debugger/disasm/disassembler.h
     debugger/disasm/pasmo_source.cpp
@@ -212,7 +215,13 @@ target_link_libraries(spectrum_boot_test PRIVATE z80_machine)
 add_executable(spectrum_debug_test tests/spectrum_debug_test.cpp)
 target_link_libraries(spectrum_debug_test PRIVATE z80_debugger_core z80_machine)
 
+add_executable(spectrum_program_test tests/spectrum_program_test.cpp)
+target_link_libraries(spectrum_program_test PRIVATE z80_debugger_core z80_machine)
+
 # Debugger execution core (stepping, breakpoints, watchpoints)
+add_executable(instruction_history_test tests/instruction_history_test.cpp)
+target_link_libraries(instruction_history_test PRIVATE z80_debugger_core)
+
 add_executable(debug_session_test tests/debug_session_test.cpp)
 target_link_libraries(debug_session_test PRIVATE z80_debugger_core)
 
@@ -228,6 +237,11 @@ target_link_libraries(z80_disassemble PRIVATE z80_debugger_core)
 find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
 find_program(Z80_PASMO_EXECUTABLE NAMES pasmo DOC "Pasmo 0.5.5 executable for assembly verification")
 if(Python3_Interpreter_FOUND)
+    add_test(NAME spectrum_dev_workflow
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/spectrum_dev_test.py
+            --pasmo ${Z80_PASMO_EXECUTABLE}
+            --runner $<TARGET_FILE:spectrum_program_test>)
+    set_tests_properties(spectrum_dev_workflow PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
     foreach(gate assembler section)
         add_test(NAME disassembly_${gate}
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/assembly_roundtrip.py
@@ -276,7 +290,7 @@ foreach(test
         instruction_timing_test refresh_register_test timing_test
         machine_test screen_decode_test
         video_test keyboard_test raster_test floating_bus_test tape_test beeper_test
-        spectrum_boot_test spectrum_debug_test debug_session_test
+        spectrum_boot_test spectrum_debug_test spectrum_program_test debug_session_test instruction_history_test
         disassembler_test symbol_table_test)
     add_test(NAME ${test} COMMAND ${test})
 endforeach()

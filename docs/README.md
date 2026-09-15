@@ -6,6 +6,8 @@
 
 ## Users
 
+- [Spectrum Assembly Development](../examples/spectrum-dev/README.md): edit,
+  assemble and run a standalone RAM program from VS Code or a terminal.
 - [Getting Started](users/getting-started.md): build, run tests, and launch the
   main binaries.
 - [Spectrum Viewer](users/spectrum-viewer.md): run the ZX Spectrum 48K viewer,
@@ -17,6 +19,10 @@
 
 ## Developers
 
+- [Current Handoff](../handoff.md): completed forward development loop and the
+  next ROM-first reverse-engineering increment.
+- [Spectrum Development Loop Plan](developers/spectrum-development-loop-plan.md):
+  the first complete VS Code, Pasmo and Spectrum build/run milestone.
 - [Architecture](developers/architecture.md): core engine, machine layer,
   debugger layer, and policy model.
 - [Source Architecture Feedback](developers/source-architecture-feedback.md):

@@ -1,0 +1,10 @@
+{
+  "target": "spectrum48",
+  "source": "main.asm",
+  "include_paths": [],
+  "defines": [],
+  "origin": "0x8000",
+  "entry": "start",
+  "stack": "0xff00",
+  "stack_reserve": 256
+}

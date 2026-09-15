@@ -6,7 +6,7 @@
 // DebugSession owns the debugger's execution loop. It drives a DebugCPU one
 // whole instruction at a time, runs bounded slices with inline breakpoint
 // checks, and surfaces memory-write events (dirty cells + write-watchpoints)
-// via the ObservableMemory write observers. It holds no UI state; a UI layer
+// via the MetadataMemory write observers. It holds no UI state; a UI layer
 // calls into it and reads CPU state through it.
 //
 // Lifetime/RAII: the session installs a write hook capturing `this` for its
@@ -18,14 +18,16 @@
 #define Z80_DBG_DEBUG_SESSION_H
 
 #include "z80_cpu.h"
-#include "memory/observable_memory.h"
+#include "memory/metadata_memory.h"
 #include "io/latched_io.h"
 #include "io/observable_io.h"
 #include "io/callback_io.h"
 #include "disassembler.h"
+#include "instruction_history.h"
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -37,15 +39,15 @@ namespace z80::dbg {
 ///        observable I/O device wrapping a CallbackIo. The transaction log feeds
 ///        the I/O panel; the inner CallbackIo lets a machine (e.g. the ZX
 ///        Spectrum ULA) hook its ports. With no handler installed the ports read
-///        as an open bus. This is the *same* config the SpectrumMachine uses, so
+///        as an open bus. This is the *same* config the DebugSpectrumMachine uses, so
 ///        a DebugSession can drive a running Spectrum directly.
-using DebugCPU = CPUImpl<ObservableMemory, ObservableIo<CallbackIo>>;
+using DebugCPU = CPUImpl<MetadataMemory, ObservableIo<CallbackIo>>;
 
 /// @brief High-level run state of the session.
 enum class RunState {
     Paused,   ///< Not executing; waiting for a command.
     Running,  ///< Free-running in bounded slices.
-    Halted,   ///< CPU executed HALT; nothing left to run.
+    Halted,   ///< CPU halted; an attached machine may subsequently wake it.
 };
 
 /// @brief Why the most recent execution action stopped.
@@ -56,13 +58,14 @@ enum class StopReason {
     Halted,            ///< CPU reached HALT.
     BudgetExhausted,   ///< Run slice used its full instruction budget.
     AlreadyHalted,     ///< Action requested while already halted (no-op).
+    IncompleteInstruction, ///< Prefix-stage budget exhausted; execution can continue.
     SelfModified,      ///< Paused because Break-on-SMC was armed and code was written.
 };
 
 /// @brief Per-address execution/coverage flags (bitmask).
 enum CoverageFlag : uint8_t {
     kExecOpcode   = 1u << 0,  ///< Was executed as an instruction's first byte.
-    kExecOperand  = 1u << 1,  ///< Was an operand byte of an executed instruction.
+    kExecOperand  = 1u << 1,  ///< Decoder-derived span of a completed instruction; not observed fetches.
     kSelfModified = 1u << 2,  ///< Written after having executed as code (SMC).
     kBlockedWrite = 1u << 3,  ///< A write here was refused (write-protected, e.g. ROM).
 };
@@ -114,8 +117,16 @@ public:
 
     // -- Execution control ---------------------------------------------------
 
-    /// @brief Advance exactly one whole instruction (across any prefix bytes).
-    StepResult StepInstruction();
+    /// @brief Advance/continue one instruction; at most 4096 stages per action.
+    ///        Report prefix-budget exhaustion explicitly; retain continuation state.
+    StepResult StepInstruction(uint32_t stage_budget = 4096);
+
+    // Machine lifecycle hooks surround execution, never UI refresh or pause.
+    // Preparation may deliver a machine interrupt before breakpoint evaluation.
+    void SetExecutionHooks(std::function<void()> prepare, std::function<void()> advance) {
+        prepare_execution_ = std::move(prepare);
+        advance_execution_ = std::move(advance);
+    }
 
     /// @brief Step a whole instruction, but run CALL/RST subroutines to
     ///        completion (stopping at the instruction after the call).
@@ -136,7 +147,7 @@ public:
     void Pause() noexcept { if (state_ != RunState::Halted) state_ = RunState::Paused; }
 
     /// @brief Execute up to @p max_instructions, stopping early on a breakpoint,
-    ///        watchpoint, or HALT. Only runs when State() == Running.
+    ///        watchpoint, HALT or incomplete instruction. Starts Running.
     /// @details On a breakpoint/watchpoint/HALT the state becomes Paused/Halted;
     ///          if the budget is exhausted the state stays Running so the caller
     ///          continues next frame. Resuming from a breakpoint executes the
@@ -165,7 +176,7 @@ public:
     [[nodiscard]] bool HasBreakpoint(uint16_t address) const;
     [[nodiscard]] std::vector<Breakpoint> Breakpoints() const;
 
-    // -- Write watchpoints (powered by an ObservableMemory observer) ---------
+    // -- Write watchpoints (powered by a MetadataMemory observer) ---------
 
     void AddWatchpoint(uint16_t address) { watchpoints_.insert(address); }
     void RemoveWatchpoint(uint16_t address) { watchpoints_.erase(address); }
@@ -184,6 +195,8 @@ public:
         return dirty_;
     }
     void ClearDirty() noexcept { dirty_.clear(); }
+
+    [[nodiscard]] const InstructionHistory& History() const { return history_; }
 
     // -- Execution coverage (L1) ---------------------------------------------
 
@@ -219,6 +232,9 @@ public:
     void SetBreakOnSmc(bool on) noexcept { break_on_smc_ = on; }
     [[nodiscard]] bool BreakOnSmc() const noexcept { return break_on_smc_; }
 
+    // A machine may wake a halted CPU through its ordinary hardware lifecycle.
+    [[nodiscard]] bool CanAdvance() const { return !cpu_.IsHalted() || bool(prepare_execution_); }
+
     // -- State accessors -----------------------------------------------------
 
     [[nodiscard]] RunState State() const noexcept { return state_; }
@@ -226,15 +242,14 @@ public:
     [[nodiscard]] const DebugCPU& Cpu() const noexcept { return cpu_; }
 
 private:
-    /// @brief Execute one whole instruction: stamp coverage + writer PC, step.
-    void ExecuteOneInstruction();
+    /// @brief Preserve writer context; publish coverage only on completion.
+    bool ExecuteOneInstruction(uint32_t stage_budget = 4096);
 
-    /// @brief Run Step() until the CPU is at an instruction boundary.
-    void StepRaw();
+    /// @brief Let the attached machine deliver events before executing/checking PC.
+    void PrepareExecution();
 
-    /// @brief Record the coverage span of the instruction at @p start, decoding
-    ///        it only the first time that start executes (amortized ~free).
-    void RecordCoverage(uint16_t start);
+    /// @brief Record a completed start and its separately decoded pre-execution span.
+    void RecordCoverage(uint16_t start, uint32_t decoded_length);
 
     /// @brief Whether an enabled breakpoint exists at @p pc.
     [[nodiscard]] bool BreakpointStopsAt(uint16_t pc) const;
@@ -245,9 +260,11 @@ private:
     /// @brief Hook target: a write to write-protected memory was refused.
     void OnBlockedWrite(uint16_t address, uint8_t current_value, uint8_t attempted_value);
 
-    // Bound generously above the longest Z80 prefix chain (DD CB d op = 3
-    // Step() calls); guards against a non-advancing step loop.
-    static constexpr int kStepByteGuard = 8;
+    std::function<void()> prepare_execution_, advance_execution_;
+    bool instruction_pending_ = false;
+    uint32_t pending_decoded_length_ = 0;
+    uint64_t instruction_start_cycle_ = 0;
+    InstructionHistory history_;
 
     DebugCPU& cpu_;
     Disassembler disasm_;

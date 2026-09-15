@@ -77,6 +77,7 @@ MinSizeRel/
 Thumbs.db
 
 # Temporary files
+__pycache__/
 *.tmp
 *.temp
 *.log

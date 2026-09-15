@@ -44,6 +44,7 @@ const char* reason_text(StopReason r) {
         case StopReason::Watchpoint:      return "watchpoint";
         case StopReason::Halted:          return "halted";
         case StopReason::BudgetExhausted: return "running";
+        case StopReason::IncompleteInstruction: return "instruction incomplete (prefix budget)";
         case StopReason::AlreadyHalted:   return "already halted";
         case StopReason::SelfModified:    return "self-modifying code!";
     }
@@ -66,7 +67,7 @@ DebuggerApp::DebuggerApp() {
 }
 
 UiContext DebuggerApp::MakeContext() {
-    return UiContext{session_, symbols_, disasm_, commands_, status_, disasm_goto_};
+    return UiContext{*session_, symbols_, disasm_, commands_, status_, disasm_goto_};
 }
 
 bool DebuggerApp::LoadProgramFile(const std::string& path, uint16_t start_address) {
@@ -77,9 +78,9 @@ bool DebuggerApp::LoadProgramFile(const std::string& path, uint16_t start_addres
     }
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
                                std::istreambuf_iterator<char>());
-    cpu_.Reset();
-    cpu_.LoadProgram(bytes, start_address);
-    session_.ClearDirty();   // program load isn't a "change" to highlight
+    session_->Cpu().Reset();
+    session_->Cpu().LoadProgram(bytes, start_address);
+    session_->ClearDirty();   // program load isn't a "change" to highlight
     status_ = std::format("Loaded {} bytes from {}", bytes.size(), path);
     return true;
 }
@@ -108,11 +109,11 @@ void DebuggerApp::LoadDemo() {
         0x22, 0x00, 0x90, // 0x000F LD (0x9000), HL -> RESULT  (DONE)
         0x76,             // 0x0012 HALT
     };
-    cpu_.Reset();
-    cpu_.LoadProgram(program, 0x0000);
-    cpu_.HL() = 1071;     // GCD(1071, 462) = 21
-    cpu_.DE() = 462;
-    session_.ClearDirty();   // program load isn't a "change" to highlight
+    session_->Cpu().Reset();
+    session_->Cpu().LoadProgram(program, 0x0000);
+    session_->Cpu().HL() = 1071;     // GCD(1071, 462) = 21
+    session_->Cpu().DE() = 462;
+    session_->ClearDirty();   // program load isn't a "change" to highlight
 
     symbols_.DefineLabel(0x0000, "GCD_LOOP", SymbolType::Function,   "GCD by subtraction");
     symbols_.DefineLabel(0x000B, "NO_SWAP",  SymbolType::JumpTarget, "HL >= DE: loop without swap");
@@ -129,10 +130,10 @@ void DebuggerApp::LoadSmcDemo() {
     //   0x0006 18 F8     JR 0x0000
     const std::vector<uint8_t> program = {
         0x3E, 0x00, 0x21, 0x01, 0x00, 0x34, 0x18, 0xF8};
-    cpu_.Reset();
-    session_.Reset();
-    cpu_.LoadProgram(program, 0x0000);
-    session_.ClearDirty();
+    session_->Cpu().Reset();
+    session_->Reset();
+    session_->Cpu().LoadProgram(program, 0x0000);
+    session_->ClearDirty();
 
     symbols_.DefineLabel(0x0000, "LOOP",    SymbolType::Function,     "self-modifying loop");
     symbols_.DefineLabel(0x0001, "COUNTER", SymbolType::ByteVariable, "operand patched each pass");
@@ -152,64 +153,103 @@ bool DebuggerApp::LoadSpectrumRom(const std::string& path) {
         return false;
     }
 
-    cpu_.Reset();
-    cpu_.LoadProgram(rom, 0x0000);
-    rom_image_ = rom;   // kept for cold-boot reset
-
-    // Wire the ULA to this CPU (clock, RAM reader, ports via the inner CallbackIo,
-    // and the display-file write observer for beam-accurate screen).
-    ula_.set_clock([this] { return cpu_.GetCycleCount(); });
-    ula_.set_reader([this](uint16_t a) { return cpu_.ReadMemory(a); });
-    ula_.set_ear_source([this] { return tape_.ear_level(cpu_.GetCycleCount()); });
-    cpu_.GetIo().inner().OnOut([this](uint16_t p, uint8_t v) { ula_.write_port(p, v); });
-    cpu_.GetIo().inner().OnIn([this](uint16_t p) { return ula_.read_port(p); });
-    cpu_.GetMemory().AddWriteObserver(
-        [this](uint16_t a, uint8_t o, uint8_t n) { ula_.on_write(a, o, n); });
-
-    // ROM is read-only by default (real hardware): refused writes are tracked as
-    // BlockedWrite events and shown distinctly from SMC. --writable-rom lets them
-    // land instead (corrupting ROM, flagged as SMC) for "what-if" diagnosis.
-    cpu_.GetMemory().SetWriteProtect(0x0000, 0x3FFF);
-    cpu_.GetIo().SetRecording(false);   // I/O panel is quiet until the user opts in
-
-    spectrum_mode_ = true;
-    spectrum_running_ = false;
-    frame_active_ = false;
-    panels_.push_back(std::make_unique<SpectrumScreenPanel>(ula_));
-    panels_.push_back(std::make_unique<KeyboardPanel>(ula_));
-
-    session_.ClearDirty();
-    status_ = std::format("Loaded ZX Spectrum ROM ({} bytes) — press Run", rom.size());
+    ConfigureSpectrumRom(rom);
     return true;
 }
 
+void DebuggerApp::ConfigureSpectrumRom(const std::vector<uint8_t>& rom) {
+    if (!spectrum_) {
+        session_.reset();
+        spectrum_ = std::make_unique<machine::spectrum::DebugSpectrumMachine>();
+        session_ = std::make_unique<DebugSession>(spectrum_->cpu());
+        generic_cpu_.reset();
+        session_->SetExecutionHooks([this] { spectrum_->prepare_execution(); },
+                                    [this] { spectrum_->advance_execution(); });
+        spectrum_->on_frame_completed([this] { PumpAudio(); });
+        panels_.push_back(std::make_unique<SpectrumScreenPanel>(*spectrum_));
+        panels_.push_back(std::make_unique<KeyboardPanel>(spectrum_->ula()));
+    }
+    spectrum_->load_rom(rom);
+    session_->Reset();
+    rom_image_ = rom;
+    spectrum_->set_rom_write_protect(true);
+
+    spectrum_mode_ = true;
+    spectrum_running_ = false;
+
+    session_->ClearDirty();
+    status_ = std::format("Loaded ZX Spectrum ROM ({} bytes) — press Run", rom.size());
+}
+
+bool DebuggerApp::LoadSpectrumProgram(const std::string& rom_path,
+        const std::string& program_path, const machine::spectrum::ProgramLaunch& launch,
+        const std::string& symbol_path) {
+    try {
+        if (spectrum_mode_) throw std::invalid_argument("program launch requires a fresh machine");
+        auto read = [](const std::string& path) {
+            std::ifstream in(path, std::ios::binary);
+            if (!in) throw std::runtime_error("could not open " + path);
+            return std::vector<uint8_t>(std::istreambuf_iterator<char>(in), {});
+        };
+        const auto rom = read(rom_path);
+        const auto program = read(program_path);
+        if (rom.size() != 0x4000)
+            throw std::invalid_argument("standalone launch requires an exact 16384-byte ROM");
+        machine::spectrum::ValidateProgramLaunch(program.size(), launch);
+        SymbolTable symbols;
+        if (!symbol_path.empty()) {
+            std::vector<std::string> warnings;
+            if (!symbols.LoadFromFile(symbol_path, nullptr, &warnings) || !warnings.empty())
+                throw std::invalid_argument("invalid debugger symbol file: " + symbol_path);
+        }
+        // All input errors have been checked before setting up the machine.
+        ConfigureSpectrumRom(rom);
+        session_->Reset();
+        machine::spectrum::LoadRamProgram(session_->Cpu(), program, launch);
+        symbols_ = std::move(symbols);
+        disasm_goto_ = session_->Cpu().PC();
+        status_ = std::format("Spectrum program: {} bytes @ ${:04X}, entry ${:04X}",
+                              program.size(), launch.origin, launch.entry);
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Spectrum launch: " << e.what() << '\n';
+        return false;
+    }
+}
+
+void DebuggerApp::StartRunning() {
+    if (spectrum_mode_) spectrum_running_ = true;
+    else session_->Run();
+}
+
 bool DebuggerApp::LoadTape(const std::string& path) {
+    if (!spectrum_) return false;
     std::ifstream in(path, std::ios::binary);
     if (!in) { std::cerr << "Could not open tape: " << path << "\n"; return false; }
     std::vector<uint8_t> tap((std::istreambuf_iterator<char>(in)),
                              std::istreambuf_iterator<char>());
-    if (tap.empty() || !tape_.load(tap)) {
+    if (tap.empty() || !spectrum_->tape().load(tap)) {
         std::cerr << "Failed to parse tape: " << path << "\n";
         return false;
     }
     status_ = std::format("Tape: {} ({} blocks) — type LOAD\"\" then press F5",
-                          path, tape_.block_count());
+                          path, spectrum_->tape().block_count());
     return true;
 }
 
 void DebuggerApp::SetRomWriteProtect(bool on) {
-    if (on) cpu_.GetMemory().SetWriteProtect(0x0000, 0x3FFF);
-    else cpu_.GetMemory().ClearWriteProtect();
+    if (on) session_->Cpu().GetMemory().SetWriteProtect(0x0000, 0x3FFF);
+    else session_->Cpu().GetMemory().ClearWriteProtect();
     status_ = on ? "ROM write-protected (0x0000-0x3FFF)" : "ROM writable";
 }
 
 void DebuggerApp::AddBreakpoint(uint16_t address) {
-    session_.AddBreakpoint(address);
+    session_->AddBreakpoint(address);
 }
 
 void DebuggerApp::RunSpectrumFrames(uint64_t count) {
     if (!spectrum_mode_) return;
-    session_.Run();
+    session_->Run();
     spectrum_running_ = true;
     for (uint64_t i = 0; i < count && spectrum_running_; ++i) DriveSpectrumFrame();
 }
@@ -217,15 +257,14 @@ void DebuggerApp::RunSpectrumFrames(uint64_t count) {
 void DebuggerApp::ResetSpectrum() {
     // Cold boot — as if freshly started: reload the ROM image, zero RAM, reset
     // the CPU and ULA, and run. RawWrite bypasses observers and write-protection.
-    auto& mem = cpu_.GetMemory();
+    auto& mem = session_->Cpu().GetMemory();
     for (std::size_t i = 0; i < rom_image_.size() && i < 0x4000; ++i)
         mem.RawWrite(static_cast<uint16_t>(i), rom_image_[i]);
     for (uint32_t a = 0x4000; a <= 0xFFFF; ++a)
         mem.RawWrite(static_cast<uint16_t>(a), 0x00);
 
-    ula_.reset();
-    session_.Reset();            // cpu.Reset() + clear coverage/SMC/blocked/dirty
-    frame_active_ = false;
+    spectrum_->reset_timing();
+    session_->Reset();            // cpu.Reset() + clear coverage/SMC/blocked/dirty
     spectrum_running_ = true;     // re-boot and run
     status_ = "Reset (cold boot)";
 }
@@ -233,52 +272,38 @@ void DebuggerApp::ResetSpectrum() {
 void DebuggerApp::PumpAudio() {
     if (!sound_) return;
     audio_samples_.clear();
-    for (const auto& e : ula_.beeper_edges())
+    for (const auto& e : spectrum_->ula().beeper_edges())
         beeper_.edge(e.cycle, e.level, audio_samples_);
-    beeper_.advance(cpu_.GetCycleCount(), audio_samples_);
+    beeper_.advance(session_->Cpu().GetCycleCount(), audio_samples_);
     audio_.push(audio_samples_);
 }
 
 void DebuggerApp::DriveSpectrumFrame() {
-    using machine::spectrum::timing::kTPerFrame;
-
-    if (!frame_active_) {
-        // Frame boundary: assert the 50 Hz interrupt (wakes any HALT), start a
-        // fresh display-write history, and budget one frame of T-states.
-        cpu_.Interrupt(0xFF);
-        ula_.begin_frame();
-        frame_budget_ = kTPerFrame;
-        frame_active_ = true;
+    const auto frame = spectrum_->frame_count();
+    while (spectrum_->frame_count() == frame) {
+        const StepResult r = session_->RunSlice(1);
+        if (r.reason == StopReason::Breakpoint || r.reason == StopReason::Watchpoint ||
+            r.reason == StopReason::SelfModified || r.reason == StopReason::IncompleteInstruction) {
+            spectrum_running_ = false;
+            status_ = std::format("Spectrum stopped: {} @ 0x{:04X}", reason_text(r.reason), r.pc);
+            break;
+        }
+        if (r.reason == StopReason::Halted && spectrum_->frame_count() == frame) {
+            spectrum_->advance_execution();
+        }
     }
-
-    const StepResult r = session_.RunForTStates(frame_budget_);
-    frame_budget_ = (r.cycles >= frame_budget_) ? 0 : (frame_budget_ - r.cycles);
-
-    if (r.reason == StopReason::Breakpoint || r.reason == StopReason::Watchpoint ||
-        r.reason == StopReason::SelfModified) {
-        // A user stop mid-frame: pause the machine but keep the frame open so a
-        // Resume continues this same frame (no new interrupt).
-        spectrum_running_ = false;
-        status_ = std::format("Spectrum stopped: {} @ 0x{:04X}", reason_text(r.reason), r.pc);
-        return;
-    }
-
-    // Budget reached, or the ROM HALTed to wait for the next interrupt: the frame
-    // is done. (HALT is normal idling here, not a terminal stop.)
-    ula_.end_frame();
-    frame_active_ = false;
 }
 
 void DebuggerApp::PollSpectrumKeyboard() {
     if (!spectrum_mode_ || ImGui::GetIO().WantCaptureKeyboard) return;
     namespace kb = machine::spectrum::keyboard;
 
-    ula_.release_all_keys();
+    spectrum_->ula().release_all_keys();
     const auto down = [this](int key) { return glfwGetKey(window_, key) == GLFW_PRESS; };
-    const auto press = [this](kb::Key k) { ula_.key_down(k.half_row, k.bit); };
+    const auto press = [this](kb::Key k) { spectrum_->ula().key_down(k.half_row, k.bit); };
 
     for (const kb::AsciiKey& k : kb::kAsciiKeys)
-        if (down(k.c)) ula_.key_down(k.half_row, k.bit);
+        if (down(k.c)) spectrum_->ula().key_down(k.half_row, k.bit);
     if (down(GLFW_KEY_ENTER)) press(kb::kEnter);
     if (down(GLFW_KEY_SPACE)) press(kb::kSpace);
     if (down(GLFW_KEY_LEFT_SHIFT) || down(GLFW_KEY_RIGHT_SHIFT)) press(kb::kCapsShift);
@@ -287,9 +312,11 @@ void DebuggerApp::PollSpectrumKeyboard() {
 }
 
 void DebuggerApp::RunInstructions(uint64_t count) {
+    spectrum_running_ = false;
     for (uint64_t i = 0; i < count; ++i) {
-        const StepResult r = session_.StepInstruction();
-        if (r.reason == StopReason::Halted || r.reason == StopReason::AlreadyHalted) break;
+        const StepResult r = session_->StepInstruction();
+        if (r.reason == StopReason::Halted || r.reason == StopReason::AlreadyHalted ||
+            r.reason == StopReason::IncompleteInstruction) break;
     }
 }
 
@@ -298,30 +325,32 @@ void DebuggerApp::ExecuteCommands() {
         if (spectrum_mode_) {
             ResetSpectrum();     // cold boot the machine
         } else {
-            session_.Reset();
+            session_->Reset();
             status_ = "Reset";
         }
     }
     if (commands_.step) {
-        session_.ClearDirty();
-        const StepResult r = session_.StepInstruction();
+        spectrum_running_ = false;
+        session_->ClearDirty();
+        const StepResult r = session_->StepInstruction();
         status_ = std::format("Step: {} @ 0x{:04X} (+{} T)",
                               reason_text(r.reason), r.pc, r.cycles);
     }
     if (commands_.step_over) {
-        session_.ClearDirty();
-        const StepResult r = session_.StepOver();
+        spectrum_running_ = false;
+        session_->ClearDirty();
+        const StepResult r = session_->StepOver();
         status_ = std::format("Step over: {} @ 0x{:04X} (+{} T)",
                               reason_text(r.reason), r.pc, r.cycles);
     }
     if (commands_.run) {
-        session_.ClearDirty();
-        session_.Run();
+        session_->ClearDirty();
+        session_->Run();
         if (spectrum_mode_) { spectrum_running_ = true; status_ = "Spectrum running (50 Hz)"; }
         else status_ = "Running...";
     }
     if (commands_.pause) {
-        session_.Pause();
+        session_->Pause();
         spectrum_running_ = false;
         status_ = "Paused";
     }
@@ -340,17 +369,16 @@ void DebuggerApp::ExecuteCommands() {
             int ran = 0;
             while (frame_accum_ >= period && ran < 4 && spectrum_running_) {
                 DriveSpectrumFrame();
-                PumpAudio();
                 frame_accum_ -= period;
                 ++ran;
             }
         } else {
             paced_ = false;   // reset pacing while paused so resume doesn't catch up
         }
-    } else if (session_.State() == RunState::Running) {
+    } else if (session_->State() == RunState::Running) {
         // While running, advance a bounded slice per frame.
-        const StepResult r = session_.RunSlice(run_budget_);
-        if (session_.State() != RunState::Running) {
+        const StepResult r = session_->RunSlice(run_budget_);
+        if (session_->State() != RunState::Running) {
             status_ = std::format("Stopped: {} @ 0x{:04X}", reason_text(r.reason), r.pc);
         }
     }
@@ -470,7 +498,7 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
         if (spectrum_mode_) {   // F5 = play tape (key-down edge)
             const bool f5 = glfwGetKey(window_, GLFW_KEY_F5) == GLFW_PRESS;
             if (f5 && !tape_play_prev_) {
-                tape_.play(cpu_.GetCycleCount());
+                spectrum_->tape().play(session_->Cpu().GetCycleCount());
                 status_ = "Tape: playing";
             }
             tape_play_prev_ = f5;

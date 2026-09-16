@@ -166,6 +166,8 @@ public:
 
     /// @brief Reset the CPU and pause. Breakpoints and watchpoints are kept.
     void Reset();
+    void ResetCpu();
+    bool ClearAnalysis(); // false while an instruction is incomplete
 
     // -- Breakpoints ---------------------------------------------------------
 

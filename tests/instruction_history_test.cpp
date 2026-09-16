@@ -15,6 +15,69 @@ bool has_row(const std::vector<AddressRow>& rows, uint16_t address) {
 int main() {
     {
         DebugCPU cpu; DebugSession session(cpu);
+        using Kind = z80::MetadataMemory::AccessKind;
+        auto count = [&](uint16_t address, Kind kind) {
+            return cpu.GetMemory().Metadata(address).activity[size_t(kind)].count;
+        };
+        cpu.LoadProgram({0x21, 0, 0x90, 0x34, 0x7E, 0x77}, 0x8000);
+        cpu.PC() = 0x8000;
+        session.StepInstruction(); session.StepInstruction();
+        check(count(0x9000, Kind::DataRead) == 1 && count(0x9000, Kind::Write) == 1 &&
+              count(0x9000, Kind::Change) == 1, "INC memory counts one emulated read and write");
+        session.StepInstruction(); session.StepInstruction();
+        check(count(0x9000, Kind::DataRead) == 2 && count(0x9000, Kind::Write) == 2 &&
+              count(0x9000, Kind::Change) == 1, "same-value CPU write counts without a change");
+        const auto before = count(0x9000, Kind::DataRead);
+        cpu.ReadMemory(0x9000);
+        (void)Disassembler{}.Decode([&](uint16_t a) { return cpu.ReadMemory(a); }, 0x9000);
+        check(count(0x9000, Kind::DataRead) == before, "inspection never counts as CPU reads");
+        check(cpu.GetMemory().Metadata(0x9000).activity[size_t(Kind::Write)].latest.pc == 0x8005,
+              "writer is original instruction PC");
+        cpu.GetMemory().SetWriteProtect(0x9000, 0x9000); cpu.PC() = 0x8005;
+        session.StepInstruction();
+        check(count(0x9000, Kind::Refused) == 1 && count(0x9000, Kind::Write) == 2,
+              "protected writes are attributed separately");
+        session.ResetCpu();
+        check(session.History().Count(0x8000) == 1 && count(0x9000, Kind::Write) == 2,
+              "CPU reset preserves analysis");
+        const auto value = cpu.ReadMemory(0x9000);
+        check(session.ClearAnalysis() && session.History().AddressCount() == 0 &&
+              count(0x9000, Kind::Write) == 0 && cpu.ReadMemory(0x9000) == value &&
+              cpu.GetMemory().WriteProtected(0x9000), "clear analysis preserves bytes and protection");
+        cpu.LoadProgram({0xDD, 0x21, 0, 0x90}, 0x8000); cpu.PC() = 0x8000;
+        session.StepInstruction(1);
+        check(!session.ClearAnalysis(), "cannot clear across a pending instruction");
+        session.StepInstruction();
+        check(cpu.GetMemory().Metadata(0x8003).activity[size_t(Kind::Instruction)].latest.pc == 0x8000,
+              "prefix continuation preserves original instruction attribution");
+        cpu.IFF1() = true; cpu.SP() = 0xA000;
+        check(cpu.Interrupt(0xFF), "test interrupt accepted");
+        check(cpu.GetMemory().Metadata(0x9FFF).activity[size_t(Kind::Write)].latest.interrupt,
+              "interrupt stack writes are distinct from instruction writes");
+    }
+    {
+        DebugCPU cpu; DebugSession session(cpu);
+        cpu.LoadProgram({0x3E, 0, 0x21, 1, 0x80, 0x34, 0x18, 0xF8}, 0x8000);
+        session.RunSlice(32768 + 40000);
+        check(session.History().State(0x7FFF, cpu.GetMemory()) == EvidenceState::Observed &&
+              session.History().Count(0x7FFF) == 1,
+              "NOP evidence survives long self-modifying loop");
+        check(session.History().SelfModified(0x8000), "operand mutation sets sticky instruction fact");
+        check(cpu.GetMemory().Metadata(0x8001).self_modified, "operand byte retains self-modification");
+        session.StepInstruction(); // next LD observes current operand
+        check(session.History().State(0x8000, cpu.GetMemory()) == EvidenceState::Observed &&
+              session.History().SelfModified(0x8000), "observed and self-modified coexist");
+        const auto storage = cpu.GetMemory().ActivityStorageBytes();
+        const auto entries = session.History().AddressCount();
+        session.RunSlice(40000);
+        check(session.History().AddressCount() == entries &&
+              session.History().Events().size() == InstructionHistory::kCapacity &&
+              cpu.GetMemory().ActivityStorageBytes() == storage,
+              "loop does not accumulate address versions or unbounded history");
+        std::cout << "Fixed byte activity storage: " << storage << " bytes\n";
+    }
+    {
+        DebugCPU cpu; DebugSession session(cpu);
         cpu.LoadProgram({0x3E, 2, 0x3A, 0x00, 0x90}, 0x8000);
         cpu.PC() = 0x8000; cpu.WriteMemory(0x9000, 0xA5);
         session.StepInstruction();
@@ -97,8 +160,8 @@ int main() {
         session.RunSlice(InstructionHistory::kCapacity + 2);
         check(session.History().Events().size() == InstructionHistory::kCapacity && session.History().Dropped() == 2,
               "bounded history reports evictions");
-        check(session.History().State(0, cpu.GetMemory()) == EvidenceState::NotRetained &&
-              session.History().Latest(2) != nullptr, "eviction removes dangling anchors but retains execution count");
+        check(session.History().State(0, cpu.GetMemory()) == EvidenceState::Observed &&
+              session.History().Latest(2) != nullptr, "eviction preserves owned address evidence and execution count");
     }
     {
         DebugCPU cpu; DebugSession session(cpu);

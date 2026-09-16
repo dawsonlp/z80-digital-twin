@@ -49,8 +49,16 @@ void DebugSession::OnMemoryWrite(uint16_t address, uint8_t old_value,
         watch_hit_ = address;
     }
 
+    if (old_value == new_value) return; // a write is not necessarily a change
+    if (cpu_.GetMemory().CpuInstructionAccess()) {
+        history_.CodeWrite(address);
+        for (const auto& read : cpu_.GetMemory().InstructionReads())
+            if (read.address == address) history_.MarkSelfModified(current_instruction_pc_);
+    }
+
     // Self-modifying code: a write to a byte that has executed as code (L2).
-    if (coverage_[address] & (kExecOpcode | kExecOperand)) {
+    if (cpu_.GetMemory().CpuInstructionAccess() &&
+        (coverage_[address] & (kExecOpcode | kExecOperand))) {
         coverage_[address] |= kSelfModified;
         ++smc_total_;
         if (smc_events_.size() < kMaxSmcEvents) {
@@ -95,6 +103,8 @@ bool DebugSession::ExecuteOneInstruction(uint32_t stage_budget) {
         cpu_.GetMemory().EndInstructionCapture();
         history_.Complete(cpu_.GetMemory(), current_instruction_pc_, cpu_.PC(),
                           cpu_.GetCycleCount() - instruction_start_cycle_);
+        for (const auto& read : cpu_.GetMemory().InstructionReads())
+            cpu_.GetMemory().MarkInstructionByte(read);
         RecordCoverage(current_instruction_pc_, pending_decoded_length_);
         instruction_pending_ = false;
     }
@@ -313,15 +323,21 @@ StepResult DebugSession::RunForTStates(uint64_t tstate_budget) {
     return {reason, cpu_.GetCycleCount() - before, cpu_.PC()};
 }
 
-void DebugSession::Reset() {
+void DebugSession::ResetCpu() {
     cpu_.Reset();
     state_ = RunState::Paused;
     dirty_.clear();
     watch_hit_.reset();
     skip_breakpoint_once_.reset();
-    // A reset is a fresh run: discard the execution coverage and SMC history.
     instruction_pending_ = false;
     cpu_.GetMemory().EndInstructionCapture();
+    smc_break_pending_ = false;
+}
+
+bool DebugSession::ClearAnalysis() {
+    if (instruction_pending_) return false;
+    cpu_.GetMemory().EndInstructionCapture();
+    cpu_.GetMemory().ClearActivity();
     history_.Clear();
     coverage_.fill(0);
     covered_bytes_ = 0;
@@ -330,6 +346,12 @@ void DebugSession::Reset() {
     blocked_writes_.clear();
     blocked_total_ = 0;
     smc_break_pending_ = false;
+    return true;
+}
+
+void DebugSession::Reset() {
+    ResetCpu();
+    ClearAnalysis();
 }
 
 void DebugSession::AddBreakpoint(uint16_t address, bool temporary) {

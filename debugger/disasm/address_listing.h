@@ -22,6 +22,10 @@ inline std::vector<AddressRow> BuildAddressListing(const MetadataMemory& memory,
         uint16_t pc, uint16_t destination) {
     // Modified starts are inspection markers only; their new decoding remains tentative.
     auto anchors = history.RetainedStarts();
+    // Architecturally defined entries are navigable boundaries, not evidence
+    // that their current bytes have executed.
+    for (uint16_t vector = 0; vector <= 0x38; vector += 8) anchors.push_back(vector);
+    anchors.push_back(0x66);
     anchors.push_back(pc); anchors.push_back(destination);
     std::sort(anchors.begin(), anchors.end());
     anchors.erase(std::unique(anchors.begin(), anchors.end()), anchors.end());

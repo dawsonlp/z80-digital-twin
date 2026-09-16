@@ -64,6 +64,9 @@ public:
                      SymbolType type = SymbolType::Label,
                      std::string description = {});
 
+    /// Add architectural vector defaults without replacing existing addresses or names.
+    void AddZ80VectorDefaults();
+
     void Remove(uint16_t address);
     void Clear() noexcept;
 

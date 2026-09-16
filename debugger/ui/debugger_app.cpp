@@ -58,6 +58,7 @@ void glfw_error_callback(int error, const char* description) {
 } // namespace
 
 DebuggerApp::DebuggerApp() {
+    symbols_.AddZ80VectorDefaults();
     panels_.push_back(std::make_unique<ControlPanel>());
     panels_.push_back(std::make_unique<RegistersPanel>());
     panels_.push_back(std::make_unique<DisassemblyPanel>());
@@ -207,6 +208,7 @@ bool DebuggerApp::LoadSpectrumProgram(const std::string& rom_path,
         session_->Reset();
         machine::spectrum::LoadRamProgram(session_->Cpu(), program, launch);
         symbols_ = std::move(symbols);
+        symbols_.AddZ80VectorDefaults();
         disasm_goto_ = session_->Cpu().PC();
         status_ = std::format("Spectrum program: {} bytes @ ${:04X}, entry ${:04X}",
                               program.size(), launch.origin, launch.entry);
@@ -321,6 +323,10 @@ void DebuggerApp::RunInstructions(uint64_t count) {
 }
 
 void DebuggerApp::ExecuteCommands() {
+    if (commands_.clear_analysis) {
+        status_ = session_->ClearAnalysis() ? "Analysis cleared; machine state preserved" :
+            "Complete the pending instruction before clearing analysis";
+    }
     if (commands_.reset) {
         if (spectrum_mode_) {
             ResetSpectrum();     // cold boot the machine

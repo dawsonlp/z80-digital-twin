@@ -175,6 +175,21 @@ int main() {
         check(without.text == "JP 0x1234", "no resolver -> hex");
     }
 
+    {
+        SymbolTable defaults;
+        defaults.AddZ80VectorDefaults();
+        check(defaults.Size() == 9, "eight restart entries plus NMI");
+        check(defaults.Resolve("RST_38_IM1") == 0x38 && defaults.Resolve("NMI_66") == 0x66,
+              "interrupt entries are named and navigable");
+        defaults.DefineLabel(0x38, "USER_IRQ");
+        defaults.AddZ80VectorDefaults();
+        check(defaults.ResolveName(0x38) == "USER_IRQ", "user vector label survives default seeding");
+        defaults.Clear(); defaults.DefineLabel(0x9000, "RST_08");
+        defaults.AddZ80VectorDefaults();
+        check(defaults.Resolve("RST_08") == 0x9000 && !defaults.Lookup(8),
+              "default names do not steal user names");
+    }
+
     std::cout << "\n=================\n";
     if (failures == 0) {
         std::cout << "✅ ALL SYMBOL-TABLE CHECKS PASSED\n";

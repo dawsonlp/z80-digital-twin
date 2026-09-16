@@ -71,6 +71,8 @@ bool CPUImpl<Memory, Io>::Interrupt(uint8_t bus) {
     // re-entered between the two).
     if (!_IFF1 || ei_defer_ || !InstructionComplete()) return false;
 
+    MemoryAccessScope access(*this, true);
+
     // Acceptance wakes a halted CPU. PC already points past the HALT (the fetch
     // advanced it), so it is the correct return address.
     _halted = false;
@@ -136,6 +138,7 @@ InstructionResult CPUImpl<Memory, Io>::StepInstruction(uint32_t stage_budget) {
 
 template <class Memory, class Io>
 void CPUImpl<Memory, Io>::Step() {
+    MemoryAccessScope access(*this, false);
     // EI defers interrupt acceptance until *after* the following instruction.
     // Capture the flag here; clear it once that following instruction completes.
     const bool ei_was_pending = ei_defer_;

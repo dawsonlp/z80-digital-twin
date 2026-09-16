@@ -17,6 +17,25 @@
 #include <stdexcept>
 
 namespace z80::dbg {
+
+void SymbolTable::AddZ80VectorDefaults() {
+    struct Vector { uint16_t address; const char* name; const char* description; };
+    constexpr Vector vectors[] = {
+        {0x00, "RST_00_RESET", "Z80 reset entry and RST 00h target. Architectural entry, not proof of execution."},
+        {0x08, "RST_08", "Z80 RST 08h target."},
+        {0x10, "RST_10", "Z80 RST 10h target."},
+        {0x18, "RST_18", "Z80 RST 18h target."},
+        {0x20, "RST_20", "Z80 RST 20h target."},
+        {0x28, "RST_28", "Z80 RST 28h target."},
+        {0x30, "RST_30", "Z80 RST 30h target."},
+        {0x38, "RST_38_IM1", "Z80 RST 38h target and maskable INT entry in interrupt mode 1. IM 0 depends on the supplied instruction; IM 2 uses a vector table. This label does not imply that IM 1 is currently selected."},
+        {0x66, "NMI_66", "Z80 non-maskable interrupt entry at 0066h, independent of interrupt mode. Not an RST instruction target; this architectural label does not imply NMI delivery is implemented."},
+    };
+    for (const auto& vector : vectors)
+        if (!Lookup(vector.address) && !Resolve(vector.name))
+            DefineLabel(vector.address, vector.name, SymbolType::JumpTarget, vector.description);
+}
+
 namespace {
 
 // ===========================================================================

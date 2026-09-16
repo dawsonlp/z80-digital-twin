@@ -306,6 +306,17 @@ private:
     uint16_t PopWord();
     bool CheckCondition(uint8_t condition);
     
+    struct MemoryAccessScope {
+        Memory& memory;
+        MemoryAccessScope(CPUImpl& cpu, bool interrupt) : memory(cpu.memory) {
+            if constexpr (requires { memory.BeginCpuAccess(cpu.PC(), cpu.t_cycle, false, false); })
+                memory.BeginCpuAccess(cpu.PC(), cpu.t_cycle, !cpu.InstructionComplete(), interrupt);
+        }
+        ~MemoryAccessScope() {
+            if constexpr (requires { memory.EndCpuAccess(); }) memory.EndCpuAccess();
+        }
+    };
+
     // CB instruction helpers
     // Instruction-stream read: optional tooling policy hook, no data-read hook.
     uint8_t ReadInstructionByte(uint16_t address) {

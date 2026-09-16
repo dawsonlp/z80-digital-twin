@@ -35,7 +35,9 @@ void ControlPanel::Draw(UiContext& ctx) {
     if (ImGui::Button("Run"))       ctx.commands.run = true;        ImGui::SameLine();
     ImGui::EndDisabled();
     if (ImGui::Button("Pause"))     ctx.commands.pause = true;      ImGui::SameLine();
-    if (ImGui::Button("Reset"))     ctx.commands.reset = true;
+    if (ImGui::Button("Restart program"))     ctx.commands.reset = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Clear analysis")) ctx.commands.clear_analysis = true;
 
     ImGui::Separator();
     ImGui::Text("State: %s    PC: 0x%04X    Cycles: %llu    Halted: %s",

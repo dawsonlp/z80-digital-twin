@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <deque>
+#include <bitset>
+#include <limits>
 #include <map>
 #include <vector>
 
@@ -23,8 +25,8 @@ struct InstructionObservation {
     std::vector<uint64_t> revisions;
 };
 
-// Immutable bounded observations. Current-memory applicability is computed;
-// modifying memory never rewrites the historical record.
+// Address evidence owns one latest observation per start independently of the
+// optional bounded chronological queue. Repeated execution replaces that record.
 class InstructionHistory {
 public:
     static constexpr std::size_t kCapacity = 8192;
@@ -50,8 +52,9 @@ public:
             event.bytes.push_back(reads[i].value);
             event.revisions.push_back(reads[i].revision);
         }
-        ++counts_[start];
-        ++completed_;
+        for (size_t offset = 0; offset < event.bytes.size(); ++offset) used_offsets_[start].set(offset);
+        if (counts_[start] != std::numeric_limits<uint64_t>::max()) ++counts_[start];
+        if (completed_ != std::numeric_limits<uint64_t>::max()) ++completed_;
         Append(std::move(event));
     }
 
@@ -62,11 +65,24 @@ public:
         Append(std::move(event));
     }
 
+    // Called only for value-changing emulated instruction writes. Each capture
+    // is bounded, so affected starts are found in a bounded backward window.
+    void CodeWrite(uint16_t address) {
+        for (uint32_t offset = 0; offset < MetadataMemory::kCaptureLimit; ++offset) {
+            const auto start = uint16_t(address - offset);
+            if (used_offsets_[start].test(offset)) self_modified_[start] = true;
+        }
+    }
+    void MarkSelfModified(uint16_t start) { self_modified_[start] = true; }
+    [[nodiscard]] bool SelfModified(uint16_t start) const { return self_modified_[start]; }
+    [[nodiscard]] std::size_t AddressCount() const { return latest_.size(); }
+
     [[nodiscard]] const InstructionObservation* Latest(uint16_t address) const {
         const auto it = latest_.find(address);
-        return it == latest_.end() ? nullptr : it->second;
+        return it == latest_.end() ? nullptr : &it->second;
     }
     [[nodiscard]] EvidenceState State(const InstructionObservation& event, const MetadataMemory& memory) const {
+        if (memory.RevisionOverflow()) return EvidenceState::Modified;
         if (!event.complete_capture) return EvidenceState::PartialCapture;
         for (std::size_t i = 0; i < event.bytes.size(); ++i) {
             const auto address = uint16_t(event.start + i);
@@ -86,7 +102,7 @@ public:
     [[nodiscard]] std::vector<uint16_t> Anchors(const MetadataMemory& memory) const {
         std::vector<uint16_t> result;
         for (const auto& [address, event] : latest_)
-            if (State(*event, memory) == EvidenceState::Observed) result.push_back(address);
+            if (State(event, memory) == EvidenceState::Observed) result.push_back(address);
         return result;
     }
     [[nodiscard]] const std::deque<InstructionObservation>& Events() const { return events_; }
@@ -98,6 +114,8 @@ public:
     void Clear() {
         events_.clear(); latest_.clear();
         std::fill(counts_.begin(), counts_.end(), 0);
+        std::fill(used_offsets_.begin(), used_offsets_.end(), std::bitset<MetadataMemory::kCaptureLimit>{});
+        std::fill(self_modified_.begin(), self_modified_.end(), false);
         completed_ = dropped_ = 0;
         ++generation_; // never reuse a UI cache generation or event sequence
     }
@@ -107,18 +125,17 @@ private:
         event.sequence = ++generation_;
         events_.push_back(std::move(event));
         const auto& newest = events_.back();
-        if (newest.kind == ObservationKind::Instruction) latest_[newest.start] = &newest;
+        if (newest.kind == ObservationKind::Instruction) latest_[newest.start] = newest;
         if (events_.size() > kCapacity) {
-            const auto& oldest = events_.front();
-            const auto it = latest_.find(oldest.start);
-            if (it != latest_.end() && it->second == &oldest) latest_.erase(it);
             events_.pop_front();
             ++dropped_;
         }
     }
 
     std::deque<InstructionObservation> events_;
-    std::map<uint16_t, const InstructionObservation*> latest_;
+    std::map<uint16_t, InstructionObservation> latest_;
+    std::vector<std::bitset<MetadataMemory::kCaptureLimit>> used_offsets_ = std::vector<std::bitset<MetadataMemory::kCaptureLimit>>(65536);
+    std::vector<bool> self_modified_ = std::vector<bool>(65536, false);
     std::vector<uint64_t> counts_ = std::vector<uint64_t>(65536, 0);
     uint64_t completed_ = 0, dropped_ = 0, generation_ = 0;
 };

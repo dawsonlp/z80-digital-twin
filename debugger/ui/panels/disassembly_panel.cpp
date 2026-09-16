@@ -96,8 +96,8 @@ std::optional<uint16_t> draw_operands(UiContext& ctx, const Instruction& ins) {
 namespace {
 const char* evidence_text(EvidenceState state) {
     switch (state) {
-        case EvidenceState::Observed: return "Observed";
-        case EvidenceState::Modified: return "Modified";
+        case EvidenceState::Observed: return "Current bytes observed";
+        case EvidenceState::Modified: return "Current bytes changed";
         case EvidenceState::Unobserved: return "Unobserved";
         case EvidenceState::NotRetained: return "Not retained";
         case EvidenceState::PartialCapture: return "Partial capture";
@@ -230,24 +230,33 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
             ImGui::EndTable();
         }
     } else {
-        ImGui::TextDisabled("Observed = unchanged since execution | Modified = changed since execution");
-        ImGui::TextDisabled("Unobserved = tentative decode | Not retained = older evidence dropped");
+        ImGui::TextDisabled("Status: RO  X  SM  O  [?]");
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted("RO  Read-only memory\nX   Executed instruction start\nSM  Self-modified code (persists after re-execution)\nO   Current instruction bytes observed executing\n?   Incomplete instruction capture\n*   Overlapping instruction starts\n-   Property not established");
+            ImGui::Separator();
+            ImGui::TextUnformatted("Hover a row's status for details. Drag column borders to resize.");
+            ImGui::EndTooltip();
+        }
         if (rows_.empty() || layout_epoch_ != memory.ChangeEpoch() ||
             layout_generation_ != history.Generation() || layout_pc_ != pc || layout_destination_ != destination_) {
             rows_ = BuildAddressListing(memory, history, ctx.disasm, pc, destination_);
             layout_epoch_ = memory.ChangeEpoch(); layout_generation_ = history.Generation();
             layout_pc_ = pc; layout_destination_ = destination_;
         }
-        if (ImGui::BeginTable("disasm", 6, ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
-                             ImGuiTableFlags_SizingFixedFit)) {
+        if (ImGui::BeginTable("disasm_compact_status", 6, ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
+                             ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollX | ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
             if (manual_scroll()) { follow_pc_ = false; scroll_target_.reset(); }
             if (follow_pc_ && pc != last_pc_) scroll_target_ = pc;
             ImGui::TableSetupColumn("BP", ImGuiTableColumnFlags_WidthFixed, 16);
-            ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, 84);
+            ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, 64);
             ImGui::TableSetupColumn("Addr", ImGuiTableColumnFlags_WidthFixed, 48);
             ImGui::TableSetupColumn("Bytes", ImGuiTableColumnFlags_WidthFixed, 100);
-            ImGui::TableSetupColumn("Instruction", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Evidence", ImGuiTableColumnFlags_WidthFixed, 94);
+            ImGui::TableSetupColumn("Instruction", ImGuiTableColumnFlags_WidthFixed, 160);
+            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize,
+                                    ImGui::CalcTextSize("RO X SM O *").x + 6);
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableHeadersRow();
             const float row_height = ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().CellPadding.y * 2;
             if (scroll_target_) {
                 const auto it = std::lower_bound(rows_.begin(), rows_.end(), *scroll_target_,
@@ -310,9 +319,45 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
                     ImGui::SameLine(); if (auto target = draw_operands(ctx, ins)) navigate(*target);
                 }
                 ImGui::TableSetColumnIndex(5);
-                ImGui::TextColored(evidence_color(state), "%s%s", evidence_text(state), row.overlap ? " *" : "");
+                const bool read_only = memory.WriteProtected(addr);
+                const bool executed = history.Count(addr) != 0;
+                const bool modified = history.SelfModified(addr);
+                const float origin = ImGui::GetCursorPosX();
+                const float cell = ImGui::CalcTextSize("M").x;
+                ImGui::BeginGroup();
+                auto marker = [&](float offset, const char* text, bool active, ImVec4 color) {
+                    if (offset) ImGui::SameLine(0, 0);
+                    ImGui::SetCursorPosX(origin + offset * cell);
+                    ImGui::TextColored(active ? color : ImVec4(0.38f, 0.40f, 0.43f, 1), "%s", text);
+                };
+                marker(0, read_only ? "RO" : "--", read_only, {0.50f, 0.75f, 1.0f, 1});
+                marker(3, executed ? "X" : "-", executed, {0.45f, 0.85f, 0.5f, 1});
+                marker(5, modified ? "SM" : "--", modified, {1, 0.65f, 0.25f, 1});
+                const bool partial = state == EvidenceState::PartialCapture;
+                marker(8, state == EvidenceState::Observed ? "O" : partial ? "?" : "-",
+                       state == EvidenceState::Observed || partial, partial ? ImVec4(1, 0.65f, 0.25f, 1) : ImVec4(0.45f, 0.85f, 0.5f, 1));
+                marker(10, row.overlap ? "*" : " ", row.overlap, {1, 0.65f, 0.25f, 1});
+                ImGui::EndGroup();
                 if (ImGui::IsItemHovered()) {
                     ImGui::BeginTooltip();
+                    ImGui::Text("%04X — %s", addr, read_only ? "Read-only memory" : "Writable memory");
+                    ImGui::Text("X: %s", executed ? "Executed as an instruction start" : "Not observed as an instruction start");
+                    ImGui::Text("SM: %s", modified ? "Self-modified (persistent fact)" : "No self-modification recorded at this start");
+                    ImGui::Text("O: %s", evidence_text(state));
+                    ImGui::Separator();
+                    const auto& metadata = memory.Metadata(addr);
+                    constexpr const char* names[] = {"Instruction reads", "CPU data reads", "CPU writes", "CPU changes", "Refused writes", "Host changes"};
+                    for (size_t kind = 0; kind < metadata.activity.size(); ++kind) {
+                        const auto& activity = metadata.activity[kind];
+                        if (!activity.count) continue;
+                        ImGui::Text("%s: %llu | latest sequence %llu, T %llu", names[kind],
+                            (unsigned long long)activity.count, (unsigned long long)activity.latest.sequence,
+                            (unsigned long long)activity.latest.cycles);
+                        if (kind != size_t(MetadataMemory::AccessKind::HostChange))
+                            ImGui::Text("  %s at %04X", activity.latest.interrupt ? "Interrupt entry" : "Instruction", activity.latest.pc);
+                        if (kind >= size_t(MetadataMemory::AccessKind::Write))
+                            ImGui::Text("  %02X -> %02X", activity.old_value, activity.new_value);
+                    }
                     ImGui::Text("Completed executions here: %llu", (unsigned long long)history.Count(addr));
                     if (auto event = history.Latest(addr)) ImGui::Text("Latest retained observation: %llu", (unsigned long long)event->sequence);
                     if (row.overlap) ImGui::TextUnformatted("Another observed/selected start lies inside this instruction span.");

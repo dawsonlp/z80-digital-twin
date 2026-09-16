@@ -30,8 +30,9 @@ struct DebugCommands {
     bool run = false;
     bool pause = false;
     bool reset = false;
+    bool clear_analysis = false;
 
-    void Clear() { step = step_over = run = pause = reset = false; }
+    void Clear() { step = step_over = run = pause = reset = clear_analysis = false; }
 };
 
 /// @brief Everything a panel needs to render and drive the debugger.

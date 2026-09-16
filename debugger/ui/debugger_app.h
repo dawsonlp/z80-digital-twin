@@ -42,8 +42,9 @@ public:
     /// @brief Load a raw binary program at start_address (default 0x0000).
     bool LoadProgramFile(const std::string& path, uint16_t start_address = 0x0000);
 
-    /// @brief Load a .sym symbol file (merges; non-fatal on error).
+    /// @brief Import a legacy .sym transactionally into the active analysis project.
     bool LoadSymbolFile(const std::string& path);
+    bool OpenAnalysisFile(const std::string& path);
 
     /// @brief Load a small built-in demo program (GCD) when none is supplied.
     void LoadDemo();
@@ -99,7 +100,7 @@ private:
     std::unique_ptr<DebugCPU> generic_cpu_ = std::make_unique<DebugCPU>();
     std::unique_ptr<machine::spectrum::DebugSpectrumMachine> spectrum_;
     std::unique_ptr<DebugSession> session_ = std::make_unique<DebugSession>(*generic_cpu_);
-    SymbolTable symbols_;
+    analysis::Workspace analysis_;
     Disassembler disasm_;
 
     GLFWwindow* window_ = nullptr;
@@ -110,7 +111,8 @@ private:
     std::vector<std::unique_ptr<Panel>> panels_;
 
     uint64_t run_budget_ = 250000;   // instructions per frame while free-running
-    char sym_path_buf_[512] = "";    // menu: symbol-file path field
+    std::string sym_path_;
+    std::string analysis_path_;
 
     // Spectrum machine (active only after LoadSpectrumRom).
     std::vector<uint8_t> rom_image_;   ///< the loaded ROM, for cold-boot reset

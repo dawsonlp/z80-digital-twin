@@ -48,7 +48,7 @@ struct Symbol {
     std::string name;
     SymbolType type = SymbolType::Label;
     std::string description;
-    uint16_t size = 1;   ///< Bytes covered (>=1; meaningful for DataRegion).
+    uint32_t size = 1;   ///< Bytes covered (>=1; meaningful for DataRegion).
 };
 
 class SymbolTable {
@@ -57,7 +57,13 @@ public:
 
     /// @brief Add or replace the symbol at sym.address. The name index is kept
     ///        consistent (a renamed/removed address drops its old name).
+    /// Throws std::invalid_argument for empty/conflicting names. On any failure,
+    /// both indexes remain unchanged. Replacement is explicit at the same address.
     void Define(const Symbol& sym);
+
+    /// Rename only; preserve address, type, description and extent. Throws
+    /// std::out_of_range for a missing address, std::invalid_argument on conflict.
+    void Rename(uint16_t address, std::string name);
 
     /// @brief Convenience overload for a point symbol.
     void DefineLabel(uint16_t address, std::string name,

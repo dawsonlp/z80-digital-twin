@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -188,6 +189,54 @@ int main() {
         defaults.AddZ80VectorDefaults();
         check(defaults.Resolve("RST_08") == 0x9000 && !defaults.Lookup(8),
               "default names do not steal user names");
+    }
+
+    {
+        SymbolTable table;
+        table.Define({0x4000, "SCREEN", SymbolType::DataRegion, "Display bytes", 6912});
+        table.DefineLabel(0x8000, "ENTRY");
+        table.Rename(0x4000, "DISPLAY");
+        const auto region = table.Lookup(0x4000);
+        check(region && region->description == "Display bytes" && region->size == 6912 &&
+              region->type == SymbolType::DataRegion, "rename preserves region metadata");
+        check(!table.Resolve("SCREEN") && table.Resolve("DISPLAY") == 0x4000,
+              "rename updates both indexes");
+        for (bool replace : {false, true}) {
+            bool rejected = false;
+            try {
+                if (replace) table.Define({0x4000, "ENTRY", SymbolType::Label, "lost", 1});
+                else table.Rename(0x4000, "ENTRY");
+            } catch (const std::invalid_argument&) { rejected = true; }
+            check(rejected && table.Resolve("ENTRY") == 0x8000 &&
+                  table.Resolve("DISPLAY") == 0x4000 && table.Lookup(0x4000)->size == 6912,
+                  "conflicting rename/replacement leaves both symbols unchanged");
+        }
+        bool rejected = false;
+        try { table.DefineLabel(0x9000, "DISPLAY"); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected && !table.Lookup(0x9000), "new address cannot implicitly move an existing name");
+        rejected = false;
+        try { table.Rename(0x9999, "MISSING"); }
+        catch (const std::out_of_range&) { rejected = true; }
+        check(rejected && table.Size() == 2, "rename of missing symbol does not create one");
+        rejected = false;
+        try { table.Rename(0x4000, ""); }
+        catch (const std::invalid_argument&) { rejected = true; }
+        check(rejected && table.Resolve("DISPLAY") == 0x4000, "empty rename preserves old symbol");
+        table.Rename(0x4000, "DISPLAY");
+        table.Remove(0x8000);
+        check(table.Resolve("DISPLAY") == 0x4000 && !table.Resolve("ENTRY"),
+              "same-name rename and removal preserve index consistency");
+
+        const std::string path = "/tmp/z80_symbols_collisions.sym";
+        write_file(path, R"({"symbols":[
+            {"address":"0x9000","name":"DISPLAY"},
+            {"address":"0x9100","name":"NEW"}]})");
+        std::vector<std::string> warnings;
+        check(table.LoadFromFile(path, nullptr, &warnings) && warnings.size() == 1 &&
+              table.Resolve("DISPLAY") == 0x4000 && !table.Lookup(0x9000) &&
+              table.Resolve("NEW") == 0x9100, "legacy import skips collisions with a warning");
+        std::remove(path.c_str());
     }
 
     std::cout << "\n=================\n";

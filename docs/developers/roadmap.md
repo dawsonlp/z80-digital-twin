@@ -7,6 +7,10 @@ implemented capability; the longer proposals preserve requirements and intent.
 
 ## Delivered foundations
 
+- Durable symbol identity, aliases, field enrichment, strict save/reopen and
+  semantic Pasmo export with source maps/manifests, verified through CLI fixtures
+  and a local ROM byte comparison. Interactive native save/reopen acceptance
+  remains open; automatic runtime evidence capture is not implemented.
 - Independent LSP/VS Code integration and byte-preserving Pasmo disassembly gates.
 - Source-to-Spectrum build/run using an external assembler, generated symbols,
   launch validation and a fresh debugger process. This does not deliver live reload.
@@ -32,12 +36,20 @@ individual resolution rather than a blanket “consolidation complete” claim.
 
 ## Next: close a durable ROM reverse-engineering loop
 
+The [symbol analysis and assembly projection plan](symbol-analysis-development-plan.md)
+now has Stages 0–3 implemented with the native walkthrough caveat above.
+The next architectural input is [runtime evidence identity](analysis-implementation.md#architectural-input-needed-runtime-evidence-identity)
+before Stage 4 installs capture hooks.
+The routine/variable fixture now survives enrichment, rename, reopen and
+byte-verified export. It uses an immutable image and does not depend on closing
+the remaining runtime-metadata audit.
+
 Follow the [ROM-first checklist](rom-reverse-loop-checklist.md): bind evidence
 and annotations to an exact image and build identity, retain provenance, save
 and reopen one understood routine, export a selected range, and reassemble to
 compare bytes. Reopening evidence is distinct from resuming a machine or replaying
-execution. Existing JSON symbols and raw-binary export are foundations, not this
-complete user loop.
+execution. Symbol persistence/export is delivered; durable runtime evidence
+and broader ROM-first acceptance remain separate work.
 
 Do not infer code/data classification from absence of execution. Separate observed
 bytes, user interpretations, imported names and generated suggestions.
@@ -70,6 +82,9 @@ bytes, user interpretations, imported names and generated suggestions.
 
 - [Enhanced roadmap](enhanced-roadmap.md): proposed M0–M6 requirements; partial
   delivery does not imply entire milestones or acceptance scenarios are complete.
+- [Symbol analysis development plan](symbol-analysis-development-plan.md): staged
+  symbol lifecycle and assembly projection implementation, with remaining native
+  acceptance and runtime evidence work identified.
 - [Reverse-engineering roadmap](reverse-engineering-roadmap.md): L1–L9 vision.
 - [Forward-loop plan](spectrum-development-loop-plan.md): delivered milestone and
   historical implementation sequence.

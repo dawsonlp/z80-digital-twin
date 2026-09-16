@@ -33,6 +33,11 @@ using ByteReader = std::function<uint8_t(uint16_t)>;
 /// @brief Maps an absolute address to a label, or nullopt for "no symbol".
 using SymbolResolver = std::function<std::optional<std::string>(uint16_t)>;
 
+struct AddressOperand {
+    enum class Use { Branch, Memory } use = Use::Memory;
+    uint16_t target = 0;
+};
+
 /// @brief A decoded instruction.
 struct Instruction {
     uint16_t address = 0;              ///< Address it was decoded at.
@@ -43,6 +48,7 @@ struct Instruction {
     std::string operands;              ///< Operands, e.g. "A, (IX+0x05)" ("" if none).
     std::string text;                  ///< Rendered line: mnemonic [+ ' ' + operands].
     std::vector<std::string> symbols_used;  ///< Symbol names substituted into operands.
+    std::optional<AddressOperand> address_operand; ///< Structured direct address use; immediates stay unclassified.
     std::optional<uint16_t> branch_target;  ///< Static target of a direct JP/JR/CALL/DJNZ/RST.
 };
 

@@ -20,6 +20,7 @@
 
 #define GL_SILENCE_DEPRECATION
 #include "imgui.h"
+#include "misc/cpp/imgui_stdlib.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include <GLFW/glfw3.h>
@@ -58,7 +59,6 @@ void glfw_error_callback(int error, const char* description) {
 } // namespace
 
 DebuggerApp::DebuggerApp() {
-    symbols_.AddZ80VectorDefaults();
     panels_.push_back(std::make_unique<ControlPanel>());
     panels_.push_back(std::make_unique<RegistersPanel>());
     panels_.push_back(std::make_unique<DisassemblyPanel>());
@@ -68,7 +68,7 @@ DebuggerApp::DebuggerApp() {
 }
 
 UiContext DebuggerApp::MakeContext() {
-    return UiContext{*session_, symbols_, disasm_, commands_, status_, disasm_goto_};
+    return UiContext{*session_, analysis_.Symbols(), disasm_, commands_, status_, disasm_goto_, analysis_};
 }
 
 bool DebuggerApp::LoadProgramFile(const std::string& path, uint16_t start_address) {
@@ -79,6 +79,7 @@ bool DebuggerApp::LoadProgramFile(const std::string& path, uint16_t start_addres
     }
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
                                std::istreambuf_iterator<char>());
+    if (auto result = analysis_.Initialize(bytes, start_address); !result) { status_ = result.error().message; return false; }
     session_->Cpu().Reset();
     session_->Cpu().LoadProgram(bytes, start_address);
     session_->ClearDirty();   // program load isn't a "change" to highlight
@@ -87,11 +88,18 @@ bool DebuggerApp::LoadProgramFile(const std::string& path, uint16_t start_addres
 }
 
 bool DebuggerApp::LoadSymbolFile(const std::string& path) {
-    std::vector<std::string> warnings;
-    const bool ok = symbols_.LoadFromFile(path, nullptr, &warnings);
-    for (const auto& w : warnings) std::cerr << "symbols: " << w << "\n";
-    if (ok) status_ = std::format("Loaded {} symbols from {}", symbols_.Size(), path);
-    return ok;
+    auto result = analysis_.ImportFile(path);
+    status_ = result ? "Imported symbols with source attribution" : result.error().message;
+    if (!result) std::cerr << "symbols: " << status_ << '\n';
+    return result.has_value();
+}
+
+bool DebuggerApp::OpenAnalysisFile(const std::string& path) {
+    auto result = analysis_.OpenFile(path);
+    status_ = result ? "Opened analysis for the loaded image" : result.error().message;
+    if (result) analysis_path_ = path;
+    else std::cerr << "analysis: " << status_ << '\n';
+    return result.has_value();
 }
 
 void DebuggerApp::LoadDemo() {
@@ -116,10 +124,12 @@ void DebuggerApp::LoadDemo() {
     session_->Cpu().DE() = 462;
     session_->ClearDirty();   // program load isn't a "change" to highlight
 
-    symbols_.DefineLabel(0x0000, "GCD_LOOP", SymbolType::Function,   "GCD by subtraction");
-    symbols_.DefineLabel(0x000B, "NO_SWAP",  SymbolType::JumpTarget, "HL >= DE: loop without swap");
-    symbols_.DefineLabel(0x000F, "DONE",     SymbolType::Label,      "store result and halt");
-    symbols_.DefineLabel(0x9000, "RESULT",   SymbolType::WordVariable, "GCD result (16-bit)");
+    const std::vector<Symbol> seeds = {
+        {0x0000, "GCD_LOOP", SymbolType::Function, "GCD by subtraction", 1},
+        {0x000B, "NO_SWAP", SymbolType::JumpTarget, "HL >= DE: loop without swap", 1},
+        {0x000F, "DONE", SymbolType::Label, "store result and halt", 1},
+        {0x9000, "RESULT", SymbolType::WordVariable, "GCD result (16-bit)", 2}};
+    if (auto result = analysis_.Initialize(program, 0, seeds); !result) throw std::runtime_error(result.error().message);
     status_ = "Loaded built-in GCD demo (HL=1071, DE=462)";
 }
 
@@ -136,8 +146,10 @@ void DebuggerApp::LoadSmcDemo() {
     session_->Cpu().LoadProgram(program, 0x0000);
     session_->ClearDirty();
 
-    symbols_.DefineLabel(0x0000, "LOOP",    SymbolType::Function,     "self-modifying loop");
-    symbols_.DefineLabel(0x0001, "COUNTER", SymbolType::ByteVariable, "operand patched each pass");
+    const std::vector<Symbol> seeds = {
+        {0x0000, "LOOP", SymbolType::Function, "self-modifying loop", 1},
+        {0x0001, "COUNTER", SymbolType::ByteVariable, "operand patched each pass", 1}};
+    if (auto result = analysis_.Initialize(program, 0, seeds); !result) throw std::runtime_error(result.error().message);
     status_ = "Loaded self-modifying demo (INC (HL) rewrites its own operand)";
 }
 
@@ -154,6 +166,7 @@ bool DebuggerApp::LoadSpectrumRom(const std::string& path) {
         return false;
     }
 
+    if (auto result = analysis_.Initialize(rom, 0); !result) { status_ = result.error().message; return false; }
     ConfigureSpectrumRom(rom);
     return true;
 }
@@ -197,18 +210,16 @@ bool DebuggerApp::LoadSpectrumProgram(const std::string& rom_path,
         if (rom.size() != 0x4000)
             throw std::invalid_argument("standalone launch requires an exact 16384-byte ROM");
         machine::spectrum::ValidateProgramLaunch(program.size(), launch);
-        SymbolTable symbols;
+        analysis::Workspace analysis;
+        if (auto result = analysis.Initialize(program, launch.origin); !result) throw std::invalid_argument(result.error().message);
         if (!symbol_path.empty()) {
-            std::vector<std::string> warnings;
-            if (!symbols.LoadFromFile(symbol_path, nullptr, &warnings) || !warnings.empty())
-                throw std::invalid_argument("invalid debugger symbol file: " + symbol_path);
+            if (auto result = analysis.ImportFile(symbol_path); !result) throw std::invalid_argument(result.error().message);
         }
         // All input errors have been checked before setting up the machine.
         ConfigureSpectrumRom(rom);
         session_->Reset();
         machine::spectrum::LoadRamProgram(session_->Cpu(), program, launch);
-        symbols_ = std::move(symbols);
-        symbols_.AddZ80VectorDefaults();
+        analysis_ = std::move(analysis);
         disasm_goto_ = session_->Cpu().PC();
         status_ = std::format("Spectrum program: {} bytes @ ${:04X}, entry ${:04X}",
                               program.size(), launch.origin, launch.entry);
@@ -396,19 +407,19 @@ void DebuggerApp::DrawMenuBar() {
         ImGui::TextDisabled("Load via CLI: z80_debugger <prog.bin> [--sym file.sym]");
         ImGui::Separator();
         ImGui::SetNextItemWidth(360);
-        ImGui::InputTextWithHint("##sympath", "path to .sym", sym_path_buf_,
-                                 sizeof(sym_path_buf_));
-        ImGui::SameLine();
-        if (ImGui::Button("Load Symbols") && sym_path_buf_[0] != '\0') {
-            LoadSymbolFile(sym_path_buf_);
+        ImGui::InputTextWithHint("Analysis file", "path to .z80analysis", &analysis_path_);
+        if (ImGui::Button("Open Analysis") && !analysis_path_.empty()) {
+            OpenAnalysisFile(analysis_path_);
         }
         ImGui::SameLine();
-        if (ImGui::Button("Save Symbols") && sym_path_buf_[0] != '\0') {
-            if (symbols_.SaveToFile(sym_path_buf_))
-                status_ = std::format("Saved {} symbols to {}", symbols_.Size(), sym_path_buf_);
-            else
-                status_ = std::format("Failed to save symbols to {}", sym_path_buf_);
+        if (ImGui::Button("Save Analysis") && !analysis_path_.empty()) {
+            auto result = analysis_.SaveFile(analysis_path_);
+            status_ = result ? "Saved analysis" : result.error().message;
         }
+        ImGui::TextUnformatted(analysis_.Dirty() ? "Analysis has unsaved edits" : "Analysis has no unsaved edits");
+        ImGui::SetNextItemWidth(360);
+        ImGui::InputTextWithHint("Legacy symbols", "path to .sym", &sym_path_);
+        if (ImGui::Button("Import Symbols") && !sym_path_.empty()) LoadSymbolFile(sym_path_);
         ImGui::Separator();
         if (ImGui::MenuItem("Open tape…", nullptr, false, spectrum_mode_)) {
             auto sel = pfd::open_file("Open tape", ".",
@@ -498,8 +509,15 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
     auto last_render = clock::now();
 
     int frame = 0;
-    while (!glfwWindowShouldClose(window_)) {
+    bool request_close_confirmation = false;
+    bool discard_on_close = false;
+    while (true) {
         glfwPollEvents();
+        if (glfwWindowShouldClose(window_)) {
+            if (smoke || discard_on_close || !analysis_.Dirty()) break;
+            glfwSetWindowShouldClose(window_, GLFW_FALSE);
+            request_close_confirmation = true;
+        }
         PollSpectrumKeyboard();
         if (spectrum_mode_) {   // F5 = play tape (key-down edge)
             const bool f5 = glfwGetKey(window_, GLFW_KEY_F5) == GLFW_PRESS;
@@ -524,6 +542,31 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
         ImGui::NewFrame();
 
         DrawMenuBar();
+        if (request_close_confirmation) {
+            ImGui::OpenPopup("Unsaved analysis");
+            request_close_confirmation = false;
+        }
+        if (ImGui::BeginPopupModal("Unsaved analysis", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Save your symbol edits before closing?");
+            ImGui::InputText("Analysis path", &analysis_path_);
+            ImGui::BeginDisabled(analysis_path_.empty());
+            if (ImGui::Button("Save and Close")) {
+                auto result = analysis_.SaveFile(analysis_path_);
+                if (result) { ImGui::CloseCurrentPopup(); glfwSetWindowShouldClose(window_, GLFW_TRUE); }
+                else status_ = result.error().message;
+            }
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button("Discard and Close")) {
+                discard_on_close = true;
+                ImGui::CloseCurrentPopup();
+                glfwSetWindowShouldClose(window_, GLFW_TRUE);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+            ImGui::TextWrapped("%s", status_.c_str());
+            ImGui::EndPopup();
+        }
         UiContext ctx = MakeContext();
         for (auto& panel : panels_) panel->Draw(ctx);
 

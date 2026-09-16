@@ -72,6 +72,12 @@ target_compile_features(z80_cpu PUBLIC cxx_std_23)
 # Execution core: owns the debug loop, stepping, breakpoints, watchpoints.
 # UI-free and unit-testable. Disassembler/symbols will join this library next.
 add_library(z80_debugger_core STATIC
+    debugger/analysis/analysis_json.cpp
+    debugger/analysis/content_hash.cpp
+    debugger/analysis/analysis_project.cpp
+    debugger/analysis/analysis_storage.cpp
+    debugger/analysis/analysis_workspace.cpp
+    debugger/analysis/analysis_export.cpp
     debugger/exec/debug_session.cpp
     debugger/exec/debug_session.h
     debugger/exec/instruction_history.h
@@ -84,7 +90,7 @@ add_library(z80_debugger_core STATIC
     debugger/symbols/symbol_table.h
 )
 
-target_include_directories(z80_debugger_core PUBLIC debugger/exec debugger/disasm debugger/symbols)
+target_include_directories(z80_debugger_core PUBLIC debugger/exec debugger/disasm debugger/symbols debugger/analysis)
 target_link_libraries(z80_debugger_core PUBLIC z80_cpu)
 target_compile_features(z80_debugger_core PUBLIC cxx_std_23)
 
@@ -237,6 +243,11 @@ target_link_libraries(z80_disassemble PRIVATE z80_debugger_core)
 find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
 find_program(Z80_PASMO_EXECUTABLE NAMES pasmo DOC "Pasmo 0.5.5 executable for assembly verification")
 if(Python3_Interpreter_FOUND)
+    add_test(NAME analysis_workflow
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/analysis_workflow_test.py
+            --analyze $<TARGET_FILE:z80_analyze> --disassemble $<TARGET_FILE:z80_disassemble>
+            --pasmo ${Z80_PASMO_EXECUTABLE})
+    set_tests_properties(analysis_workflow PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
     add_test(NAME spectrum_dev_workflow
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/spectrum_dev_test.py
             --pasmo ${Z80_PASMO_EXECUTABLE}
@@ -257,6 +268,15 @@ endif()
 # Symbol table (JSON .sym load/save, resolver, forgiving parse)
 add_executable(symbol_table_test tests/symbol_table_test.cpp)
 target_link_libraries(symbol_table_test PRIVATE z80_debugger_core)
+
+add_executable(z80_analyze tools/analyze/main.cpp)
+target_link_libraries(z80_analyze PRIVATE z80_debugger_core)
+
+add_executable(analysis_project_test tests/analysis_project_test.cpp)
+target_link_libraries(analysis_project_test PRIVATE z80_debugger_core)
+
+add_executable(symbol_allocation_test tests/symbol_allocation_test.cpp)
+target_link_libraries(symbol_allocation_test PRIVATE z80_debugger_core)
 
 # Performance benchmark
 add_executable(performance_benchmark tests/performance_benchmark.cpp)
@@ -291,7 +311,7 @@ foreach(test
         machine_test screen_decode_test
         video_test keyboard_test raster_test floating_bus_test tape_test beeper_test
         spectrum_boot_test spectrum_debug_test spectrum_program_test debug_session_test instruction_history_test
-        disassembler_test symbol_table_test)
+        disassembler_test symbol_table_test symbol_allocation_test analysis_project_test)
     add_test(NAME ${test} COMMAND ${test})
 endforeach()
 
@@ -336,6 +356,7 @@ if(Z80_BUILD_UI)
         ${imgui_SOURCE_DIR}/imgui_draw.cpp
         ${imgui_SOURCE_DIR}/imgui_tables.cpp
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
     # SYSTEM so consumers don't get warnings from ImGui's own headers.
@@ -379,6 +400,12 @@ if(Z80_BUILD_UI)
         find_package(Threads REQUIRED)
         target_link_libraries(z80_audio PRIVATE Threads::Threads ${CMAKE_DL_LIBS} m)
     endif()
+
+    # Exercise the actual form with ImGui input events; no native window required.
+    add_executable(symbol_edit_test tests/symbol_edit_test.cpp debugger/ui/symbol_edit.cpp)
+    target_include_directories(symbol_edit_test PRIVATE debugger/ui)
+    target_link_libraries(symbol_edit_test PRIVATE z80_debugger_core imgui)
+    add_test(NAME symbol_edit_test COMMAND symbol_edit_test)
 
     # --- The debugger application -------------------------------------------
     add_executable(z80_debugger

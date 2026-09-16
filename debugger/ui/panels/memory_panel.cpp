@@ -74,7 +74,7 @@ void MemoryPanel::Draw(UiContext& ctx) {
                 ImGui::Text("%04X ", base);
                 // Right-click the address to label this location.
                 if (ImGui::BeginPopupContextItem("lbl")) {
-                    if (ImGui::IsWindowAppearing()) PrimeSymbolEdit(edit_, base, ctx.symbols);
+                    if (ImGui::IsWindowAppearing()) PrimeSymbolEdit(edit_, base, ctx.analysis);
                     DrawSymbolEditForm(ctx, edit_);
                     ImGui::EndPopup();
                 }

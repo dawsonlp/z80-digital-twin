@@ -107,9 +107,10 @@ of queue eviction. Re-execution replaces that address observation; older version
 are available only while their events remain in recent history. Machine preparation transitions are separate
 rows, not invented instructions. Refused writes and same-value writes do not
 invalidate byte evidence; a change followed by restoration does. Overlapping
-observed starts remain visible (marked `*`). Analysis is currently in memory
-only: closing the debugger does not save this evidence. JSON symbol files save
-labels and descriptions, not execution evidence or machine state.
+observed starts remain visible (marked `*`). This runtime observation history is
+currently in memory only: closing the debugger does not save it. Durable analysis
+projects save symbols, interpretation and explicitly attached records; automatic
+runtime capture and machine-state persistence are not implemented.
 
 ### Clear analysis and restart
 
@@ -153,3 +154,16 @@ at 0066h. IM 0 depends on the device-supplied instruction, and IM 2 uses a vecto
 table. Labels describe architecture, not observed execution, the currently
 selected interrupt mode, or implemented NMI support.
 Reference: [Zilog Z80 CPU User Manual](https://www.zilog.com/docs/z80/um0080.pdf).
+
+### Editing and saving analysis
+
+The shared symbol editor now uses a durable analysis project. It preserves stable
+identity and unrelated fields; old names remain aliases. Edit name, type,
+description and explicit extent, then save using the File menu's analysis
+controls. Existing-symbol addresses remain fixed. Removal retires the record.
+
+Use `--analysis file.z80analysis` to reopen against the exact loaded binary.
+Legacy `.sym` input is an explicit import with source attribution and conflict
+checking. Project JSON is authoritative; the UI no longer saves rich data as
+legacy `.sym`. See [durable symbols and semantic assembly](symbol-analysis.md)
+for the CLI, save/recovery rules, export and current limitations.

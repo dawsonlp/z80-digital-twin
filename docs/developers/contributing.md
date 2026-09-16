@@ -21,6 +21,9 @@ cmake --build build -j
 
 ## Engineering Rules
 
+Follow the [C++ project conventions](cpp-standards.md), including the agreed
+register-union exception.
+
 - Keep machine-specific behavior out of the generic CPU core unless the behavior
   is genuinely Z80 behavior.
 - Prefer the existing policy/device/debugger boundaries.

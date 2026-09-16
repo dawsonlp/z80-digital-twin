@@ -1,9 +1,10 @@
 # Status
 
 **Audience:** users and developers checking current capability.
-**Last reviewed:** 2026-09-15.
+**Last reviewed:** 2026-09-16.
 **Baseline:** source commit `b94fa00` on `feature/spectrum-dev-loop`, including
-the address-metadata changes following checkpoint `a3dd462`. This is an unreleased development baseline;
+the address-metadata changes following checkpoint `a3dd462`, plus the current
+working-tree symbol-analysis implementation. This is an unreleased development baseline;
 CMake's project version remains 1.0.3.
 
 ## Implemented
@@ -26,8 +27,10 @@ CMake's project version remains 1.0.3.
 - Independent Pasmo-oriented Python LSP and VS Code client. Terminal and editor
   tasks share `tools/spectrum_dev.py`: external Pasmo assembly, inspectable build
   artifacts, symbol conversion, launch validation and a fresh debugger process.
-- `z80_disassemble` and independent assembler/byte-round-trip gates. Export is
-  linear byte reconstruction, not recovery of original source or persisted analysis.
+- `z80_disassemble` retains byte-only export and now supports image-bound analysis
+  input, semantic definitions/references, data declarations, source maps and
+  manifests. Independent Pasmo gates verify reconstructed bytes; this does not
+  recover original authored source.
 
 ## Verification
 
@@ -39,8 +42,9 @@ checklists; it is not a fresh acceptance result for every current change.
 
 ## Remaining limitations
 
-- Analysis is in memory only. JSON symbols do not persist execution history,
-  full machine state or a reverse-engineering project.
+- Runtime observation history is still transient. Durable project records do not
+  yet automatically capture execution evidence, full machine state or replayable
+  runs; runtime identity is the next architectural decision.
 - Address metadata is implemented but full acceptance remains open: complete
   access-accounting/overflow audit, resource/overhead measurement and remaining
   native interaction checks. First/latest byte activity exists; first-completion
@@ -59,3 +63,17 @@ checklists; it is not a fresh acceptance result for every current change.
 
 See [roadmap](../developers/roadmap.md) for sequencing and
 [testing](../testers/testing.md) for reproducible commands.
+
+## Durable symbol analysis (2026-09-16)
+
+Stable IDs, aliases, field enrichment, image-bound save/reopen, strict legacy
+import and semantic Pasmo export are implemented in the current working tree.
+The shared debugger editor and `z80_analyze` use one project authority. Assembly,
+source maps and manifests support selected code/data interpretations and preserve
+bytes across the synthetic gates and the supplied Spectrum ROM.
+
+See [commands and limits](../users/symbol-analysis.md) and
+[implementation evidence](../developers/analysis-implementation.md). Native
+rendering is verified, while interactive native save/reopen acceptance remains
+open after an automation stall. Automatic runtime evidence capture is awaiting
+an architectural decision about run and capture-epoch identity.

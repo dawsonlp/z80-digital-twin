@@ -71,6 +71,38 @@ void append_bytes(std::string& out, std::span<const uint8_t> bytes,
 
 } // namespace
 
+PasmoStatement DisassemblePasmoStatement(std::span<const uint8_t> bytes, uint16_t origin,
+                                         const SymbolResolver& resolve) {
+    if (bytes.empty() || bytes.size() > 65536u - origin)
+        throw std::invalid_argument("invalid statement range");
+    const ByteReader read = [&](uint16_t address) { return bytes[address - origin]; };
+    Disassembler decoder;
+    auto numeric = decoder.Decode(read, origin, {}, static_cast<uint32_t>(bytes.size()));
+    const auto encoded = bytes.first(numeric.length);
+    const auto reason = byte_reason(encoded, numeric);
+    auto ins = resolve ? decoder.Decode(read, origin, resolve, static_cast<uint32_t>(bytes.size())) : numeric;
+    std::string source;
+    if (!reason.empty()) {
+        append_bytes(source, encoded, reason);
+    } else {
+        // Preserve spelling of resolved identifiers, including embedded "0x".
+        // Convert only numeric tokens to Pasmo's hexadecimal spelling.
+        std::string text = ins.text;
+        for (size_t pos = 0; (pos = text.find("0x", pos)) != std::string::npos; ++pos) {
+            if (pos == 0 || (!std::isalnum(static_cast<unsigned char>(text[pos - 1])) && text[pos - 1] != '_'))
+                text.replace(pos, 2, "$");
+        }
+        if ((ins.mnemonic == "JR" || ins.mnemonic == "DJNZ") && ins.symbols_used.empty()) {
+            const int delta = static_cast<int>(ins.length) + static_cast<int8_t>(encoded.back());
+            const auto comma = text.find(',');
+            text = (comma == std::string::npos ? ins.mnemonic + " " : text.substr(0, comma + 1) + " ");
+            text += std::format("${:+d}", delta);
+        }
+        source = "    " + text + '\n';
+    }
+    return {std::move(ins), std::move(source), !reason.empty()};
+}
+
 std::string DisassemblePasmo(std::span<const uint8_t> bytes, uint16_t origin) {
     if (bytes.empty() || bytes.size() == 65536)
         throw std::invalid_argument("Pasmo 0.5.5 round-trip range must contain 1..65535 bytes");

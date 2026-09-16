@@ -53,6 +53,7 @@ void print_usage(const char* prog) {
         "Options:\n"
         "  --org 0xADDR         Load address for program.bin (default 0x0000).\n"
         "  --sym FILE           Load a .sym symbol file (address<->name map).\n"
+        "  --analysis FILE      Open durable analysis for the exact loaded image.\n"
         "  --demo gcd|smc       Built-in demo when no program is given (default gcd).\n"
         "  --spectrum ROM       Boot ROM as a ZX Spectrum (adds screen + keyboard).\n"
         "  --entry ADDR         With Spectrum + binary: standalone program entry.\n"
@@ -82,6 +83,7 @@ int main(int argc, char** argv) {
 
     std::string program_path;
     std::string symbol_path;
+    std::string analysis_path;
     std::string spectrum_rom;
     std::string tape_path;
     bool writable_rom = false;
@@ -122,6 +124,8 @@ int main(int argc, char** argv) {
                 start = true;
             } else if (arg == "--bp" && i + 1 < argc) {
                 breakpoints.push_back(static_cast<uint16_t>(number(argv[++i], 0xFFFF, 16)));
+            } else if (arg == "--analysis" && i + 1 < argc) {
+                analysis_path = argv[++i];
             } else if (arg == "--demo" && i + 1 < argc) {
                 demo = argv[++i];
             } else if (arg == "--spectrum" && i + 1 < argc) {
@@ -141,6 +145,9 @@ int main(int argc, char** argv) {
                 throw std::invalid_argument("unknown argument or missing value: " + arg);
             }
         }
+
+        if (!analysis_path.empty() && !symbol_path.empty())
+            throw std::invalid_argument("choose --analysis or --sym for initial annotations");
 
         const bool standalone = !spectrum_rom.empty() && !program_path.empty();
         if (standalone && (!entry || !stack || !tape_path.empty() || writable_rom))
@@ -164,6 +171,7 @@ int main(int argc, char** argv) {
         if (!standalone && !symbol_path.empty()) {
             app.LoadSymbolFile(symbol_path);
         }
+        if (!analysis_path.empty() && !app.OpenAnalysisFile(analysis_path)) return 1;
         if (!tape_path.empty() && !spectrum_rom.empty()) {
             app.LoadTape(tape_path);
         }

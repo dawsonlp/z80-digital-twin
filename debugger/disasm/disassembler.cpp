@@ -319,7 +319,10 @@ void decode_base(uint8_t op, Cursor& cur, Index ix,
                 }
                 default: // z == 7
                     out.branch_target = static_cast<uint16_t>(y * 8);
-                    finish(out, "RST", hex8(static_cast<uint8_t>(y * 8))); return;
+                    {
+                        auto name = resolve ? resolve(*out.branch_target) : std::nullopt;
+                        finish(out, "RST", name.value_or(hex8(static_cast<uint8_t>(y * 8)))); return;
+                    }
             }
     }
 }
@@ -337,14 +340,13 @@ Instruction Disassembler::Decode(const ByteReader& read, uint16_t address,
     // Wrap the resolver so every name it substitutes is recorded, letting the
     // UI colour operand symbols by type without re-parsing the operand text.
     std::vector<std::string> used;
-    SymbolResolver recording;
-    if (resolve) {
-        recording = [&used, &resolve](uint16_t a) -> std::optional<std::string> {
-            auto name = resolve(a);
-            if (name) used.push_back(*name);
-            return name;
-        };
-    }
+    std::optional<uint16_t> operand_address;
+    SymbolResolver recording = [&](uint16_t a) -> std::optional<std::string> {
+        operand_address = a;
+        auto name = resolve ? resolve(a) : std::nullopt;
+        if (name) used.push_back(*name);
+        return name;
+    };
 
     // Consume any DD/FD prefixes (last one wins); dispatch on the final opcode.
     Index ix = Index::None;
@@ -367,6 +369,8 @@ Instruction Disassembler::Decode(const ByteReader& read, uint16_t address,
         out.branch_target.reset();
         finish(out, "<incomplete instruction>");
     }
+    if (out.complete && operand_address)
+        out.address_operand = AddressOperand{out.branch_target ? AddressOperand::Use::Branch : AddressOperand::Use::Memory, *operand_address};
     out.symbols_used = std::move(used);
 
     out.length = cur.n;

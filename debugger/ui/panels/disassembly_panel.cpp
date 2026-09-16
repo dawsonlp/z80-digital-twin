@@ -304,7 +304,7 @@ void DisassemblyPanel::Draw(UiContext& ctx) {
                         if (has_bp) session.RemoveBreakpoint(addr); else session.AddBreakpoint(addr);
                     }
                     ImGui::Separator();
-                    if (ImGui::IsWindowAppearing()) PrimeSymbolEdit(edit_, addr, ctx.symbols);
+                    if (ImGui::IsWindowAppearing()) PrimeSymbolEdit(edit_, addr, ctx.analysis);
                     DrawSymbolEditForm(ctx, edit_);
                     ImGui::EndPopup();
                 }

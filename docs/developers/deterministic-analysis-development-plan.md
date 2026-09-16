@@ -1,7 +1,7 @@
 # Deterministic execution analysis: development checklist
 
 **Date:** 16 September 2026.  
-**Status:** transfer classification and ordinary stack-continuation matching implemented; runtime
+**Status:** transfer classification, ordinary stack-continuation matching and bounded value tracing implemented; runtime
 capture integration and the broader stages remain open.
 **Outcome:** build program understanding through reproducible experiments and
 deterministic tactics, preserving every observed usage and keeping routine
@@ -162,18 +162,42 @@ version 1 compatibility, version 2 matching/explanations and gap-induced uncerta
       and their lineage, not address equality or a conventional shadow stack alone.
 - [x] Match subsequent consumption, including stack-slot reuse and overwritten
       values; report unmatched events when capture starts mid-invocation.
-- [ ] Track bounded register/value provenance through copies, EX/EXX, pushes,
+- [x] Track bounded register/value provenance through copies, EX/EXX, pushes,
       pops, spills/reloads and supported address arithmetic.
-- [ ] Identify pointer loads, table-entry locations and computed target offsets;
+- [x] Identify pointer loads, table-entry locations and computed target offsets;
       record memory versions and arithmetic widths/wraparound.
-- [ ] Stop provenance explicitly at an unsupported operation, unknown initial
+- [x] Stop provenance explicitly at an unsupported operation, unknown initial
       value, missing write, capture gap or resource bound. Do not guess through it.
-- [ ] Retain the difference between a saved continuation's lineage and an unrelated
+- [x] Retain the difference between a saved continuation's lineage and an unrelated
       value that happens to equal its numeric address.
 
 Acceptance: normal nesting, recursion, reused stack slots, coincident numeric
 addresses, overwritten continuations and interrupted capture produce either
 supported matches or explicit unresolved results, never fabricated matches.
+
+Rung 4 checkpoint (16 September 2026): bounded address-value graphs now trace
+supported register, exchange, stack, memory and arithmetic effects in supplied
+captures. Every node links to its input nodes and supporting sample. Initial
+register/memory boundaries yield partial findings; unsupported effects, gaps,
+contradictions and node-budget exhaustion stop lineage explicitly. Source memory
+locations are retained without inferring unobserved table entries. Same-value
+writes create distinct versions, and equal numeric addresses do not imply shared
+continuation ancestry. Report v3 preserves the original instruction-only basis
+while exposing later target provenance. Capture v1/v2 remain readable.
+
+The runnable `value-origins.json` fixture shows CALL -> POP DE -> EX DE,HL ->
+JP (HL), and a real-CPU integration test independently supplies observed effects
+for that path. This establishes value origin, leaving constructed-transfer role
+recognition to rung 5. Automatic runtime capture and assembly projection remain
+open. See [usage and limits](../users/transfer-analysis.md#bounded-address-value-tracing-rung-4).
+
+Rung 4 validation: Debug/UI 42 passed and two optional ZEX skips (44 registered);
+Release/headless 41 passed and the same two skips (43 registered), with the local
+Spectrum ROM and Pasmo supplied. No compiler warning/error matches were found.
+Tests include real CPU execution, pointer loads, index arithmetic and wraparound,
+EXX, spills/reloads, overwritten/refused writes, contradictory snapshots, capture
+gaps, unsupported effects, exhausted budgets and deterministic fresh-process
+reports. No new native UI acceptance is claimed.
 
 ## 4. Recognize constructed transfers and stack changes (rungs 5–6)
 

@@ -1,6 +1,6 @@
 # Deterministic transfer analysis
 
-**Status:** headless transfer and ordinary continuation analysis, 16 September
+**Status:** headless transfer, ordinary continuation and bounded address-value analysis, 16 September
 2026. Automatic runtime capture and routine recovery remain unimplemented.
 
 Analyze a bounded file of recorded instruction effects without running the CPU:
@@ -59,7 +59,7 @@ not a run/session persistence schema or a resumable snapshot. Each file supplies
   sample ID and instruction-level reads, committed writes and refused writes.
 
 Version 1 inputs remain readable and contain no stack evidence. Writers emit
-version 2; reports use version 2 with separate transfer and continuation tactic
+version 2; reports use version 3 with separate transfer, continuation and value tactic
 versions. Stack accesses are bounded to 256 per sample; the writer rejects a
 serialized capture larger than the reader's 16 MiB limit.
 
@@ -100,7 +100,8 @@ New calls after a gap can establish new local evidence.
 Balanced register PUSH/POP and jumps can preserve a caller's continuation. A
 PUSH/RET dispatch does not become a matched ordinary return simply because its
 numeric destination equals an earlier saved return address. Register-mediated
-returns, stack restoration and general value provenance remain later tactics.
+return-role recognition and stack-restoration tactics remain later work. Value
+provenance is available independently, as described below.
 
 Explanations are attached to individual observations and their supporting call
 IDs. They are suitable input for future assembly comments, but are not yet
@@ -113,7 +114,7 @@ IDs and malformed ranges/counts are rejected. The current limits are 8192 sample
 256 instruction bytes per sample and the shared 16 MiB JSON input limit.
 
 The C++ API offers `WriteTransferCapture`, `ReadTransferCapture`,
-`ClassifyTransfer`, `AnalyzeContinuations` and `TransferReport`. Reports include tactic versions and
+`ClassifyTransfer`, `AnalyzeContinuations`, `AnalyzeAddressValues` and `TransferReport`. Reports include tactic versions and
 the canonical capture hash. Identical input and tactic versions produce identical
 reports, including after save/reopen. This hash identifies input; it does not
 authenticate its producer or establish hardware fidelity.
@@ -123,3 +124,57 @@ producer must copy evidence before history eviction. Automatic debugger capture,
 run/epoch identity, full register and memory/stack capture, source-image binding,
 and attachment to symbol claims remain subsequent integration work. The existing
 runtime-identity decision remains pending before capture hooks are installed.
+
+## Bounded address-value tracing (rung 4)
+
+```sh
+build/z80_analyze transfers --source tests/fixtures/analysis/value-origins.json
+```
+
+This synthetic example executes:
+
+```asm
+8000: CALL $8100       ; writes continuation $8003 to the stack
+8100: POP DE           ; reads those bytes into DE
+8101: EX DE,HL         ; carries their lineage into HL
+8102: JP (HL)          ; observed target $8003
+```
+
+The jump has `value_origin.status: "traced"` and a root in `value_graph.nodes`.
+Following each node's `inputs` reaches the original `call_continuation` at
+`call-outer`, through the recorded writes, reads and exchange. Every node names
+its supporting sample, operation, numeric value and width. Memory nodes also
+name the accessed address. Nodes are report-local identities, not symbol IDs.
+
+- `traced`: all value dependencies reach modeled creation events in this capture.
+- `partial`: the numeric target is supported, but some history ends at an entry
+  register or memory value predating the trace.
+- `unresolved`: required evidence is missing, contradictory, unsupported or over budget.
+- `not_applicable`: the instruction has no indirect/stack target to explain.
+
+These statuses concern this value derivation only. They do not establish a
+logical return, routine boundary, exhaustive target set or hardware fidelity.
+In particular, a separate future tactic will interpret the popped-continuation
+usage above. A coincidentally equal immediate address has different ancestry.
+
+Supported effects include immediate register loads, unprefixed byte copies and
+(HL) loads/stores, EX/EXX and EX (SP), register PUSH/POP, absolute word loads/stores,
+16-bit ADD and INC/DEC, unprefixed register-byte INC/DEC, LD SP, CALL/RST/RET and
+indirect jumps. HL, IX and IY word forms are supported where applicable. Other
+operations conservatively discard lineage. The graph records arithmetic width
+and wrapped results; pointer reads retain their source locations and address
+inputs. It does not infer an entire table from one accessed entry.
+
+Each observed committed write creates a new memory-value node, even for an equal
+byte. Refused writes preserve the old version. Missing continuity discards old
+lineage; new immediate values can start fresh chains. Unsupported operations,
+unexplained accesses or contradictions also discard lineage. The budget is
+32,768 nodes per report; exhaustion is explicit and stops subsequent tracing.
+The existing capture size/access limits still apply.
+
+`target_basis` reports the strongest available target evidence, such as
+`matched_call_continuation`, `traced_value_origin` or
+`partially_traced_value_origin`. `instruction_effect.target_basis` preserves the
+original instruction-only tactic's finding. Earlier observations are unchanged.
+This remains headless analysis of supplied captures; automatic runtime capture,
+ROM-wide application and assembly-comment projection remain integration work.

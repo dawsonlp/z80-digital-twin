@@ -55,4 +55,25 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     source.write_text(json.dumps(capture))
     invalid = subprocess.run(command, capture_output=True)
     assert invalid.returncode != 0 and not invalid.stdout
+    fixture = pathlib.Path(__file__).parent / 'fixtures/analysis/value-origins.json'
+    source.write_bytes(fixture.read_bytes())
+    first = subprocess.run(command, check=True, capture_output=True).stdout
+    assert first == subprocess.run(command, check=True, capture_output=True).stdout
+    report = json.loads(first)
+    assert report['version'] == 3
+    jump = report['occurrences'][-1]
+    assert jump['value_origin']['status'] == 'traced'
+    assert jump['target_basis'] == 'traced_value_origin'
+    nodes = {n['id']: n for n in report['value_graph']['nodes']}
+    pending = [jump['value_origin']['root']]
+    seen = set()
+    while pending:
+        node = nodes[pending.pop()]
+        if node['id'] in seen:
+            continue
+        seen.add(node['id'])
+        pending.extend(node['inputs'])
+    assert any(nodes[n]['operation'] == 'call_continuation' and
+               nodes[n]['sample_id'] == 'call-outer' for n in seen)
+    assert report['destination_sets_closed'] is False
 print("PASS: read-only transfer reporting across fresh processes")

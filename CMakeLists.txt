@@ -74,6 +74,7 @@ target_compile_features(z80_cpu PUBLIC cxx_std_23)
 add_library(z80_debugger_core STATIC
     debugger/analysis/transfer_analysis.cpp
     debugger/analysis/continuation_analysis.cpp
+    debugger/analysis/value_analysis.cpp
     debugger/analysis/analysis_json.cpp
     debugger/analysis/content_hash.cpp
     debugger/analysis/analysis_project.cpp
@@ -283,6 +284,9 @@ add_test(NAME transfer_analysis_test COMMAND transfer_analysis_test)
 add_executable(continuation_analysis_test tests/continuation_analysis_test.cpp)
 target_link_libraries(continuation_analysis_test PRIVATE z80_debugger_core)
 add_test(NAME continuation_analysis_test COMMAND continuation_analysis_test)
+add_executable(value_analysis_test tests/value_analysis_test.cpp)
+target_link_libraries(value_analysis_test PRIVATE z80_debugger_core)
+add_test(NAME value_analysis_test COMMAND value_analysis_test)
 if(Python3_Interpreter_FOUND)
     add_test(NAME transfer_analysis_workflow
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/transfer_analysis_workflow_test.py

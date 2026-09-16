@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Larry Dawson. Licensed under the MIT License (see LICENSE).
 #include "transfer_analysis.h"
+#include "value_analysis.h"
 #include "content_hash.h"
 #include <array>
 #include <charconv>
@@ -263,25 +264,37 @@ Result<std::string> TransferReport(const TransferCapture& capture) {
     using Key = std::tuple<uint16_t, std::vector<uint8_t>, TransferMechanism, uint16_t, int>;
     std::map<Key, A> grouped;
     const auto continuations = AnalyzeContinuations(capture);
+    const auto values = AnalyzeAddressValues(capture);
     for (size_t i = 0; i < capture.samples.size(); ++i) {
         const auto& s = capture.samples[i];
         const auto& continuation = continuations[i];
+        const auto& origin = values.findings[i];
         const auto f = ClassifyTransfer(s);
+        auto target_basis = f.target_basis;
+        if (origin.status == ValueStatus::Traced) target_basis = "traced_value_origin";
+        if (origin.status == ValueStatus::Partial) target_basis = "partially_traced_value_origin";
+        if (continuation.status == "matched") target_basis = "matched_call_continuation";
         A unresolved;
-        for (const auto& reason : f.unresolved)
-            if (reason != "stack effects and continuation relationship not analyzed" ||
-                !s.stack) unresolved.emplace_back(reason);
+        for (const auto& reason : f.unresolved) {
+            if (reason == "stack effects and continuation relationship not analyzed" && s.stack) continue;
+            if (origin.root && (reason == "target register value origin not traced" ||
+                               reason == "target register not captured; value origin unresolved")) continue;
+            unresolved.emplace_back(reason);
+        }
         for (const auto& reason : continuation.unresolved) unresolved.emplace_back(reason);
+        for (const auto& reason : origin.unresolved) unresolved.emplace_back(reason);
         occurrences.emplace_back(O{{"sample_id", s.id}, {"mechanism", mechanism_name(f.mechanism)},
             {"taken", f.taken ? J(*f.taken) : J{}}, {"encoded_target", optional_number(f.encoded_target)},
-            {"observed_next_pc", int(s.event.next_pc)}, {"target_basis", f.target_basis},
+            {"observed_next_pc", int(s.event.next_pc)}, {"target_basis", target_basis},
+            {"instruction_effect", O{{"tactic", std::string(kTransferTacticVersion)}, {"target_basis", f.target_basis}}},
+            {"value_origin", ValueFindingJson(origin)},
             {"continuation", O{{"status", continuation.status},
                 {"call_sample", continuation.call_sample ? J(*continuation.call_sample) : J{}},
                 {"explanation", continuation.explanation}, {"tactic", std::string(kContinuationTacticVersion)}}},
             {"completeness", O{{"capture", s.event.complete_capture ? "instruction_bytes_complete" : "instruction_bytes_unavailable_or_partial"},
                 {"entry_context", (s.before.flags && s.before.b && s.before.hl && s.before.ix && s.before.iy)
                     ? "transfer_inputs_captured" : "partial_or_absent"},
-                {"target_provenance", f.target_basis},
+                {"target_provenance", target_basis},
                 {"continuation", continuation.status},
                 {"scope", "one_observation"}, {"possible_additional_usages", true},
                 {"unresolved", std::move(unresolved)}}}});
@@ -296,9 +309,9 @@ Result<std::string> TransferReport(const TransferCapture& capture) {
             {"mechanism", mechanism_name(mechanism)}, {"taken", taken < 0 ? J{} : J(bool(taken))},
             {"count", static_cast<uint32_t>(samples.size())}, {"samples", samples}});
     }
-    return json::Write(O{{"format", "z80-transfer-report"}, {"version", 2},
+    return json::Write(O{{"format", "z80-transfer-report"}, {"version", 3},
         {"tactic", std::string(kTransferTacticVersion)}, {"capture_sha256", Sha256(json::Write(capture_json(capture)))},
         {"source", capture.source}, {"limitations", capture.limitations}, {"destination_sets_closed", false},
-        {"occurrences", std::move(occurrences)}, {"edges", std::move(edges)}});
+        {"occurrences", std::move(occurrences)}, {"edges", std::move(edges)}, {"value_graph", ValueGraphJson(values)}});
 }
 } // namespace z80::dbg::analysis

@@ -37,15 +37,17 @@ Do not mix new execution-analysis implementation into that integration.
       historical results are not verification of the final commit.
 - [x] Commit the reviewed existing work in coherent units, including this plan;
       inspect staged content and whitespace before each commit.
-- [ ] Push the completed feature branch and open a PR targeting main with a
+- [x] Push the completed feature branch and open a PR targeting main with a
       description of the resulting baseline and its verified limitations.
-- [ ] Review the full PR diff and required checks; merge into main when ready.
-- [ ] Fetch and verify that the completed feature tip is contained in origin/main;
+- [x] Review the full PR diff and required checks; merge into main when ready.
+- [x] Fetch and verify that the completed feature tip is contained in origin/main;
       update local main without losing work and record the resulting base SHA.
-- [ ] Create and publish a fresh branch from that main SHA. Suggested name:
+- [x] Create and publish a fresh branch from that main SHA. Suggested name:
       `feature/deterministic-execution-analysis` (confirm availability at creation).
-- [ ] Record the base SHA here before implementing Stage 1. Keep the old branch
+- [x] Record the base SHA here before implementing Stage 1. Keep the old branch
       until integration is verified; branch deletion is a separate optional cleanup.
+
+Integration completed 16 September 2026 through [PR #1](https://github.com/dawsonlp/z80-digital-twin/pull/1). Verified base for `feature/deterministic-execution-analysis`: `253986272f4aab15c757f64d3a23ad991cd2d1fb`, the main merge commit. The merged tree matches the validated feature tip `12c6ca5` exactly. Local main and origin/main agree; the new branch is published. Old branches are retained. [Fresh validation](../testers/main-integration-verification.md) records passes and outstanding limitations. This branch begins with a documentation-only integration record; analysis implementation remains unstarted.
 
 ## 1. Establish the evidence and completeness contract
 

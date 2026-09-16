@@ -1,7 +1,8 @@
 # Deterministic execution analysis: development checklist
 
 **Date:** 16 September 2026.  
-**Status:** agreed direction; implementation has not started.  
+**Status:** initial independent transfer-analysis slice implemented; runtime
+capture integration and the broader stages remain open.
 **Outcome:** build program understanding through reproducible experiments and
 deterministic tactics, preserving every observed usage and keeping routine
 boundaries, entries, exits and interpretations open to later evidence.
@@ -50,6 +51,39 @@ Do not mix new execution-analysis implementation into that integration.
 Integration completed 16 September 2026 through [PR #1](https://github.com/dawsonlp/z80-digital-twin/pull/1). Verified base for `feature/deterministic-execution-analysis`: `253986272f4aab15c757f64d3a23ad991cd2d1fb`, the main merge commit. The merged tree matches the validated feature tip `12c6ca5` exactly. Local main and origin/main agree; the new branch is published. Old branches are retained. [Fresh validation](../testers/main-integration-verification.md) records passes and outstanding limitations. This branch begins with a documentation-only integration record; analysis implementation remains unstarted.
 
 ## 1. Establish the evidence and completeness contract
+
+### First implementation checkpoint — 16 September 2026
+
+Implemented `transfer_analysis` in the UI-free core and the read-only
+`z80_analyze transfers --source` command. This is the independent portion of
+rungs 1–2: classify supplied instruction effects, preserve occurrences, aggregate
+open destination edges and report per-observation completeness. It does not
+claim completion of Stages 1–3 or change debugger capture/reset/load ownership.
+
+- [x] Preserve evidence inputs separately from versioned deterministic findings.
+- [x] Distinguish taken/untaken conditionals using supplied entry flags/B;
+      unavailable context stays unresolved even when successor PC looks obvious.
+- [x] Distinguish architectural RET from a proven logical return; machine
+      transitions from inferred interrupts; repetition from ordinary fall-through.
+- [x] Retain alternative destinations and byte versions without exclusive routine
+      ownership or closed target sets.
+- [x] Round-trip bounded interchange evidence and regenerate identical reports;
+      reject malformed inputs and preserve evidence after transient-history eviction.
+- [ ] Resolve owner input on runtime run/epoch identity before adding capture hooks.
+- [ ] Integrate full register/memory capture, image/run identities, continuation
+      lineage and symbol-proposal attachment in subsequent increments.
+
+The interchange file is not a run identity schema, resumable machine snapshot or
+symbol-project revision. See [usage and format](../users/transfer-analysis.md).
+
+Fresh validation: Debug/UI registered 42 tests (40 passed, two optional ZEX asset
+tests skipped); Release/headless registered 41 (39 passed, the same two skips).
+Pasmo 0.5.5 and the local Spectrum ROM were supplied in both configurations.
+No compiler warning/error matches were found in the build logs. New tests exercise
+the real CPU's conditional CALL behavior, all eight conditions, DJNZ wrapping,
+index-prefix targets, block repetition, partial/contradictory evidence, late new
+destinations, history eviction, strict serialization and fresh-process CLI reports.
+No new native UI walkthrough is claimed; this increment adds no UI controls.
 
 Observations are immutable records of captured emulator behavior. Analyses are
 versioned explanations attached to those observations. Correct capture does not

@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Larry Dawson. Licensed under the MIT License (see LICENSE).
 #include "analysis_workspace.h"
+#include "transfer_analysis.h"
 #include <charconv>
 #include <iostream>
 #include <map>
@@ -35,6 +36,7 @@ uint32_t number(std::string_view text, uint32_t maximum = 65535) {
 void usage() {
     std::cout
         << "Usage: z80_analyze COMMAND --image file.bin --org 0xADDR --project file.z80analysis [options]\n"
+           "       z80_analyze transfers --source capture.json  (read-only JSON report on stdout)\n"
            "  new                           create an image-bound project (will not overwrite)\n"
            "  show                          print the authoritative JSON\n"
            "  create --name NAME (--address ADDR | --value N [--width 8|16|32])\n"
@@ -59,6 +61,13 @@ int main(int argc, char **argv) try {
         return 1;
     }
     const std::string command = argv[1];
+    if (command == "transfers") {
+        if (argc != 4 || std::string_view(argv[2]) != "--source")
+            throw std::invalid_argument("usage: z80_analyze transfers --source capture.json");
+        const auto capture = require(ReadTransferCapture(require(ReadText(argv[3]))));
+        std::cout << require(TransferReport(capture));
+        return std::cout ? 0 : 1;
+    }
     std::map<std::string, std::string> options;
     const std::set<std::string> allowed = {
         "--image",  "--org",         "--project", "--name",    "--address",  "--value",

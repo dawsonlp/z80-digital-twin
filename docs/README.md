@@ -15,6 +15,8 @@ claims of current completion.
 - [Spectrum assembly development](../examples/spectrum-dev/README.md): VS Code
   or terminal, external Pasmo, build artifacts and a fresh debugger launch.
 - [Durable symbols and semantic assembly](users/symbol-analysis.md): stable IDs, enrichment, save/reopen and verified export.
+- [Deterministic transfer analysis](users/transfer-analysis.md): read-only analysis
+  of bounded evidence files, with per-observation completeness and open destination sets.
 - [Debugger](users/debugger.md): execution, address/history browsing, observation
   markers, symbols, clear-analysis and restart behavior.
 - [Spectrum viewer](users/spectrum-viewer.md): keyboard, tape, screen and beeper.

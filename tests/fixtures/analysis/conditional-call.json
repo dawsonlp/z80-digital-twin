@@ -1,0 +1,26 @@
+{
+  "format": "z80-transfer-capture",
+  "version": 1,
+  "source": "synthetic-conditional-call-example",
+  "limitations": "Synthetic input. No stack history, image identity or hardware-fidelity claim. All samples independently illustrate the same instruction address.",
+  "samples": [
+    {
+      "id": "taken", "kind": "instruction", "sequence": "1",
+      "start": 32768, "next_pc": 32771, "cycles": "17", "read_count": "3",
+      "complete_capture": true, "bytes": [196, 3, 128], "revisions": [],
+      "before": {"flags": 0, "b": null, "hl": null, "ix": null, "iy": null}
+    },
+    {
+      "id": "untaken", "kind": "instruction", "sequence": "2",
+      "start": 32768, "next_pc": 32771, "cycles": "10", "read_count": "3",
+      "complete_capture": true, "bytes": [196, 3, 128], "revisions": [],
+      "before": {"flags": 64, "b": null, "hl": null, "ix": null, "iy": null}
+    },
+    {
+      "id": "missing-entry-context", "kind": "instruction", "sequence": "3",
+      "start": 32768, "next_pc": 32771, "cycles": "17", "read_count": "3",
+      "complete_capture": true, "bytes": [196, 3, 128], "revisions": [],
+      "before": {"flags": null, "b": null, "hl": null, "ix": null, "iy": null}
+    }
+  ]
+}

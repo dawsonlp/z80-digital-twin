@@ -72,6 +72,7 @@ target_compile_features(z80_cpu PUBLIC cxx_std_23)
 # Execution core: owns the debug loop, stepping, breakpoints, watchpoints.
 # UI-free and unit-testable. Disassembler/symbols will join this library next.
 add_library(z80_debugger_core STATIC
+    debugger/analysis/transfer_analysis.cpp
     debugger/analysis/analysis_json.cpp
     debugger/analysis/content_hash.cpp
     debugger/analysis/analysis_project.cpp
@@ -274,6 +275,15 @@ target_link_libraries(z80_analyze PRIVATE z80_debugger_core)
 
 add_executable(analysis_project_test tests/analysis_project_test.cpp)
 target_link_libraries(analysis_project_test PRIVATE z80_debugger_core)
+
+add_executable(transfer_analysis_test tests/transfer_analysis_test.cpp)
+target_link_libraries(transfer_analysis_test PRIVATE z80_debugger_core)
+add_test(NAME transfer_analysis_test COMMAND transfer_analysis_test)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME transfer_analysis_workflow
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/transfer_analysis_workflow_test.py
+            $<TARGET_FILE:z80_analyze>)
+endif()
 
 add_executable(symbol_allocation_test tests/symbol_allocation_test.cpp)
 target_link_libraries(symbol_allocation_test PRIVATE z80_debugger_core)

@@ -46,6 +46,15 @@ enum class CPUState : uint8_t {
     FD_CB_PREFIX = 6   ///< FD CB prefix sequence - IY bit operations with displacement
 };
 
+enum class InstructionStop { Complete, Halted, BudgetExhausted };
+
+struct InstructionResult {
+    InstructionStop stop;
+    uint64_t cycles;          ///< T-states consumed by this invocation only.
+    uint32_t stages;          ///< Opcode/prefix stages consumed, not byte length.
+    bool completed;          ///< This invocation completed an instruction.
+};
+
 // =============================================================================
 // Constants
 // =============================================================================
@@ -88,8 +97,16 @@ public:
     /// @param target_cycle The cycle count to run until
     void RunUntilCycle(uint64_t target_cycle);
     
-    /// @brief Executes a single instruction
+    /// @brief Advances one opcode/prefix stage (legacy low-level operation).
     void Step();
+
+    /// @brief Complete one instruction, or continue an incomplete instruction.
+    /// @details The stage budget bounds repeated prefixes. Exhaustion preserves
+    /// prefix state for a subsequent call. A zero budget does no work. HALT does
+    /// not advance idle time here; completed distinguishes executing HALT from
+    /// calling this operation while already halted. Block repeats complete one
+    /// iteration per operation, matching the existing executor boundary.
+    InstructionResult StepInstruction(uint32_t stage_budget = 65536);
     
     /// @brief Resets the CPU to initial state
     void Reset();
@@ -289,7 +306,26 @@ private:
     uint16_t PopWord();
     bool CheckCondition(uint8_t condition);
     
+    struct MemoryAccessScope {
+        Memory& memory;
+        MemoryAccessScope(CPUImpl& cpu, bool interrupt) : memory(cpu.memory) {
+            if constexpr (requires { memory.BeginCpuAccess(cpu.PC(), cpu.t_cycle, false, false); })
+                memory.BeginCpuAccess(cpu.PC(), cpu.t_cycle, !cpu.InstructionComplete(), interrupt);
+        }
+        ~MemoryAccessScope() {
+            if constexpr (requires { memory.EndCpuAccess(); }) memory.EndCpuAccess();
+        }
+    };
+
     // CB instruction helpers
+    // Instruction-stream read: optional tooling policy hook, no data-read hook.
+    uint8_t ReadInstructionByte(uint16_t address) {
+        if constexpr (requires { memory.ReadInstructionByte(address); })
+            return memory.ReadInstructionByte(address);
+        else
+            return memory[address];
+    }
+
     void ExecuteCBInstruction(uint8_t opcode);
     uint8_t& GetCBRegister(uint8_t reg_code);
     uint8_t GetCBMemory(uint8_t reg_code);
@@ -694,7 +730,7 @@ private:
 /// @brief Production CPU type — the zero-overhead FastMemory plug.
 /// @details Preserves the historical `z80::CPU` name and behaviour, so all
 ///          existing code, examples, and benchmarks compile and run unchanged.
-///          The debugger instantiates CPUImpl<ObservableMemory> instead.
+///          The debugger selects MetadataMemory; ObservableMemory remains available.
 using CPU = CPUImpl<FastMemory>;
 
 } // namespace z80

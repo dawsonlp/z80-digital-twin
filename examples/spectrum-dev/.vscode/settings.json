@@ -1,0 +1,5 @@
+{
+  "files.associations": { "*.asm": "z80", "*.inc": "z80" },
+  "lsp-z80.dialect": "pasmo",
+  "lsp-z80.server.path": "${workspaceFolder}/../../lsp-z80/.venv/bin/lsp-z80"
+}

@@ -1,348 +1,88 @@
-# ZX Spectrum Hardware (ULA) — Design
+# Spectrum machine design
 
-**Audience:** developers working on the Spectrum machine.
-**Purpose:** preserve the design rationale and timing model for the implemented
-48K Spectrum capability.
-**Last reviewed:** 2026-06-09.
-**Status:** implemented in stages. Earlier milestone sections are retained as
-the design record; see §12-13 and [Status](../reference/status.md) for current
-capability.
-**Relationship:** the Spectrum is the first *machine* capability in the platform
-([Architecture](architecture.md)); it runs over the same CPU as the debugger
-([Debugger Design](debugger-design.md)) and is debuggable while running.
+**Audience:** developers working on the Spectrum 48K machine.
+**Last reviewed:** 2026-09-15.
+**Source of truth:** [SpectrumMachineImpl](../../machine/spectrum/spectrum_machine.h)
+and the device headers beside it.
 
-**Current implementation summary:** the machine boots a 48K ROM, renders border
-and display, handles keyboard matrix input, plays `.tap`/`.tzx` tape signal
-through EAR, records beeper edges to PCM, protects ROM writes, supports floating
-bus reads, and can be driven headlessly or through the debugger. The major
-remaining timing feature is contended memory.
+## Runtime ownership
 
----
+`SpectrumMachineImpl<Memory>` owns the CPU, ULA, tape, frame deadline and latest
+completed picture. `SpectrumMachine` selects `ObservableMemory` for the viewer;
+`DebugSpectrumMachine` selects `MetadataMemory` for debugger/probe analysis.
+Both use `ObservableIo<CallbackIo>`. Callback I/O connects the CPU to the ULA;
+the ULA receives the CPU clock, a memory reader and write notifications.
 
-## 1. Goal & first milestone
+Viewer, debugger and probe share this runtime. `DebugSession` attaches to the
+machine CPU and uses execution hooks; it does not assemble a second Spectrum
+from independent copies of the devices. The generic `machine/machine.h` frame
+helper remains in the tree, but the current Spectrum lifecycle lives in
+`SpectrumMachineImpl`.
 
-Turn the digital twin into a runnable ZX Spectrum 48K — boot the ROM, show a
-real display — while every debugger capability (breakpoints, coverage, SMC)
-keeps working on the *running* machine.
+## Instruction and frame progression
 
-**Original milestone 1 (now complete):**
-- CPU prerequisites (§3): **maskable-interrupt injection** and the **I/O
-  compile-time policy** (which also delivers 16-bit port addressing).
-- A **device abstraction** and a **Machine** running the CPU on the PAL frame
-  clock (§5–6).
-- **ULA video** by **full-frame redraw** (§7): bitmap + attributes → texture.
-- **Border** (`OUT 0xFE`) and the **50 Hz frame interrupt**.
+The PAL model uses 3.5 MHz CPU timing, 224 T-states per line and 312 lines per
+frame (69,888 T-states). [timing.h](../../machine/spectrum/timing.h) defines the
+constants. The CPU executes instructions/prefix stages atomically; this is not
+a bus-cycle-stepped emulator.
 
-Enough to boot the 48K ROM to its copyright screen. Keyboard, beeper, tape,
-beam-aware rendering, and floating bus were added later; contention remains
-deferred.
+`prepare_execution()` begins a frame if needed and makes the existing one-shot
+maskable-interrupt attempt. `advance_execution()` checks consumed T-states,
+finishes the picture at the frame boundary, preserves instruction overrun and
+notifies the frontend. `step_instruction()` brackets CPU instruction execution
+with those operations; `run_frame()` batches the same lifecycle.
 
-## 2. Decisions made (with the user)
+Debugger hooks use the same preparation/advancement contract. Pause retains an
+unfinished frame; stepping resumes it. Rendering returns the last completed
+picture (or initial rendering before the first completed frame), so UI refresh
+alone does not execute instructions or advance devices.
 
-1. **One integrated app** — the debugger gains a Screen panel and a "run as
-   Spectrum" mode over the same CPU; you debug a live Spectrum.
-2. **I/O is a compile-time policy** (`CPUImpl<Memory, Io>`, ARCHITECTURE §6) —
-   not a runtime hook. This gives zero-cost per-deployment peripherals (ULA,
-   Kempston, GPIO, serial…) and *is* the 16-bit-port fix.
-3. **Full-frame redraw, not dirty-tracking** — every scanline is cheap to draw
-   in the time available, so we redraw the whole display each frame and skip the
-   dirty bookkeeping. The path is structured to evolve into per-scanline-at-
-   T-state rendering for cycle accuracy (§7).
-4. **Model PAL/ULA timing closely** (§6), including beam-return (retrace) times,
-   toward eventual cycle accuracy.
-5. **Milestone 1 = prerequisites + screen + border + 50 Hz INT**. Later
-   milestones added keyboard, tape, sound, ROM protection, and floating bus.
+## Devices and memory
 
-## 3. CPU prerequisites (hard blockers)
+- **Screen:** Spectrum bitmap/attribute layout, ink/paper, BRIGHT and FLASH,
+  border and beam-aware rendering through `video.h`, `screen.h` and `ula.h`.
+  Memory-write notifications support display reconstruction within a frame.
+- **Keyboard:** active-low matrix selected through the full port address.
+- **ULA I/O:** keyboard/EAR input and border/MIC/speaker output; floating-bus
+  reads derive from the ULA fetch phase. See [floating bus](floating-bus-design.md).
+- **Tape:** `.tap`/`.tzx` parsing and EAR pulse playback. Some TZX flow-control
+  blocks remain linearized; parsing a block is not proof of loader compatibility.
+- **Audio:** beeper edge timing and resampling are machine capabilities;
+  miniaudio output belongs to the GUI frontend.
+- **ROM:** memory policies provide protection and refused-write callbacks.
+  The low-level machine constructor does not enable protection automatically;
+  frontends configure it. Normal debugger Spectrum launch protects ROM;
+  `--writable-rom` is an explicit diagnostic override.
 
-Verified gaps; additive changes to the core, each landed *first* with headless
-unit tests, and **without regressing the `FastMemory+OpenBusIo` benchmark**
-(ARCHITECTURE §8).
+The low-level `load_rom()` accepts a nonempty image up to 16 KiB. The standalone
+program launch contract is stricter: it requires exactly 16 KiB, RAM-only
+program placement, an entry inside the image, and a non-overlapping writable
+stack reserve. See [program_launch.h](../../machine/spectrum/program_launch.h)
+and the [source workflow](../../examples/spectrum-dev/README.md).
 
-### 3.1 Maskable-interrupt injection
-The CPU has `EI`/`DI`/`IM 0/1/2`/`RETI` but **no way to raise an interrupt**.
+Standalone programs start without BASIC initialization, with interrupts disabled
+and RAM outside the program zeroed. The UI's **Restart program** action still
+cold-boots ROM and clears RAM; rerun the build/run command to restart that binary.
 
-```cpp
-// Request a maskable interrupt (the ULA calls this once per frame).
-// If IFF1: push PC, clear IFF1/IFF2, and per interrupt mode:
-//   IM 0: execute the bus instruction (Spectrum bus = 0xFF -> RST 38)
-//   IM 1: PC = 0x0038
-//   IM 2: vector = (I << 8) | bus; PC = mem[vector] | (mem[vector+1] << 8)
-// HALT is woken (PC steps past it). Adds ~13 (IM0/1) / ~19 (IM2) T-states.
-bool Interrupt(uint8_t bus = 0xFF);
-void NonMaskableInterrupt();   // NMI -> 0x0066 (later; not needed for the ULA)
-```
+## Fidelity limits
 
-Honor: **`EI` defers** acceptance until after the following instruction;
-**HALT wake**. Tests: IM1 + `IFF1` pushes PC and jumps to `0x0038`; ignored when
-`IFF1=0`; HALT resumes on INT.
+Contended memory timing is not implemented. The runtime retains an early-HALT
+frame policy: it can close the frame at the current CPU cycle rather than
+modeling continued halted bus/refresh/peripheral activity. Interrupt signaling
+is a one-shot attempt at frame preparation, not a persistent hardware INT line.
+NMI vector labels do not imply an NMI delivery implementation.
 
-### 3.2 I/O compile-time policy (devices, not storage)
-`IN A,(n)` / `IN r,(C)` currently drop the **high** address byte (needed by the
-keyboard) *and* model ports as a stored array — which is a fiction (ARCHITECTURE
-§6): real `OUT` is a transient pulse, `IN` reads a device's live state, and the
-two can hit different hardware. I/O becomes the CPU's second **compile-time
-policy**, an **event/query** seam:
+Shared scheduling and policy parity reduce frontend drift; they do not establish
+complete Spectrum hardware fidelity. HALT/interrupt corrections need their own
+focused implementation and acceptance before stronger timing claims.
 
-```cpp
-template <class Memory = FastMemory, class Io = OpenBusIo> class CPUImpl { … };
-// Io contract: uint8_t In(uint16_t port); void Out(uint16_t port, uint8_t);
-```
+## Validation
 
-- IN/OUT compute the **full 16-bit port** (`(A<<8)|n`, or `BC`) and call
-  `io_.In/Out` — adopting the policy *is* the 16-bit-addressing fix.
-- **Default `OpenBusIo`** (honest "nothing attached": `Out` discarded, `In` →
-  `0xFF`). `LatchedIo` (the old array) is an opt-in device for tests/simple
-  peripherals. `SpectrumIo` routes `0xFE`→ULA (later Kempston, …) with real
-  read≠write asymmetry. `ObservableIo<Inner>` (debug decorator) records bus
-  transactions.
-- Replace the raw `ReadPort/WritePort(uint8_t)` array API with `Io& GetIo()`
-  device access (mirrors `GetMemory()`); `LatchedIo` offers explicit peek/poke
-  for tests. **Back-compat (decision i):** the few port-poking tests/examples
-  switch to `LatchedIo`.
-- **Debugger consequence:** `DebugSession` is templated on the CPU config
-  (ARCHITECTURE §7); disassembler/symbols are already config-agnostic. The I/O
-  *panel* is rewritten as a passive **bus-transaction log** (it must never
-  poll-read ports — real `IN` can have side effects).
+`machine_test`, `timing_test`, video/raster/floating-bus, keyboard/tape/beeper,
+`spectrum_debug_test` and `spectrum_program_test` cover the relevant seams.
+`spectrum_boot_test` needs a local ROM. Real tape/game compatibility and native
+screen/audio behavior need separate evidence; see [testing](../testers/testing.md).
 
-This is a memory-policy-sized refactor; sequence it like that one (§11).
-
-## 4. Memory observation (debugger capability)
-
-`ObservableMemory` (the multi-observer evolution of the original debugger memory
-plug; see [Architecture](architecture.md) §5) powers the debugger's
-dirty/SMC/watch features. Milestone-1 rendering read screen RAM directly each
-frame (§7). The implemented beam-aware path also uses `ObservableMemory`
-observers so the ULA and debugger can both see writes from the same running CPU
-configuration.
-
-## 5. Device abstraction & Machine
-
-```
-SpectrumCPU = CPUImpl<ObservableMemory, SpectrumIo>               // runnable
-SpectrumDbg = CPUImpl<ObservableMemory, ObservableIo<SpectrumIo>> // in the debugger
-Machine     = SpectrumCPU + devices(ULA, …) + PAL frame clock
-Device:  port In/Out (via the Io policy)  ·  tick/frame hooks (INT, FLASH)  ·
-         device state (render source, input sink)
-```
-
-- The **ULA** is the first device; `SpectrumIo` forwards its ports to it, and the
-  Machine ticks it on the PAL clock (§6). The ULA holds the border colour, the
-  (later) keyboard matrix, beeper state, and drives the frame interrupt.
-- **Run loop:** the app's "run as Spectrum" mode drives the Machine through
-  `DebugSession`, so breakpoints/coverage/SMC apply to the running machine. The
-  Machine runs the CPU across a frame's T-states (honoring breakpoints — it can
-  stop mid-frame), raises the INT at the frame boundary, then renders + polls
-  input. Reconciling the T-state frame budget with `DebugSession`'s
-  instruction-stepping is the main integration detail (likely a
-  `RunFrame(tstate_budget)` reusing the inline breakpoint check).
-
-## 6. PAL TV / ULA timing model
-
-Verified against the World of Spectrum 48K reference (numbers below) and Chris
-Smith, *The ZX Spectrum ULA* (the canonical hardware reference; consult it for
-the few sub-details flagged at implementation time).
-
-**Clock tree (Smith):** a single **14 MHz** master clock divides down —
-`÷2` → **7 MHz pixel (dot) clock** → `÷2` → **3.5 MHz CPU clock**. Equivalently
-**1 T-state = 4 master cycles**, **1 pixel = 2 master cycles**, **2 pixels per
-T-state**. Every timing below derives from this ladder rather than being asserted:
-- **69,888 T-states/frame** (= 224 × 312) ⇒ **50.08 Hz** (3.5 MHz / 69,888).
-- **224 T-states/scanline**; **312 scanlines/frame**.
-
-**Scanline (224 T):** `128` display (256 px at **2 px/T-state**) · `24` right
-border · `48` horizontal retrace (beam flyback/blank) · `24` left border.
-
-**Frame (312 lines):** `64` top border (incl. vertical retrace/sync) · `192`
-display · `56` bottom border.
-
-**Anchors:**
-- First display pixel at **T = 14,336** (= 64 lines × 224) after the interrupt.
-- `/INT` is asserted at the frame boundary and held low ~**32 T-states**
-  (issue/ULA-dependent — verify against Chris Smith before relying on the exact
-  width). We deliver one INT per frame at the boundary.
-
-**Beam-return times** are simply the non-display T-states and are already inside
-the 69,888 budget: horizontal retrace (48 T/line) returns the beam to the next
-line's left edge; the bottom-border + top-border lines (56 + 64) plus their sync
-cover the vertical flyback to the top. No pixels are produced during them (border
-colour is shown, or blanking during sync).
-
-**Interlace — "first vs second scan":** the 48K is **non-interlaced**. It emits
-exactly **312 lines per field with no half-line offset**, so every field is
-identical — there is **no difference between successive scans** from the TV's
-view. (Broadcast PAL is 625 lines as two interlaced fields of 312.5 lines; the
-Spectrum deliberately omits the half-line, which is why it shows a stable
-non-interlaced picture.) Our model uses a single repeating 312-line frame.
-
-### 6.1 Time base — the master clock is the ruler, not the step
-
-The 14 MHz master clock is the single source of truth for time, but we **do not
-step the CPU at 14 MHz** — that would quadruple the core's innermost loop and
-break the mass-twin performance invariant (ARCHITECTURE §8) for no benefit.
-Instead:
-
-- The **CPU stays a T-state counter** (`t_cycle`); that delta is the bridge.
-- The **Machine/ULA own the master-derived timeline**; the ×4 / ×2 ratios are
-  conversions used where needed, not a per-cycle obligation on the core.
-- A single **timing module** (`timing.h`, added with the Machine) encodes the
-  ladder once — master/cpu/pixel rates, `T_PER_LINE`, `LINES`, `T_PER_FRAME`,
-  `DISPLAY_START_T`, `master_per_T = 4`, `pixels_per_T = 2` — so there are no
-  scattered magic numbers, plus `to_master()` / `to_pixels()` for the rare
-  sub-T-state path.
-
-**Granularity each feature needs** (model only as deep as required):
-
-| Feature | Granularity |
-|---|---|
-| Frame/scanline timing, 50 Hz INT | T-state (have it) |
-| Memory contention (6,5,4,3,2,1,0,0) | T-state, *aligned* to `DISPLAY_START_T` — the delays are whole T-states; the master clock only fixes the alignment |
-| Raster effects (mid-frame border/attribute, multicolour) | T-state (per-scanline / per-byte position) |
-| Floating-bus "snow", mid-byte border change | pixel/master — the only true sub-T-state cases |
-
-So: work in **T-states** (CPU-aligned, and integer-exact since the divisors are
-powers of two), keep the clock ladder authoritative, and subdivide to
-pixel/master **inside the ULA, only when a dot-precise effect demands it**.
-
-## 7. ULA video rendering
-
-- **Layout:** bitmap `0x4000–0x57FF` (6144 B, the interleaved 256×192 order);
-  attributes `0x5800–0x5AFF` (768 B, 32×24 cells, `FLASH BRIGHT PAPER₃ INK₃`);
-  16-colour palette (8 × bright).
-- **Milestone 1 — full-frame redraw.** At the frame boundary, decode all 192
-  display lines from current screen RAM into an RGBA buffer, fill the border,
-  upload one GL texture, draw it in the **Screen panel**. ~49,152 px is trivial
-  at 50 Hz, so no dirty-tracking is warranted.
-- **Future — per-scanline at its T-state.** As the CPU executes, the ULA draws
-  each scanline from memory at the moment the beam reaches it. Raster effects,
-  mid-frame attribute/border changes, and memory contention then emerge for free.
-  The scanline is the unit that carries us there; full-frame redraw is the
-  stepping stone, and the decoder's per-line entry (`unpack_line`) fits both.
-- **Border:** per-frame solid now → per-scanline colour later (`OUT 0xFE` can
-  change it mid-frame).
-- **FLASH:** swap ink/paper every 16 frames (~0.32 s); with full redraw this is
-  just a phase flag passed to the decoder.
-- **Decoder:** reuse the user's existing decoder (analysis done separately);
-  port it read-only, scanline-oriented, with a flash-phase argument.
-
-## 8. I/O map (Spectrum 48K, relevant bits) — implemented by `SpectrumIo`
-
-`SpectrumIo` is a faithful device: **write and read of `0xFE` touch different
-state**, and unconnected bits / unmapped ports read as open bus (`0xFF`).
-
-- `OUT (0xFE)`: latches bits 0–2 **border**, bit 3 **MIC**, bit 4 **speaker**
-  (beeper). Other bits are not connected — written and forgotten.
-- `IN (0xFE)`: returns bits 0–4 = the five keys of the half-row(s) selected by the
-  **high** address byte (0 = pressed); bit 6 = **EAR** (tape in). It does **not**
-  return anything you `OUT`.
-- The ULA responds to all even ports (A0 = 0); `0xFE` is canonical.
-
-## 9. Deferred / Completed Later
-
-- **Keyboard** — done: 8×5 matrix; host-key mapping incl. CAPS/SYMBOL SHIFT.
-- **Beeper audio** — done: `OUT 0xFE` bit 4 → T-cycle edge timeline → PCM.
-- **Tape (EAR in)** — done for supported `.tap`/`.tzx` signal blocks.
-- **Floating bus** — done; calibration against external `fbustest` remains.
-- **Cycle-accurate contention** — still deferred: ULA contention of CPU access to
-  `0x4000–0x7FFF` during display fetch.
-- **128K paging** — bank-aware memory model.
-
-## 10. Open questions / pending
-
-- **Contention pattern and exact phase** — implement and verify before promoting
-  multicolour/raster compatibility tests.
-- **Floating-bus sample offset** — calibrate against external `fbustest`.
-- **TZX flow-control semantics** — implement full branch/call behavior if needed
-  by multi-stage loaders.
-
-## 11. Original implementation sequence
-
-This sequence is preserved as the build record; most items are complete.
-
-1. **`ObservableMemory`** — make the write hook multi-observer; migrate
-   `DebugSession`; unit test (two observers both fire). *(headless)*
-2. **I/O policy** — add the `Io` template param (default `OpenBusIo`); provide
-   `LatchedIo` (old array, opt-in) and `ObservableIo<Inner>` (debug decorator);
-   add `SpectrumIo` stub; replace `ReadPort/WritePort` with `GetIo()`; retarget
-   `DebugSession` (decision a); redo explicit instantiations; rewrite the I/O
-   panel as a passive transaction log. Tests: 16-bit port reaches the device,
-   `OpenBusIo` reads `0xFF`, `LatchedIo` round-trips, **benchmark unchanged**.
-   *(logic headless; panel by build/screenshot)*
-3. **`CPU::Interrupt()`** — IM0/1/2, IFF, HALT-wake, EI-deferral + tests.
-   *(headless)*
-4. **Device + Machine** — PAL frame clock (§6), INT per frame, "run as Spectrum"
-   via `DebugSession` (breakpoints still apply).
-5. **ULA video** — `SpectrumIo` border + full-frame decode (user's decoder) →
-   **Screen panel** + FLASH. Acceptance: boot the 48K ROM to its copyright
-   screen (screenshot).
-6. **Milestone 2+** — keyboard → beeper → tape → cycle-accurate per-scanline
-   timing + contention.
-
-Steps 1–3 are pure logic, unit-tested (rot-proof); 4–5 verified by build +
-screenshot (the ROM copyright screen is the acceptance shot).
-
-## 12. Machine I/O: debugger, tape, sound
-
-**Unifying pattern — T-cycle event timelines.** Border colour, beam-accurate
-screen, sound, and tape are the *same* mechanism: a peripheral's level changes are
-recorded as a **T-cycle-stamped event timeline** during a frame, then
-*reconstructed* into the output medium — pixels for video, PCM samples for audio.
-Tape is the mirror image: a timeline *drives* `IN` instead of being recorded from
-`OUT`.
-
-**12.1 Debugger-driven Spectrum (done).** One shared CPU config —
-`CPUImpl<ObservableMemory, ObservableIo<CallbackIo>>` (`DebugCPU == SpectrumCpu`).
-`ObservableMemory`'s multi-observer feeds the debugger's dirty/watch/SMC *and* the
-ULA's beam-accurate screen at once; `ObservableIo<CallbackIo>` logs transactions
-for the I/O panel while the inner `CallbackIo` routes ports to the ULA. The
-debugger free-runs the machine one PAL frame per UI tick via
-`DebugSession::RunForTStates`, so breakpoints apply — and a breakpoint *mid-frame*
-pauses with the frame held open, resuming the **same** frame (no new interrupt) on
-continue. `z80_debugger --spectrum <rom>` adds a Spectrum Screen panel; host keys
-feed the matrix when ImGui isn't capturing them.
-
-**12.2 Tape (`.tap`, real-signal) — done.** `tape.h` parses `.tap` blocks and
-synthesises the standard ROM pulse train (pilot 2168T · sync 667/735T · bit
-855T/1710T) as pulse durations. Playback maps CPU T-cycle → pulse index → EAR
-level; `IN 0xFE` returns `keyboard | (ear<<6)`. The ROM `LOAD` times the edges and
-decodes; loading stripes appear for free via the border timeline. Verified end to
-end: a synthesised `10 BORDER 2` tape, loaded via scripted `LOAD ""`, autoruns and
-turns the border red. Apps: `--tape file.tap`, then `LOAD ""` + F5 to play.
-
-**12.3 Sound (beeper) — done.** The ULA records the speaker level (`OUT 0xFE`
-bit 4) as a T-cycle edge timeline. `beeper.h`'s `BeeperResampler` maps it to PCM by
-integrating the level over each sample's T-cycle window (1 s = 3.5 M T = 44 100
-samples), so tones reproduce with proper averaging — it works in absolute
-T-cycles, so no per-frame drift. The `spectrum` viewer plays it live: a small
-`z80_audio` lib (miniaudio + a lock-free PCM ring buffer) drained by the audio
-thread, fed each frame on the real-time (50 Hz) path (turbo skips audio). The
-resampler is unit-tested independently (`beeper_test`).
-
-## 13. ROM write protection (and the syntax-check writes)
-
-On a ZX Spectrum 48K, the 16 KB ROM occupying the low quarter of the address
-space (`0x0000–0x3FFF`) is read-only on real hardware, and the firmware *relies*
-on that: during the **syntax-checking pass** (when you ENTER a line), the FP
-calculator evaluates
-expressions with the calculator-stack destination deliberately pointed at
-`0x0000` (`LD DE,0x0000`), so the scratch 5-byte FP results are thrown away —
-the writes to ROM are simply ignored by the bus. The *run* pass then re-evaluates
-with `DE = STKEND` and stores for real.
-
-A sweep (BORDER/PRINT/PAUSE/`2+3`/`LET`) shows every such write funnels through a
-single constant-stacker routine — `0x33E0 LD (DE),A`, `0x33E8 LDIR`, `0x33F3
-LD (DE),A` — always targeting `0x0000–0x0004`. So it's one well-defined behavior,
-not scattered bugs, and the CPU executes it faithfully.
-
-Modelling: `ObservableMemory::SetWriteProtect(lo,hi)` makes ROM read-only (the
-default for the Spectrum apps); a refused write leaves the byte unchanged and
-fires a **blocked-write** observer. `DebugSession` records these as `BlockedWrite`
-events with their own coverage flag (`kBlockedWrite`), shown in the UI distinctly
-from SMC (amber vs magenta; ROM bytes tinted blue). `--writable-rom` disables
-protection so the writes land (corrupting ROM, flagged as SMC) for what-if
-analysis.
-
----
-
-*Design record refined collaboratively; current work is tracked in
-[Roadmap](roadmap.md).*
+The [earlier design](../archive/spectrum-machine-design-pre-2026-09-15.md)
+preserves the original milestones and hardware rationale. Current priorities
+are maintained in [roadmap](roadmap.md).

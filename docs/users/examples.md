@@ -2,7 +2,13 @@
 
 **Audience:** users exploring the standalone examples.
 **Purpose:** identify what each example demonstrates and how to run it.
-**Last reviewed:** 2026-06-09.
+**Last reviewed:** 2026-09-15.
+
+## Spectrum source development
+
+Use [the assembly example](../../examples/spectrum-dev/README.md) for VS Code or
+terminal build/run, symbols and inspectable Pasmo artifacts. Automated acceptance
+uses a separate fixture so edits to the example do not change test expectations.
 
 ## GCD Example
 

@@ -17,9 +17,10 @@
 #include "symbol_table.h"
 #include "ui_context.h"
 #include "panel.h"
-#include "spectrum/ula.h"
+#include "spectrum/spectrum_machine.h"
 #include "spectrum/tape.h"
 #include "spectrum/beeper.h"
+#include "spectrum/program_launch.h"
 #include "audio_output.h"
 
 #include <chrono>
@@ -41,8 +42,9 @@ public:
     /// @brief Load a raw binary program at start_address (default 0x0000).
     bool LoadProgramFile(const std::string& path, uint16_t start_address = 0x0000);
 
-    /// @brief Load a .sym symbol file (merges; non-fatal on error).
+    /// @brief Import a legacy .sym transactionally into the active analysis project.
     bool LoadSymbolFile(const std::string& path);
+    bool OpenAnalysisFile(const std::string& path);
 
     /// @brief Load a small built-in demo program (GCD) when none is supplied.
     void LoadDemo();
@@ -54,6 +56,11 @@ public:
     ///        enter Spectrum mode (a screen panel appears; free-run drives 50 Hz
     ///        frames through the session so breakpoints still apply).
     bool LoadSpectrumRom(const std::string& path);
+
+    bool LoadSpectrumProgram(const std::string& rom, const std::string& program,
+                             const machine::spectrum::ProgramLaunch& launch,
+                             const std::string& symbols = {});
+    void StartRunning();
 
     /// @brief Load a `.tap` for the Spectrum (press F5 in the window to play).
     bool LoadTape(const std::string& path);
@@ -84,14 +91,16 @@ private:
 
     // -- Spectrum mode -------------------------------------------------------
     void DriveSpectrumFrame();      // one PAL frame via the session (breakpoint-aware)
+    void ConfigureSpectrumRom(const std::vector<uint8_t>& rom);
     void PollSpectrumKeyboard();    // host keys -> ULA matrix (when ImGui isn't typing)
     void ResetSpectrum();           // cold boot: reload ROM, zero RAM, reset CPU+ULA, run
     void PumpAudio();               // drain this frame's beeper edges -> PCM -> device
 
     // -- State ---------------------------------------------------------------
-    DebugCPU cpu_;
-    DebugSession session_{cpu_};
-    SymbolTable symbols_;
+    std::unique_ptr<DebugCPU> generic_cpu_ = std::make_unique<DebugCPU>();
+    std::unique_ptr<machine::spectrum::DebugSpectrumMachine> spectrum_;
+    std::unique_ptr<DebugSession> session_ = std::make_unique<DebugSession>(*generic_cpu_);
+    analysis::Workspace analysis_;
     Disassembler disasm_;
 
     GLFWwindow* window_ = nullptr;
@@ -102,17 +111,14 @@ private:
     std::vector<std::unique_ptr<Panel>> panels_;
 
     uint64_t run_budget_ = 250000;   // instructions per frame while free-running
-    char sym_path_buf_[512] = "";    // menu: symbol-file path field
+    std::string sym_path_;
+    std::string analysis_path_;
 
     // Spectrum machine (active only after LoadSpectrumRom).
-    machine::spectrum::Ula ula_;
-    machine::spectrum::Tape tape_;
     std::vector<uint8_t> rom_image_;   ///< the loaded ROM, for cold-boot reset
     bool tape_play_prev_ = false;    ///< F5 edge detection
     bool spectrum_mode_ = false;     ///< driving a Spectrum (screen panel + frame run)
     bool spectrum_running_ = false;  ///< free-running the machine at 50 Hz
-    bool frame_active_ = false;      ///< mid-frame (a breakpoint may have paused us)
-    uint64_t frame_budget_ = 0;      ///< T-states left in the current frame
 
     // Audio (beeper). 50 Hz wall-clock pacing keeps sample production ≈ 44.1 kHz.
     static constexpr uint32_t kAudioRate = 44100;

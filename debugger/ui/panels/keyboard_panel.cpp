@@ -47,7 +47,8 @@ void draw_row(z80::machine::spectrum::Ula& ula, const KeyCell* keys, int n) {
 } // namespace
 
 void KeyboardPanel::Draw(UiContext& /*ctx*/) {
-    ImGui::SetNextWindowSize(ImVec2(620, 230), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(525, 710), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(680, 230), ImGuiCond_FirstUseEver);
     ImGui::Begin("Keyboard (matrix)");
     ImGui::TextDisabled("Host: Shift = CAPS SHIFT, Ctrl = SYMBOL SHIFT. Pressed keys light green.");
     ImGui::TextDisabled("Hover a key for its SYMBOL-SHIFT symbol.");

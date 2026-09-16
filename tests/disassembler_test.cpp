@@ -34,7 +34,7 @@ void place(uint16_t at, const std::vector<uint8_t>& bytes) {
 
 // Decode `bytes` at `at` and assert rendered text + length.
 void expect(uint16_t at, const std::vector<uint8_t>& bytes,
-            const char* text, uint8_t len,
+            const char* text, uint32_t len,
             const SymbolResolver& resolve = {}) {
     place(at, bytes);
     Disassembler d;
@@ -102,6 +102,9 @@ int main() {
     expect(0x0000, {0xED, 0xA0}, "LDI", 2);
     expect(0x0000, {0xED, 0x44}, "NEG", 2);
     expect(0x0000, {0xED, 0x56}, "IM 1", 2);
+    // Display follows current execution; Pasmo export must retain these bytes.
+    expect(0x0000, {0xED, 0x76}, "SLL (HL)", 2);
+    expect(0x0000, {0xED, 0x7E}, "NOP", 2);
     expect(0x0000, {0xED, 0x57}, "LD A, I", 2);
     expect(0x0000, {0xED, 0x78}, "IN A, (C)", 2);
     expect(0x0000, {0xED, 0x79}, "OUT (C), A", 2);
@@ -135,6 +138,28 @@ int main() {
     expect(0x0000, {0xDD, 0xCB, 0x05, 0x46}, "BIT 0, (IX+0x05)", 4);
     expect(0x0000, {0xDD, 0xCB, 0xFB, 0xC6}, "SET 0, (IX-0x05)", 4);
     expect(0x0000, {0xFD, 0xCB, 0x05, 0x46}, "BIT 0, (IY+0x05)", 4);
+    expect(0x0000, {0xDD, 0xCB, 0x01, 0x00}, "RLC (IX+0x01), B", 4);
+    expect(0x0000, {0xFD, 0xCB, 0xFF, 0x87}, "RES 0, A", 4);
+    expect(0x0000, {0xDD, 0xCB, 0x00, 0xC5}, "SET 0, L", 4);
+    expect(0x0000, {0xDD, 0xCB, 0x00, 0x40}, "BIT 0, B", 4);
+
+    std::cout << "\n[prefix lengths and bounded input]\n";
+    expect(0x8000, {0xDD, 0x18, 0x00}, "JR 0x8003", 3);
+    expect(0x8000, {0xFD, 0x20, 0xFE}, "JR NZ, 0x8001", 3);
+    expect(0x8000, {0xDD, 0xFD, 0x10, 0xFC}, "DJNZ 0x8000", 4);
+    expect(0x8000, {0xDD, 0xDD, 0x21, 0x00, 0x90}, "LD IX, 0x9000", 5);
+    expect(0xFFFF, {0xDD, 0x18, 0x00}, "JR 0x0002", 3);
+    {
+        Disassembler d;
+        auto truncated = d.Decode([](uint16_t) { return uint8_t{0xDD}; }, 0, {}, 65536);
+        if (truncated.complete || truncated.length != 65536) ++failures;
+        unsigned reads = 0;
+        auto tail = d.Decode([&](uint16_t) { ++reads; return uint8_t{0x21}; }, 0xFFFF, {}, 1);
+        if (tail.complete || tail.length != 1 || reads != 1) ++failures;
+        std::vector<uint8_t> long_ins(300, 0xDD);
+        long_ins.insert(long_ins.end(), {0x21, 0x00, 0x90});
+        expect(0, long_ins, "LD IX, 0x9000", 303);
+    }
 
     // --- Symbol resolution ----------------------------------------------------
     std::cout << "\n[symbols]\n";

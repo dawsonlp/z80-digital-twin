@@ -13,10 +13,18 @@ repository.
 - `Z80_COMPAT_ASSETS`: directory containing local compatibility test assets.
 - `Z80_COMPAT_GOLDENS`: directory containing local screen/audio/reference
   goldens.
+- `Z80_ROMS_REPO_URL`: optional Git URL used by
+  `tools/download_roms.sh` to populate the ignored local `roms/` directory.
+  Defaults to `https://github.com/spectrumforeveryone/zx-roms.git`.
+- `Z80_ROMS_DIR`: optional ROM download destination. Defaults to `roms/`.
 
 Suggested layout:
 
 ```text
+$REPO_ROOT/
+  roms/
+    spec48.rom
+
 $Z80_COMPAT_ASSETS/
   cpu/
     zexdoc.com
@@ -30,6 +38,15 @@ $Z80_COMPAT_ASSETS/
   demos/
   games/
 ```
+
+To populate local ROMs from an external repository:
+
+```sh
+tools/download_roms.sh
+export Z80_SPEC48_ROM=roms/spec48.rom
+```
+
+The `roms/` directory is ignored by git. Do not commit ROM images.
 
 ## Skip Semantics
 

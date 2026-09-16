@@ -45,6 +45,7 @@ set(CORE_HEADERS
     src/z80_cpu.h
     src/memory/fast_memory.h
     src/memory/observable_memory.h
+    src/memory/metadata_memory.h
     src/io/open_bus_io.h
     src/io/latched_io.h
     src/io/observable_io.h
@@ -71,15 +72,25 @@ target_compile_features(z80_cpu PUBLIC cxx_std_23)
 # Execution core: owns the debug loop, stepping, breakpoints, watchpoints.
 # UI-free and unit-testable. Disassembler/symbols will join this library next.
 add_library(z80_debugger_core STATIC
+    debugger/analysis/analysis_json.cpp
+    debugger/analysis/content_hash.cpp
+    debugger/analysis/analysis_project.cpp
+    debugger/analysis/analysis_storage.cpp
+    debugger/analysis/analysis_workspace.cpp
+    debugger/analysis/analysis_export.cpp
     debugger/exec/debug_session.cpp
     debugger/exec/debug_session.h
+    debugger/exec/instruction_history.h
+    debugger/disasm/address_listing.h
     debugger/disasm/disassembler.cpp
     debugger/disasm/disassembler.h
+    debugger/disasm/pasmo_source.cpp
+    debugger/disasm/pasmo_source.h
     debugger/symbols/symbol_table.cpp
     debugger/symbols/symbol_table.h
 )
 
-target_include_directories(z80_debugger_core PUBLIC debugger/exec debugger/disasm debugger/symbols)
+target_include_directories(z80_debugger_core PUBLIC debugger/exec debugger/disasm debugger/symbols debugger/analysis)
 target_link_libraries(z80_debugger_core PUBLIC z80_cpu)
 target_compile_features(z80_debugger_core PUBLIC cxx_std_23)
 
@@ -132,6 +143,10 @@ target_link_libraries(alu_flags_test PRIVATE z80_cpu)
 # 16-bit ADD/ADC/SBC flag verification (high-byte X/Y and preservation rules)
 add_executable(word_arithmetic_flags_test tests/word_arithmetic_flags_test.cpp)
 target_link_libraries(word_arithmetic_flags_test PRIVATE z80_cpu)
+
+# Register-pair aliasing contract (16-bit pair <-> high/low 8-bit registers)
+add_executable(register_aliasing_test tests/register_aliasing_test.cpp)
+target_link_libraries(register_aliasing_test PRIVATE z80_cpu)
 
 # 8-bit INC/DEC flag verification (result-derived X/Y across register/memory forms)
 add_executable(inc_dec_flags_test tests/inc_dec_flags_test.cpp)
@@ -206,7 +221,13 @@ target_link_libraries(spectrum_boot_test PRIVATE z80_machine)
 add_executable(spectrum_debug_test tests/spectrum_debug_test.cpp)
 target_link_libraries(spectrum_debug_test PRIVATE z80_debugger_core z80_machine)
 
+add_executable(spectrum_program_test tests/spectrum_program_test.cpp)
+target_link_libraries(spectrum_program_test PRIVATE z80_debugger_core z80_machine)
+
 # Debugger execution core (stepping, breakpoints, watchpoints)
+add_executable(instruction_history_test tests/instruction_history_test.cpp)
+target_link_libraries(instruction_history_test PRIVATE z80_debugger_core)
+
 add_executable(debug_session_test tests/debug_session_test.cpp)
 target_link_libraries(debug_session_test PRIVATE z80_debugger_core)
 
@@ -214,9 +235,48 @@ target_link_libraries(debug_session_test PRIVATE z80_debugger_core)
 add_executable(disassembler_test tests/disassembler_test.cpp)
 target_link_libraries(disassembler_test PRIVATE z80_debugger_core)
 
+add_executable(z80_disassemble tools/disassemble/main.cpp)
+target_link_libraries(z80_disassemble PRIVATE z80_debugger_core)
+
+# External assembler gates remain separate from CPU execution tests. Ordinary
+# offline builds work without Pasmo; absent tools are explicitly skipped.
+find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
+find_program(Z80_PASMO_EXECUTABLE NAMES pasmo DOC "Pasmo 0.5.5 executable for assembly verification")
+if(Python3_Interpreter_FOUND)
+    add_test(NAME analysis_workflow
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/analysis_workflow_test.py
+            --analyze $<TARGET_FILE:z80_analyze> --disassemble $<TARGET_FILE:z80_disassemble>
+            --pasmo ${Z80_PASMO_EXECUTABLE})
+    set_tests_properties(analysis_workflow PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
+    add_test(NAME spectrum_dev_workflow
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/spectrum_dev_test.py
+            --pasmo ${Z80_PASMO_EXECUTABLE}
+            --runner $<TARGET_FILE:spectrum_program_test>)
+    set_tests_properties(spectrum_dev_workflow PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
+    foreach(gate assembler section)
+        add_test(NAME disassembly_${gate}
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/assembly_roundtrip.py
+                --gate ${gate} --pasmo ${Z80_PASMO_EXECUTABLE}
+                --disassembler $<TARGET_FILE:z80_disassemble>
+                --artifacts ${CMAKE_BINARY_DIR}/disassembly-artifacts/${gate})
+        set_tests_properties(disassembly_${gate} PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
+    endforeach()
+else()
+    message(STATUS "Python3 absent: external disassembly gates are not registered")
+endif()
+
 # Symbol table (JSON .sym load/save, resolver, forgiving parse)
 add_executable(symbol_table_test tests/symbol_table_test.cpp)
 target_link_libraries(symbol_table_test PRIVATE z80_debugger_core)
+
+add_executable(z80_analyze tools/analyze/main.cpp)
+target_link_libraries(z80_analyze PRIVATE z80_debugger_core)
+
+add_executable(analysis_project_test tests/analysis_project_test.cpp)
+target_link_libraries(analysis_project_test PRIVATE z80_debugger_core)
+
+add_executable(symbol_allocation_test tests/symbol_allocation_test.cpp)
+target_link_libraries(symbol_allocation_test PRIVATE z80_debugger_core)
 
 # Performance benchmark
 add_executable(performance_benchmark tests/performance_benchmark.cpp)
@@ -245,13 +305,13 @@ target_link_libraries(cpu_suite_runner PRIVATE z80_cpu)
 # =============================================================================
 foreach(test
         cpu_test observable_memory_test io_policy_test interrupt_test
-        rotate_flags_test alu_flags_test word_arithmetic_flags_test daa_test
+        rotate_flags_test alu_flags_test word_arithmetic_flags_test register_aliasing_test daa_test
         inc_dec_flags_test bit_flags_test block_flags_test result_flag_sources_test
         instruction_timing_test refresh_register_test timing_test
         machine_test screen_decode_test
         video_test keyboard_test raster_test floating_bus_test tape_test beeper_test
-        spectrum_boot_test spectrum_debug_test debug_session_test
-        disassembler_test symbol_table_test)
+        spectrum_boot_test spectrum_debug_test spectrum_program_test debug_session_test instruction_history_test
+        disassembler_test symbol_table_test symbol_allocation_test analysis_project_test)
     add_test(NAME ${test} COMMAND ${test})
 endforeach()
 
@@ -296,6 +356,7 @@ if(Z80_BUILD_UI)
         ${imgui_SOURCE_DIR}/imgui_draw.cpp
         ${imgui_SOURCE_DIR}/imgui_tables.cpp
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
         ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
     # SYSTEM so consumers don't get warnings from ImGui's own headers.
@@ -339,6 +400,12 @@ if(Z80_BUILD_UI)
         find_package(Threads REQUIRED)
         target_link_libraries(z80_audio PRIVATE Threads::Threads ${CMAKE_DL_LIBS} m)
     endif()
+
+    # Exercise the actual form with ImGui input events; no native window required.
+    add_executable(symbol_edit_test tests/symbol_edit_test.cpp debugger/ui/symbol_edit.cpp)
+    target_include_directories(symbol_edit_test PRIVATE debugger/ui)
+    target_link_libraries(symbol_edit_test PRIVATE z80_debugger_core imgui)
+    add_test(NAME symbol_edit_test COMMAND symbol_edit_test)
 
     # --- The debugger application -------------------------------------------
     add_executable(z80_debugger

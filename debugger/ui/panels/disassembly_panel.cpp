@@ -93,169 +93,284 @@ std::optional<uint16_t> draw_operands(UiContext& ctx, const Instruction& ins) {
 
 } // namespace
 
+namespace {
+const char* evidence_text(EvidenceState state) {
+    switch (state) {
+        case EvidenceState::Observed: return "Current bytes observed";
+        case EvidenceState::Modified: return "Current bytes changed";
+        case EvidenceState::Unobserved: return "Unobserved";
+        case EvidenceState::NotRetained: return "Not retained";
+        case EvidenceState::PartialCapture: return "Partial capture";
+    }
+    return "?";
+}
+ImVec4 evidence_color(EvidenceState state) {
+    if (state == EvidenceState::Observed) return {0.45f, 0.85f, 0.5f, 1};
+    if (state == EvidenceState::Modified) return {1, 0.65f, 0.25f, 1};
+    return {0.65f, 0.65f, 0.65f, 1};
+}
+bool manual_scroll() {
+    if (!ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) return false;
+    const auto& io = ImGui::GetIO();
+    const bool scrollbar = ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+        io.MousePos.x >= ImGui::GetWindowPos().x + ImGui::GetWindowWidth() - ImGui::GetStyle().ScrollbarSize;
+    return io.MouseWheel != 0 || scrollbar ||
+        (ImGui::IsWindowFocused() && (ImGui::IsKeyPressed(ImGuiKey_PageUp) ||
+          ImGui::IsKeyPressed(ImGuiKey_PageDown) || ImGui::IsKeyPressed(ImGuiKey_Home) ||
+          ImGui::IsKeyPressed(ImGuiKey_End) || ImGui::IsKeyPressed(ImGuiKey_UpArrow) ||
+          ImGui::IsKeyPressed(ImGuiKey_DownArrow)));
+}
+std::string byte_preview(const std::vector<uint8_t>& bytes) {
+    std::string result;
+    for (std::size_t i = 0; i < std::min(bytes.size(), std::size_t{4}); ++i)
+        result += std::format("{:02X} ", bytes[i]);
+    if (bytes.size() > 4) result += "...";
+    return result;
+}
+}
+
 void DisassemblyPanel::Draw(UiContext& ctx) {
     ImGui::SetNextWindowPos(ImVec2(0, 374), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(520, 614), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(650, 614), ImGuiCond_FirstUseEver);
     ImGui::Begin("Disassembly");
-
-    // -- Toolbar: history, go-to (hex or symbol), Follow PC ------------------
-    auto navigate = [&](uint16_t addr) {
-        if (addr == top_ && !follow_pc_) return;   // already there
-        back_.push_back(top_);
-        forward_.clear();
-        top_ = addr;
-        follow_pc_ = false;
-    };
-    auto go_back = [&]() {
-        if (back_.empty()) return;
-        forward_.push_back(top_);
-        top_ = back_.back();
-        back_.pop_back();
-        follow_pc_ = false;
-    };
-    auto go_forward = [&]() {
-        if (forward_.empty()) return;
-        back_.push_back(top_);
-        top_ = forward_.back();
-        forward_.pop_back();
-        follow_pc_ = false;
-    };
-
-    ImGui::BeginDisabled(back_.empty());
-    if (ImGui::Button("<")) go_back();
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::BeginDisabled(forward_.empty());
-    if (ImGui::Button(">")) go_forward();
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-
-    ImGui::TextUnformatted("Go to");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(130);
-    uint16_t target = 0;
-    auto submit = [&]() {
-        if (resolve_goto(ctx, goto_buf_, target)) navigate(target);
-        else if (goto_buf_[0]) ctx.status = std::string("Unknown address/symbol: ") + goto_buf_;
-    };
-    if (ImGui::InputTextWithHint("##disgoto", "hex or symbol", goto_buf_, sizeof(goto_buf_),
-                                 ImGuiInputTextFlags_EnterReturnsTrue)) submit();
-    ImGui::SameLine();
-    if (ImGui::Button("Go")) submit();
-    ImGui::SameLine();
-    ImGui::Checkbox("Follow PC", &follow_pc_);
-
-    DebugSession& session = ctx.session;
-
-    // Honour a cross-panel jump request (e.g. from the SMC panel).
-    if (ctx.disasm_goto) {
-        navigate(*ctx.disasm_goto);
-        ctx.disasm_goto.reset();
-    }
-
-    if (follow_pc_ && session.State() != RunState::Running) {
-        top_ = ctx.cpu().PC();
-    }
-
-    const ByteReader read = ctx.reader();
-    const SymbolResolver resolve = ctx.resolver();
+    auto& session = ctx.session;
+    const auto& history = session.History();
+    const auto& memory = ctx.cpu().GetMemory();
     const uint16_t pc = ctx.cpu().PC();
-
-    std::optional<uint16_t> jump_request;   // applied after the table is built
-
-    if (ImGui::BeginTable("disasm", 5,
-                          ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
-                          ImGuiTableFlags_SizingFixedFit)) {
-        ImGui::TableSetupColumn("BP",    ImGuiTableColumnFlags_WidthFixed, 16);
-        ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, 104);
-        ImGui::TableSetupColumn("Addr",  ImGuiTableColumnFlags_WidthFixed, 48);
-        ImGui::TableSetupColumn("Bytes", ImGuiTableColumnFlags_WidthFixed, 104);
-        ImGui::TableSetupColumn("Instruction", ImGuiTableColumnFlags_WidthStretch);
-
-        uint16_t addr = top_;
-        for (int line = 0; line < 256; ++line) {
-            const Instruction ins = ctx.disasm.Decode(read, addr, resolve);
-            ImGui::TableNextRow();
-            if (addr == pc) {
-                ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
-                                       ImGui::GetColorU32(ImVec4(0.20f, 0.35f, 0.55f, 0.65f)));
-            }
-            ImGui::PushID(addr);
-
-            // BP gutter: red "@" marks a breakpoint; click toggles add/remove.
-            ImGui::TableSetColumnIndex(0);
-            const bool has_bp = session.HasBreakpoint(addr);
-            if (has_bp)
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-            if (ImGui::Selectable(has_bp ? "@" : " ", false, 0, ImVec2(12, 0))) {
-                if (has_bp) session.RemoveBreakpoint(addr);
-                else        session.AddBreakpoint(addr);
-            }
-            if (has_bp) ImGui::PopStyleColor();
-
-            // Label column: code symbols, coloured, with a description tooltip.
-            ImGui::TableSetColumnIndex(1);
-            if (auto sym = ctx.symbols.Lookup(addr); sym && IsCodeLabel(sym->type)) {
-                ImGui::TextColored(SymbolColor(sym->type), "%s", sym->name.c_str());
-                SymbolTooltipIfHovered(*sym);
-            }
-
-            // Address: tinted by execution coverage; red if self-modified.
-            // Right-click for line actions (go to target, BP, label).
-            ImGui::TableSetColumnIndex(2);
-            const uint8_t cov = session.CoverageFlags(addr);
-            if (cov & kSelfModified)
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%04X", addr);
-            else if (cov & (kExecOpcode | kExecOperand))
-                ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.5f, 1.0f), "%04X", addr);
-            else
-                ImGui::TextDisabled("%04X", addr);
-            if (ImGui::BeginPopupContextItem("rowmenu")) {
-                if (ins.branch_target) {
-                    const uint16_t t = *ins.branch_target;
-                    char label[64];
-                    if (auto name = ctx.symbols.ResolveName(t))
-                        std::snprintf(label, sizeof(label), "Go to target  0x%04X (%s)", t, name->c_str());
-                    else
-                        std::snprintf(label, sizeof(label), "Go to target  0x%04X", t);
-                    if (ImGui::MenuItem(label)) jump_request = t;
-                }
-                if (ImGui::MenuItem(has_bp ? "Remove breakpoint" : "Add breakpoint")) {
-                    if (has_bp) session.RemoveBreakpoint(addr);
-                    else        session.AddBreakpoint(addr);
-                }
-                ImGui::Separator();
-                if (ImGui::IsWindowAppearing()) PrimeSymbolEdit(edit_, addr, ctx.symbols);
-                DrawSymbolEditForm(ctx, edit_);
-                ImGui::EndPopup();
-            }
-
-            // Bytes
-            ImGui::TableSetColumnIndex(3);
-            std::string hexbytes;
-            for (int b = 0; b < ins.length && b < 4; ++b)
-                hexbytes += std::format("{:02X} ", ins.bytes[b]);
-            ImGui::TextUnformatted(hexbytes.c_str());
-
-            // Instruction: mnemonic + colour-coded operand symbols (with tooltips
-            // and a "Go to" right-click on the target name).
-            ImGui::TableSetColumnIndex(4);
-            ImGui::TextUnformatted(ins.mnemonic.c_str());
-            if (!ins.operands.empty()) {
-                ImGui::SameLine();
-                if (auto g = draw_operands(ctx, ins)) jump_request = g;
-            }
-
-            ImGui::PopID();
-
-            const uint16_t next = static_cast<uint16_t>(addr + (ins.length ? ins.length : 1));
-            if (next < addr) break;   // 64K wrap: stop
-            addr = next;
-        }
-        ImGui::EndTable();
+    auto navigate = [&](uint16_t address) {
+        back_.push_back(top_); forward_.clear();
+        destination_ = address; scroll_target_ = address;
+        follow_pc_ = false; history_view_ = false;
+    };
+    ImGui::BeginDisabled(back_.empty());
+    if (ImGui::Button("<")) {
+        forward_.push_back(top_); destination_ = back_.back(); back_.pop_back();
+        scroll_target_ = destination_; follow_pc_ = false; history_view_ = false;
     }
+    ImGui::EndDisabled(); ImGui::SameLine();
+    ImGui::BeginDisabled(forward_.empty());
+    if (ImGui::Button(">")) {
+        back_.push_back(top_); destination_ = forward_.back(); forward_.pop_back();
+        scroll_target_ = destination_; follow_pc_ = false; history_view_ = false;
+    }
+    ImGui::EndDisabled(); ImGui::SameLine();
+    ImGui::SetNextItemWidth(110);
+    bool go = ImGui::InputTextWithHint("##disgoto", "hex or symbol", goto_buf_, sizeof(goto_buf_),
+                                      ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine(); go |= ImGui::Button("Go");
+    if (go) {
+        uint16_t address;
+        if (resolve_goto(ctx, goto_buf_, address)) navigate(address);
+        else if (goto_buf_[0]) ctx.status = std::string("Unknown address/symbol: ") + goto_buf_;
+    }
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Follow PC", &follow_pc_) && follow_pc_) {
+        history_view_ = false; scroll_target_ = pc;
+    }
+    if (ImGui::RadioButton("Memory addresses", !history_view_)) history_view_ = false;
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Execution history", history_view_)) history_view_ = true;
+    if (ctx.disasm_goto) { navigate(*ctx.disasm_goto); ctx.disasm_goto.reset(); }
 
-    if (jump_request) navigate(*jump_request);
+    if (history_view_) {
+        ImGui::Checkbox("Follow latest", &follow_history_);
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu retained | %llu older dropped", history.Events().size(),
+                           static_cast<unsigned long long>(history.Dropped()));
+        ImGui::TextDisabled("Historical bytes; registers and memory remain live. Click address to inspect current memory.");
+        if (ImGui::BeginTable("history", 6, ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
+                             ImGuiTableFlags_SizingFixedFit)) {
+            if (manual_scroll()) follow_history_ = false;
+            ImGui::TableSetupColumn("Sequence"); ImGui::TableSetupColumn("Address");
+            ImGui::TableSetupColumn("Bytes"); ImGui::TableSetupColumn("Instruction");
+            ImGui::TableSetupColumn("Next PC / T"); ImGui::TableSetupColumn("Current bytes");
+            ImGui::TableHeadersRow();
+            const auto& events = history.Events();
+            const float row_height = ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().CellPadding.y * 2;
+            if (follow_history_) ImGui::SetScrollY(float(events.size() + 1) * row_height);
+            ImGuiListClipper clipper; clipper.Begin(static_cast<int>(events.size()), row_height);
+            while (clipper.Step()) for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                const auto& event = events[std::size_t(i)];
+                ImGui::PushID(static_cast<int>(event.sequence));
+                ImGui::TableNextRow(0, row_height); ImGui::TableSetColumnIndex(0);
+                ImGui::Text("%llu", static_cast<unsigned long long>(event.sequence));
+                ImGui::TableSetColumnIndex(1);
+                const std::string address = std::format("{:04X}", event.start);
+                if (ImGui::Selectable(address.c_str())) navigate(event.start);
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextUnformatted(byte_preview(event.bytes).c_str());
+                if (ImGui::IsItemHovered() && !event.bytes.empty()) {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("%llu instruction bytes read; %zu retained", (unsigned long long)event.read_count, event.bytes.size());
+                    for (std::size_t b = 0; b < event.bytes.size(); ++b) {
+                        if (b % 16) ImGui::SameLine();
+                        ImGui::Text("%02X", event.bytes[b]);
+                    }
+                    ImGui::EndTooltip();
+                }
+                ImGui::TableSetColumnIndex(3);
+                if (event.kind == ObservationKind::MachineTransition) {
+                    ImGui::TextDisabled("Machine transition");
+                } else if (event.complete_capture) {
+                    const ByteReader old_bytes = [&](uint16_t a) { return event.bytes[uint16_t(a - event.start)]; };
+                    const auto ins = ctx.disasm.Decode(old_bytes, event.start, ctx.resolver(), uint32_t(event.bytes.size()));
+                    ImGui::TextUnformatted(ins.text.c_str());
+                } else {
+                    ImGui::TextDisabled("Partial capture (no full decode)");
+                }
+                ImGui::TableSetColumnIndex(4);
+                ImGui::Text("%04X / %llu", event.next_pc, static_cast<unsigned long long>(event.cycles));
+                ImGui::TableSetColumnIndex(5);
+                if (event.kind == ObservationKind::Instruction) {
+                    const auto state = history.State(event, memory);
+                    ImGui::TextColored(evidence_color(state), "%s", evidence_text(state));
+                } else ImGui::TextDisabled("not an instruction");
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+    } else {
+        ImGui::TextDisabled("Status: RO  X  SM  O  [?]");
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted("RO  Read-only memory\nX   Executed instruction start\nSM  Self-modified code (persists after re-execution)\nO   Current instruction bytes observed executing\n?   Incomplete instruction capture\n*   Overlapping instruction starts\n-   Property not established");
+            ImGui::Separator();
+            ImGui::TextUnformatted("Hover a row's status for details. Drag column borders to resize.");
+            ImGui::EndTooltip();
+        }
+        if (rows_.empty() || layout_epoch_ != memory.ChangeEpoch() ||
+            layout_generation_ != history.Generation() || layout_pc_ != pc || layout_destination_ != destination_) {
+            rows_ = BuildAddressListing(memory, history, ctx.disasm, pc, destination_);
+            layout_epoch_ = memory.ChangeEpoch(); layout_generation_ = history.Generation();
+            layout_pc_ = pc; layout_destination_ = destination_;
+        }
+        if (ImGui::BeginTable("disasm_compact_status", 6, ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
+                             ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollX | ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)) {
+            if (manual_scroll()) { follow_pc_ = false; scroll_target_.reset(); }
+            if (follow_pc_ && pc != last_pc_) scroll_target_ = pc;
+            ImGui::TableSetupColumn("BP", ImGuiTableColumnFlags_WidthFixed, 16);
+            ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, 64);
+            ImGui::TableSetupColumn("Addr", ImGuiTableColumnFlags_WidthFixed, 48);
+            ImGui::TableSetupColumn("Bytes", ImGuiTableColumnFlags_WidthFixed, 100);
+            ImGui::TableSetupColumn("Instruction", ImGuiTableColumnFlags_WidthFixed, 160);
+            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize,
+                                    ImGui::CalcTextSize("RO X SM O *").x + 6);
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableHeadersRow();
+            const float row_height = ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().CellPadding.y * 2;
+            if (scroll_target_) {
+                const auto it = std::lower_bound(rows_.begin(), rows_.end(), *scroll_target_,
+                    [](const AddressRow& row, uint16_t a) { return row.address < a; });
+                const auto index = it - rows_.begin();
+                ImGui::SetScrollY(std::max(0.0f, (float(index) - 6) * row_height));
+                scroll_target_.reset();
+            }
+            ImGuiListClipper clipper; clipper.Begin(static_cast<int>(rows_.size()), row_height);
+            bool first_visible = true;
+            while (clipper.Step()) for (int line = clipper.DisplayStart; line < clipper.DisplayEnd; ++line) {
+                const auto& row = rows_[std::size_t(line)];
+                const uint16_t addr = row.address;
+                if (first_visible) { top_ = addr; first_visible = false; }
+                auto ins = ctx.disasm.Decode(ctx.reader(), addr, ctx.resolver(), row.available);
+                if (row.raw) {
+                    ins.mnemonic = "DB"; ins.operands.clear(); ins.symbols_used.clear(); ins.branch_target.reset();
+                    ins.length = row.available;
+                    for (uint32_t b = 0; b < row.available; ++b) {
+                        ins.bytes[b] = memory[uint16_t(addr + b)];
+                        if (b) ins.operands += ", ";
+                        ins.operands += std::format("${:02X}", ins.bytes[b]);
+                    }
+                }
+                ImGui::TableNextRow(0, row_height);
+                if (addr == pc) ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                    ImGui::GetColorU32(ImVec4(0.20f, 0.35f, 0.55f, 0.65f)));
+                ImGui::PushID(addr);
+                ImGui::TableSetColumnIndex(0);
+                const bool has_bp = session.HasBreakpoint(addr);
+                if (ImGui::Selectable(has_bp ? "@" : " ", false, 0, ImVec2(12, 0))) {
+                    if (has_bp) session.RemoveBreakpoint(addr); else session.AddBreakpoint(addr);
+                }
+                ImGui::TableSetColumnIndex(1);
+                if (auto sym = ctx.symbols.Lookup(addr); sym && IsCodeLabel(sym->type)) {
+                    ImGui::TextColored(SymbolColor(sym->type), "%s", sym->name.c_str());
+                    SymbolTooltipIfHovered(*sym);
+                }
+                ImGui::TableSetColumnIndex(2);
+                const auto state = history.State(addr, memory);
+                ImGui::TextColored(evidence_color(state), "%04X", addr);
+                if (ImGui::BeginPopupContextItem("rowmenu")) {
+                    if (ins.branch_target && ImGui::MenuItem("Go to target")) navigate(*ins.branch_target);
+                    if (ImGui::MenuItem(has_bp ? "Remove breakpoint" : "Add breakpoint")) {
+                        if (has_bp) session.RemoveBreakpoint(addr); else session.AddBreakpoint(addr);
+                    }
+                    ImGui::Separator();
+                    if (ImGui::IsWindowAppearing()) PrimeSymbolEdit(edit_, addr, ctx.analysis);
+                    DrawSymbolEditForm(ctx, edit_);
+                    ImGui::EndPopup();
+                }
+                ImGui::TableSetColumnIndex(3);
+                std::string bytes;
+                for (uint32_t b = 0; b < std::min(ins.length, uint32_t{4}); ++b) bytes += std::format("{:02X} ", ins.bytes[b]);
+                if (ins.length > 4) bytes += "...";
+                ImGui::TextUnformatted(bytes.c_str());
+                ImGui::TableSetColumnIndex(4);
+                ImGui::TextUnformatted(ins.mnemonic.c_str());
+                if (!ins.operands.empty()) {
+                    ImGui::SameLine(); if (auto target = draw_operands(ctx, ins)) navigate(*target);
+                }
+                ImGui::TableSetColumnIndex(5);
+                const bool read_only = memory.WriteProtected(addr);
+                const bool executed = history.Count(addr) != 0;
+                const bool modified = history.SelfModified(addr);
+                const float origin = ImGui::GetCursorPosX();
+                const float cell = ImGui::CalcTextSize("M").x;
+                ImGui::BeginGroup();
+                auto marker = [&](float offset, const char* text, bool active, ImVec4 color) {
+                    if (offset) ImGui::SameLine(0, 0);
+                    ImGui::SetCursorPosX(origin + offset * cell);
+                    ImGui::TextColored(active ? color : ImVec4(0.38f, 0.40f, 0.43f, 1), "%s", text);
+                };
+                marker(0, read_only ? "RO" : "--", read_only, {0.50f, 0.75f, 1.0f, 1});
+                marker(3, executed ? "X" : "-", executed, {0.45f, 0.85f, 0.5f, 1});
+                marker(5, modified ? "SM" : "--", modified, {1, 0.65f, 0.25f, 1});
+                const bool partial = state == EvidenceState::PartialCapture;
+                marker(8, state == EvidenceState::Observed ? "O" : partial ? "?" : "-",
+                       state == EvidenceState::Observed || partial, partial ? ImVec4(1, 0.65f, 0.25f, 1) : ImVec4(0.45f, 0.85f, 0.5f, 1));
+                marker(10, row.overlap ? "*" : " ", row.overlap, {1, 0.65f, 0.25f, 1});
+                ImGui::EndGroup();
+                if (ImGui::IsItemHovered()) {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("%04X — %s", addr, read_only ? "Read-only memory" : "Writable memory");
+                    ImGui::Text("X: %s", executed ? "Executed as an instruction start" : "Not observed as an instruction start");
+                    ImGui::Text("SM: %s", modified ? "Self-modified (persistent fact)" : "No self-modification recorded at this start");
+                    ImGui::Text("O: %s", evidence_text(state));
+                    ImGui::Separator();
+                    const auto& metadata = memory.Metadata(addr);
+                    constexpr const char* names[] = {"Instruction reads", "CPU data reads", "CPU writes", "CPU changes", "Refused writes", "Host changes"};
+                    for (size_t kind = 0; kind < metadata.activity.size(); ++kind) {
+                        const auto& activity = metadata.activity[kind];
+                        if (!activity.count) continue;
+                        ImGui::Text("%s: %llu | latest sequence %llu, T %llu", names[kind],
+                            (unsigned long long)activity.count, (unsigned long long)activity.latest.sequence,
+                            (unsigned long long)activity.latest.cycles);
+                        if (kind != size_t(MetadataMemory::AccessKind::HostChange))
+                            ImGui::Text("  %s at %04X", activity.latest.interrupt ? "Interrupt entry" : "Instruction", activity.latest.pc);
+                        if (kind >= size_t(MetadataMemory::AccessKind::Write))
+                            ImGui::Text("  %02X -> %02X", activity.old_value, activity.new_value);
+                    }
+                    ImGui::Text("Completed executions here: %llu", (unsigned long long)history.Count(addr));
+                    if (auto event = history.Latest(addr)) ImGui::Text("Latest retained observation: %llu", (unsigned long long)event->sequence);
+                    if (row.overlap) ImGui::TextUnformatted("Another observed/selected start lies inside this instruction span.");
+                    if (state == EvidenceState::Modified) ImGui::TextUnformatted("Current bytes are decoded here. Execution history retains the older bytes.");
+                    if (state == EvidenceState::Unobserved) ImGui::TextUnformatted("This boundary is speculative; unobserved bytes are not proven data.");
+                    ImGui::EndTooltip();
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        last_pc_ = pc;
+    }
     ImGui::End();
 }
 

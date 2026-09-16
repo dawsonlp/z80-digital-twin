@@ -10,6 +10,7 @@
 #include "disassembler.h"
 
 #include <format>
+#include <stdexcept>
 
 namespace z80::dbg {
 namespace {
@@ -42,13 +43,16 @@ IndexNames names_for(Index ix) {
 }
 
 // Sequential byte cursor: reads in address order, recording up to 4 raw bytes.
+struct EndOfInput {};
 struct Cursor {
     const ByteReader& read;
     uint16_t base;
-    uint8_t n = 0;
+    uint32_t limit;
+    uint32_t n = 0;
     std::array<uint8_t, 4> bytes{};
 
     uint8_t next() {
+        if (n == limit) throw EndOfInput{};
         const uint8_t b = read(static_cast<uint16_t>(base + n));
         if (n < bytes.size()) bytes[n] = b;
         ++n;
@@ -126,17 +130,27 @@ void decode_index_cb(Cursor& cur, Index ix, Instruction& out) {
     const uint8_t op = cur.next();
     const uint8_t x = op >> 6, y = (op >> 3) & 7;
     const std::string m = index_mem(names_for(ix), d);
+    const uint8_t z = op & 7;
+    const std::string dest = z != 6 ? ", " + std::string(kR[z]) : "";
+    // Current CPU bit operations with z != 6 act on the register alone, unlike
+    // its rotate/shift path. Keep display aligned with that execution contract;
+    // source export retains the full encoding rather than assembling this text.
+    const std::string bit_operand = z == 6 ? m : std::string(kR[z]);
     switch (x) {
-        case 0: finish(out, kROT[y], m); break;            // documented form
-        case 1: finish(out, "BIT", std::format("{}, {}", y, m)); break;
-        case 2: finish(out, "RES", std::format("{}, {}", y, m)); break;
-        default: finish(out, "SET", std::format("{}, {}", y, m)); break;
+        case 0: finish(out, kROT[y], m + dest); break;
+        case 1: finish(out, "BIT", std::format("{}, {}", y, bit_operand)); break;
+        case 2: finish(out, "RES", std::format("{}, {}", y, bit_operand)); break;
+        default: finish(out, "SET", std::format("{}, {}", y, bit_operand)); break;
     }
 }
 
 // -- ED-prefixed --------------------------------------------------------------
 void decode_ed(Cursor& cur, const SymbolResolver& resolve, Instruction& out) {
     const uint8_t op = cur.next();
+    // Display the current executor's explicit mappings. Source export preserves
+    // these encodings as bytes: the mnemonic is not a Pasmo encoding promise.
+    if (op == 0x76) { finish(out, "SLL", "(HL)"); return; }
+    if (op == 0x7E) { finish(out, "NOP"); return; }
     const uint8_t x = op >> 6, y = (op >> 3) & 7, z = op & 7;
     const uint8_t p = y >> 1, q = y & 1;
 
@@ -202,13 +216,13 @@ void decode_base(uint8_t op, Cursor& cur, Index ix,
                         case 0: finish(out, "NOP"); return;
                         case 1: finish(out, "EX", "AF, AF'"); return;
                         case 2: { int8_t d = cur.disp();
-                                  out.branch_target = static_cast<uint16_t>(out.address + 2 + d);
+                                  out.branch_target = static_cast<uint16_t>(out.address + cur.n + d);
                                   finish(out, "DJNZ", addr(*out.branch_target, resolve)); return; }
                         case 3: { int8_t d = cur.disp();
-                                  out.branch_target = static_cast<uint16_t>(out.address + 2 + d);
+                                  out.branch_target = static_cast<uint16_t>(out.address + cur.n + d);
                                   finish(out, "JR", addr(*out.branch_target, resolve)); return; }
                         default: { int8_t d = cur.disp();
-                                   out.branch_target = static_cast<uint16_t>(out.address + 2 + d);
+                                   out.branch_target = static_cast<uint16_t>(out.address + cur.n + d);
                                    finish(out, "JR", std::format("{}, {}", kCC[y - 4],
                                           addr(*out.branch_target, resolve))); return; }
                     }
@@ -305,7 +319,10 @@ void decode_base(uint8_t op, Cursor& cur, Index ix,
                 }
                 default: // z == 7
                     out.branch_target = static_cast<uint16_t>(y * 8);
-                    finish(out, "RST", hex8(static_cast<uint8_t>(y * 8))); return;
+                    {
+                        auto name = resolve ? resolve(*out.branch_target) : std::nullopt;
+                        finish(out, "RST", name.value_or(hex8(static_cast<uint8_t>(y * 8)))); return;
+                    }
             }
     }
 }
@@ -313,41 +330,50 @@ void decode_base(uint8_t op, Cursor& cur, Index ix,
 } // namespace
 
 Instruction Disassembler::Decode(const ByteReader& read, uint16_t address,
-                                 const SymbolResolver& resolve) const {
+                                 const SymbolResolver& resolve, uint32_t available) const {
+    if (available == 0 || available > 65536)
+        throw std::invalid_argument("Decode requires 1..65536 available bytes");
     Instruction out;
     out.address = address;
-    Cursor cur{read, address};
+    Cursor cur{read, address, available};
 
     // Wrap the resolver so every name it substitutes is recorded, letting the
     // UI colour operand symbols by type without re-parsing the operand text.
     std::vector<std::string> used;
-    SymbolResolver recording;
-    if (resolve) {
-        recording = [&used, &resolve](uint16_t a) -> std::optional<std::string> {
-            auto name = resolve(a);
-            if (name) used.push_back(*name);
-            return name;
-        };
-    }
+    std::optional<uint16_t> operand_address;
+    SymbolResolver recording = [&](uint16_t a) -> std::optional<std::string> {
+        operand_address = a;
+        auto name = resolve ? resolve(a) : std::nullopt;
+        if (name) used.push_back(*name);
+        return name;
+    };
 
     // Consume any DD/FD prefixes (last one wins); dispatch on the final opcode.
     Index ix = Index::None;
-    for (;;) {
-        const uint8_t op = cur.next();
-        if (op == 0xDD) { ix = Index::IX; continue; }
-        if (op == 0xFD) { ix = Index::IY; continue; }
-        if (op == 0xED) { decode_ed(cur, recording, out); break; }
-        if (op == 0xCB) {
-            if (ix == Index::None) decode_cb(cur, out);
-            else                   decode_index_cb(cur, ix, out);
+    try {
+        for (;;) {
+            const uint8_t op = cur.next();
+            if (op == 0xDD) { ix = Index::IX; continue; }
+            if (op == 0xFD) { ix = Index::IY; continue; }
+            if (op == 0xED) { decode_ed(cur, recording, out); break; }
+            if (op == 0xCB) {
+                if (ix == Index::None) decode_cb(cur, out);
+                else                   decode_index_cb(cur, ix, out);
+                break;
+            }
+            decode_base(op, cur, ix, recording, out);
             break;
         }
-        decode_base(op, cur, ix, recording, out);
-        break;
+    } catch (const EndOfInput&) {
+        out.complete = false;
+        out.branch_target.reset();
+        finish(out, "<incomplete instruction>");
     }
+    if (out.complete && operand_address)
+        out.address_operand = AddressOperand{out.branch_target ? AddressOperand::Use::Branch : AddressOperand::Use::Memory, *operand_address};
     out.symbols_used = std::move(used);
 
-    out.length = cur.n > 4 ? 4 : cur.n;
+    out.length = cur.n;
     out.bytes = cur.bytes;
     return out;
 }

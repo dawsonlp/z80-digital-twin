@@ -121,13 +121,16 @@ public:
 
     /// @brief Resolve the border timeline to a per-line colour, advance the
     ///        FLASH phase, and begin a fresh timeline for the next frame.
-    void end_frame() {
+    void end_frame() { end_frame(clock_ ? clock_() : frame_start_); }
+
+    // Explicit boundary retains instruction overrun in the next frame timeline.
+    void end_frame(uint64_t next_frame_start) {
         resolve_border();
         const uint8_t carry = current_border_;
         border_events_.clear();
         border_events_.push_back({0, carry});   // baseline for the new frame
         ++frame_counter_;
-        if (clock_) frame_start_ = clock_();
+        frame_start_ = next_frame_start;
     }
 
     // -- FrameSource (for video::render_frame) -------------------------------

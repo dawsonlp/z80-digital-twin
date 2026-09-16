@@ -13,17 +13,17 @@
 
 #include "panel.h"
 
-namespace z80::machine::spectrum { class Ula; }
+#include "spectrum/spectrum_machine.h"
 
 namespace z80::dbg {
 
 class SpectrumScreenPanel : public Panel {
 public:
-    explicit SpectrumScreenPanel(z80::machine::spectrum::Ula& ula) : ula_(&ula) {}
+    explicit SpectrumScreenPanel(z80::machine::spectrum::DebugSpectrumMachine& machine) : machine_(&machine) {}
     void Draw(UiContext& ctx) override;
 
 private:
-    z80::machine::spectrum::Ula* ula_;
+    z80::machine::spectrum::DebugSpectrumMachine* machine_;
     unsigned int texture_ = 0;   ///< GL texture id (lazily created)
 };
 

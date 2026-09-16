@@ -15,8 +15,29 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <type_traits>
+#include <utility>
 
 namespace z80::dbg {
+
+void SymbolTable::AddZ80VectorDefaults() {
+    struct Vector { uint16_t address; const char* name; const char* description; };
+    constexpr Vector vectors[] = {
+        {0x00, "RST_00_RESET", "Z80 reset entry and RST 00h target. Architectural entry, not proof of execution."},
+        {0x08, "RST_08", "Z80 RST 08h target."},
+        {0x10, "RST_10", "Z80 RST 10h target."},
+        {0x18, "RST_18", "Z80 RST 18h target."},
+        {0x20, "RST_20", "Z80 RST 20h target."},
+        {0x28, "RST_28", "Z80 RST 28h target."},
+        {0x30, "RST_30", "Z80 RST 30h target."},
+        {0x38, "RST_38_IM1", "Z80 RST 38h target and maskable INT entry in interrupt mode 1. IM 0 depends on the supplied instruction; IM 2 uses a vector table. This label does not imply that IM 1 is currently selected."},
+        {0x66, "NMI_66", "Z80 non-maskable interrupt entry at 0066h, independent of interrupt mode. Not an RST instruction target; this architectural label does not imply NMI delivery is implemented."},
+    };
+    for (const auto& vector : vectors)
+        if (!Lookup(vector.address) && !Resolve(vector.name))
+            DefineLabel(vector.address, vector.name, SymbolType::JumpTarget, vector.description);
+}
+
 namespace {
 
 // ===========================================================================
@@ -233,14 +254,14 @@ std::optional<uint16_t> parse_address(const JValue& v) {
     return static_cast<uint16_t>(value);
 }
 
-std::optional<uint16_t> parse_size(const JValue& v) {
+std::optional<uint32_t> parse_size(const JValue& v) {
     if (v.type == JValue::Type::Number) {
         const long n = static_cast<long>(v.number);
         if (n < 1 || n > 0x10000) return std::nullopt;
-        return static_cast<uint16_t>(n > 0xFFFF ? 0xFFFF : n);
+        return static_cast<uint32_t>(n);
     }
     if (v.type == JValue::Type::String) {
-        if (auto a = parse_address(v)) return *a == 0 ? std::optional<uint16_t>(1) : a;
+        if (auto a = parse_address(v)) return *a == 0 ? std::optional<uint32_t>(1) : std::optional<uint32_t>(*a);
     }
     return std::nullopt;
 }
@@ -298,19 +319,41 @@ std::optional<SymbolType> SymbolTypeFromString(std::string_view text) {
 // ===========================================================================
 
 void SymbolTable::Define(const Symbol& sym) {
-    // Drop any previous symbol at this address (and its old name index entry).
-    if (auto it = by_address_.find(sym.address); it != by_address_.end()) {
-        by_name_.erase(it->second.name);
+    if (sym.name.empty()) throw std::invalid_argument("Symbol name must not be empty");
+    if (const auto named = by_name_.find(sym.name);
+        named != by_name_.end() && named->second != sym.address)
+        throw std::invalid_argument("Symbol name already exists at another address");
+
+    // Allocate/copy before changing either index. Inserting an address may still
+    // throw; roll back the newly inserted name in that case.
+    Symbol replacement = sym;
+    if (replacement.size == 0) replacement.size = 1;
+    const auto [name, inserted] = by_name_.try_emplace(replacement.name, replacement.address);
+    try {
+        const auto existing = by_address_.find(replacement.address);
+        if (existing == by_address_.end()) {
+            by_address_.emplace(replacement.address, std::move(replacement));
+        } else {
+            static_assert(std::is_nothrow_swappable_v<Symbol>);
+            std::swap(existing->second, replacement);
+            if (inserted) by_name_.erase(replacement.name);
+        }
+    } catch (...) {
+        if (inserted) by_name_.erase(name);
+        throw;
     }
-    Symbol s = sym;
-    if (s.size == 0) s.size = 1;
-    by_name_[s.name] = s.address;
-    by_address_[s.address] = std::move(s);
 }
 
 void SymbolTable::DefineLabel(uint16_t address, std::string name,
                               SymbolType type, std::string description) {
     Define(Symbol{address, std::move(name), type, std::move(description), 1});
+}
+
+void SymbolTable::Rename(uint16_t address, std::string name) {
+    auto symbol = Lookup(address);
+    if (!symbol) throw std::out_of_range("No symbol at this address");
+    symbol->name = std::move(name);
+    Define(*symbol);
 }
 
 void SymbolTable::Remove(uint16_t address) {
@@ -427,7 +470,11 @@ bool SymbolTable::LoadFromFile(const std::string& path, std::string* program,
             if (auto s = parse_size(*sz)) sym.size = *s;
             else warn("invalid \"size\", defaulting to 1");
         }
-        Define(sym);
+        try {
+            Define(sym);
+        } catch (const std::invalid_argument& error) {
+            warn(error.what());
+        }
     }
     return true;
 }

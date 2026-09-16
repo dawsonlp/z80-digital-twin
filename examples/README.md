@@ -7,6 +7,9 @@ User-facing examples documentation lives at
 
 Current examples:
 
+- [Spectrum source development](spectrum-dev/README.md): external Pasmo build/run
+  from VS Code or a terminal.
+
 - `gcd_example.cpp`
 - `gcd_stress_test.cpp`
 - `spectrum_probe.cpp`

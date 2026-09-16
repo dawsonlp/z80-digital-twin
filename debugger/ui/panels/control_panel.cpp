@@ -29,13 +29,15 @@ void ControlPanel::Draw(UiContext& ctx) {
     ImGui::Begin("Control");
 
     const bool halted = ctx.cpu().IsHalted();
-    ImGui::BeginDisabled(halted);
+    ImGui::BeginDisabled(!ctx.session.CanAdvance());
     if (ImGui::Button("Step"))      ctx.commands.step = true;       ImGui::SameLine();
     if (ImGui::Button("Step Over")) ctx.commands.step_over = true;  ImGui::SameLine();
     if (ImGui::Button("Run"))       ctx.commands.run = true;        ImGui::SameLine();
     ImGui::EndDisabled();
     if (ImGui::Button("Pause"))     ctx.commands.pause = true;      ImGui::SameLine();
-    if (ImGui::Button("Reset"))     ctx.commands.reset = true;
+    if (ImGui::Button("Restart program"))     ctx.commands.reset = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Clear analysis")) ctx.commands.clear_analysis = true;
 
     ImGui::Separator();
     ImGui::Text("State: %s    PC: 0x%04X    Cycles: %llu    Halted: %s",

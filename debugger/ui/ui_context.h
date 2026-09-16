@@ -14,7 +14,7 @@
 
 #include "debug_session.h"
 #include "disassembler.h"
-#include "symbol_table.h"
+#include "analysis_workspace.h"
 
 #include <cstdint>
 #include <optional>
@@ -30,14 +30,15 @@ struct DebugCommands {
     bool run = false;
     bool pause = false;
     bool reset = false;
+    bool clear_analysis = false;
 
-    void Clear() { step = step_over = run = pause = reset = false; }
+    void Clear() { step = step_over = run = pause = reset = clear_analysis = false; }
 };
 
 /// @brief Everything a panel needs to render and drive the debugger.
 struct UiContext {
     DebugSession& session;
-    SymbolTable& symbols;
+    const analysis::View& symbols;
     const Disassembler& disasm;
     DebugCommands& commands;
     std::string& status;
@@ -45,6 +46,7 @@ struct UiContext {
     /// @brief Cross-panel request: jump the disassembly view to this address.
     ///        Set by any panel; consumed and cleared by the disassembly panel.
     std::optional<uint16_t>& disasm_goto;
+    analysis::Workspace& analysis;
 
     [[nodiscard]] DebugCPU& cpu() const { return session.Cpu(); }
 

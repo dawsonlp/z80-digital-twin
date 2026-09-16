@@ -1,0 +1,6 @@
+{
+  "lsp-z80.server.path": "${workspaceFolder}/../../../../.venv/bin/lsp-z80",
+  "files.associations": {
+    "*.asm": "z80"
+  }
+}

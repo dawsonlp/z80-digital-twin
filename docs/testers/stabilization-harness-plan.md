@@ -1,5 +1,10 @@
 # Stabilization Harness Plan
 
+> Plan status, 15 September 2026: the CP/M `cpu_suite_runner` already exists
+> for ZEXDOC/ZEXALL. The Spectrum-native/manifest/audio harnesses proposed below
+> remain future work; the probe now uses `DebugSpectrumMachine` and the shared
+> runtime. See [current status](../reference/status.md).
+
 **Purpose:** turn the compatibility plan into repeatable regression signal. The
 repo already has good unit coverage for isolated CPU/device behavior and a
 headless exploratory probe. The missing layer is a small set of harnesses that

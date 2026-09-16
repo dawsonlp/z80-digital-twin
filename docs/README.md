@@ -1,52 +1,76 @@
 # Documentation
 
-**Audience:** users, developers, and testers.
-**Purpose:** route readers to the smallest document that answers their question.
-**Last reviewed:** 2026-06-09.
+**Audience:** users, developers and testers.
+**Purpose:** route readers to the smallest current document answering their question.
+**Last reviewed:** 2026-09-15.
 
-## Users
+Start with [current status](reference/status.md) for implemented capability and
+limits. [Roadmap](developers/roadmap.md) gives current sequencing. Dated plans,
+checklists and verification records describe their own scope and are not blanket
+claims of current completion.
 
-- [Getting Started](users/getting-started.md): build, run tests, and launch the
-  main binaries.
-- [Spectrum Viewer](users/spectrum-viewer.md): run the ZX Spectrum 48K viewer,
-  load tapes, use keyboard mapping, and take screenshots.
-- [Debugger](users/debugger.md): use `z80_debugger` for binaries and Spectrum
-  sessions.
-- [Examples](users/examples.md): GCD examples, stress tests, and benchmarks.
-- [Troubleshooting](users/troubleshooting.md): common build/runtime failures.
+## Use the tools
 
-## Developers
+- [Getting started](users/getting-started.md): prerequisites, build and main tools.
+- [Spectrum assembly development](../examples/spectrum-dev/README.md): VS Code
+  or terminal, external Pasmo, build artifacts and a fresh debugger launch.
+- [Durable symbols and semantic assembly](users/symbol-analysis.md): stable IDs, enrichment, save/reopen and verified export.
+- [Debugger](users/debugger.md): execution, address/history browsing, observation
+  markers, symbols, clear-analysis and restart behavior.
+- [Spectrum viewer](users/spectrum-viewer.md): keyboard, tape, screen and beeper.
+- [Examples](users/examples.md) and [troubleshooting](users/troubleshooting.md).
+- [Language server](../lsp-z80/README.md) and
+  [VS Code client](../lsp-z80/editors/vscode/README.md).
 
-- [Architecture](developers/architecture.md): core engine, machine layer,
-  debugger layer, and policy model.
-- [Spectrum Machine Design](developers/spectrum-machine-design.md): ULA,
-  timing, keyboard, tape, sound, and ROM behavior.
-- [Debugger Design](developers/debugger-design.md): debug session, UI panels,
-  symbols, breakpoints, and SMC detection.
-- [Reverse-Engineering Roadmap](developers/reverse-engineering-roadmap.md):
-  coverage, annotations, export, and round-trip verification.
-- [Roadmap](developers/roadmap.md): current implementation priorities.
-- [Decisions](developers/decisions.md): durable architectural decisions.
-- [Contributing](developers/contributing.md): workflow and expectations.
+## Understand and extend the implementation
 
-## Testers And Stabilizers
+- [Architecture](developers/architecture.md): actual targets, policies and ownership.
+- [Analysis implementation](developers/analysis-implementation.md): schema, verified boundaries and pending runtime identity decision.
+- [Debugger design](developers/debugger-design.md): execution, evidence and lifecycle.
+- [Spectrum design](developers/spectrum-machine-design.md): runtime/devices and fidelity limits.
+- [Floating bus](developers/floating-bus-design.md): detailed timing rationale.
+- [Decisions](developers/decisions.md) and [contributing](developers/contributing.md).
+- [C++ conventions](developers/cpp-standards.md): incremental quality rules and the register-union exception.
+- [Current handoff](../handoff.md): short continuation guide.
 
-- [Testing](testers/testing.md): CTest, unit tests, optional ROM-dependent tests.
-- [CPU Correctness Suites](testers/cpu-correctness-suites.md): plan for running
-  external Z80 exercisers headlessly.
-- [Headless Instrumentation](testers/headless-instrumentation.md): probe recipes
-  and `DebugSession`-driven diagnosis.
-- [Compatibility Plan](testers/compatibility-plan.md): external software that
-  exposes subtle CPU, ULA, loader, and timing faults.
-- [Stabilization Harness Plan](testers/stabilization-harness-plan.md): harnesses
-  still needed to make compatibility testing repeatable.
-- [Fault Diagnosis](testers/fault-diagnosis.md): symptoms mapped to likely
-  subsystems and tests.
-- [Test Assets](testers/test-assets.md): local asset layout and copyright policy.
+## Plan and acceptance records
 
-## Reference And Archive
+- [Deterministic execution analysis](developers/deterministic-analysis-development-plan.md):
+  checklist for evidence capture, concrete transfer tactics, overlapping routine
+  usage and experiments, after integrating the existing work into main.
+- [Current roadmap](developers/roadmap.md): delivered foundations and remaining priorities.
+- [Symbol analysis and assembly projection](developers/symbol-analysis-development-plan.md):
+  incremental plan for stable symbol identity, enrichment, persistence and semantic export.
+- [Address metadata](developers/address-metadata-checklist.md): partial implementation
+  acceptance, including unresolved audit/resource/native checks.
+- [ROM-first reverse loop](developers/rom-reverse-loop-checklist.md): path to durable
+  evidence, annotations and range export; not a completed product loop.
+- [Enhanced roadmap](developers/enhanced-roadmap.md) and
+  [reverse-engineering roadmap](developers/reverse-engineering-roadmap.md): longer-term proposals.
+- [Forward-loop plan](developers/spectrum-development-loop-plan.md) and
+  [observed-browsing checklist](developers/observed-disassembly-checklist.md): dated delivery records.
+- [July architecture review](developers/source-architecture-feedback.md): historical
+  findings, partly addressed by subsequent runtime consolidation.
 
-- [Status](reference/status.md): dated project status snapshot.
-- [Performance](reference/performance.md): how to measure performance now.
-- [Archive](archive/): superseded TODOs, early test results, historical status,
-  performance analysis, and migration notes.
+## Verify behavior
+
+- [Main integration verification](testers/main-integration-verification.md):
+  fresh baseline checks before the deterministic-analysis branch.
+- [Testing](testers/testing.md): CTest, dependencies/skips, LSP and extension checks.
+- [Current refresh verification](testers/documentation-refresh-verification.md):
+  fresh results and explicit limitations.
+- [Forward-loop verification](testers/spectrum-development-loop-verification.md):
+  historical terminal/editor/native acceptance evidence.
+- [Disassembly verification](testers/disassembly-verification.md): independent
+  encoding fixtures and byte-exact export/reassembly contract.
+- [CPU suites](testers/cpu-correctness-suites.md),
+  [headless instrumentation](testers/headless-instrumentation.md),
+  [compatibility plan](testers/compatibility-plan.md),
+  [stabilization plan](testers/stabilization-harness-plan.md),
+  [fault diagnosis](testers/fault-diagnosis.md), and [test assets](testers/test-assets.md).
+
+## Reference and history
+
+- [Status](reference/status.md) and [performance measurement](reference/performance.md).
+- [Changelog](../CHANGELOG.md): released changes and unreleased development.
+- [Archive](archive/README.md): superseded designs and handoffs, retained as history.

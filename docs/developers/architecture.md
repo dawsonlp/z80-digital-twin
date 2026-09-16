@@ -1,196 +1,110 @@
 # Architecture
 
-**Status:** living document. Records the layering and the policy model that keep
-three different use cases sharing one engine without interfering.
-**Date:** 2026-06-06
+**Audience:** developers extending the CPU, machine, debugger, or tooling.
+**Last reviewed:** 2026-09-15.
+**Source of truth:** [CMake](../../CMakeLists.txt), [CPU](../../src/z80_cpu.h),
+[DebugSession](../../debugger/exec/debug_session.h), and
+[SpectrumMachine](../../machine/spectrum/spectrum_machine.h).
 
-This project started as a single highly-optimized digital twin, then grew a
-debugger, and is now growing machine emulators. This document names the shape
-that keeps all three first-class.
+## Layers and ownership
 
----
-
-## 1. The three use cases (the forces)
-
-| Use case | What it demands | What it must **not** pay for |
+| Layer | Target / location | Responsibility |
 |---|---|---|
-| **Mass IoT twin** (100s–1000s of instances) | max throughput, small per-instance footprint, real peripheral I/O (GPIO, serial, …) | any observation, UI, device, or timing machinery |
-| **Debugger** | memory/I/O observation, stepping, breakpoints, coverage/SMC, UI | hard-realtime accuracy |
-| **Machine emulator** (e.g. ZX Spectrum) | realtime → cycle-accurate timing, devices, interrupts | the debugger; the twin's zero-overhead budget |
+| CPU | `z80_cpu`, `src/` | Registers, instruction semantics, T-states, memory/I/O policy access. Static library. |
+| Debugger capability | `z80_debugger_core`, `debugger/{exec,disasm,symbols}/` | Execution control, evidence, disassembly and symbols. UI-free static library. |
+| Machine capability | `z80_machine`, `machine/` | Spectrum ULA, keyboard, tape, beeper, video and instruction/frame scheduling. Header-only INTERFACE target. |
+| Frontends | `z80_debugger`, `spectrum`, `spectrum_probe` | Compose capabilities for interactive or headless use. |
+| Source tools | `lsp-z80/`, `tools/spectrum_dev.py`, `z80_disassemble` | Independent language server, external assembler workflow and byte-preserving source export. |
 
-The design goal: each use case is a **configuration** of one engine, paying only
-for what it uses.
+The machine and debugger capability targets each depend on the CPU, not each
+other. Frontends compose them. GLFW, ImGui, OpenGL, native file dialogs and
+`z80_audio` belong to GUI targets, enabled by `Z80_BUILD_UI`. Headless tools and
+tests build without those dependencies.
 
-## 2. Layers
+## Compile-time environment policies
 
-```
-CORE ENGINE      z80_cpu (src/)                  Z80 + its environment policies
-     ▲
-CAPABILITIES     z80_debugger_core   z80_machine  (siblings — neither depends on the other)
-     ▲
-FRONTENDS        twin runner   debugger/spectrum app   (each composes the capabilities it needs)
-```
+`CPUImpl<Memory, Io>` selects both policies at compile time. CPU definitions
+remain in `src/z80_cpu.cpp` with explicit instantiations; adding an arbitrary
+policy requires a corresponding compiled instantiation, not just a new alias.
 
-**Rules:**
-- A capability is a **UI-free static library** depending only on layers beneath
-  it. Capabilities are **siblings**; one never depends on another.
-- The **only** UI/graphics dependency lives in frontends.
-- Tests link the relevant library and run **headless** (this is the primary
-  anti-rot guarantee, not the UI).
+| Memory policy | Current use | Behavior |
+|---|---|---|
+| `FastMemory` | Bare CPU and throughput reference | Direct byte storage without observation. |
+| `ObservableMemory` | Spectrum viewer | Multiple write observers, ROM protection, refused-write observation and host loading. |
+| `MetadataMemory` | Debugger and headless probe | Composes observable memory and adds byte revisions, instruction capture and attributed access summaries. |
 
-## 3. The CPU's environment = two compile-time policies
+Rich analysis stays out of the cheaper memory policies. `MetadataMemory`
+distinguishes instruction-stream reads, CPU data access, interrupt access and
+host mutation. Inspection and ULA reads do not count as CPU data reads. These
+are software access summaries, not a cycle-exact bus trace.
 
-The CPU is parameterized on the two halves of its environment — what it reads/
-writes *into* (memory) and what it talks *to* (I/O):
+The bare `CPU` alias uses `FastMemory` and the default `OpenBusIo`. Other I/O
+policies are `LatchedIo`, `CallbackIo`, and `ObservableIo<Inner>`. Ports retain
+their 16-bit addresses. `CallbackIo` forwards to machine devices;
+`ObservableIo` optionally records transactions. The UI reads that log rather
+than issuing side-effecting port reads to refresh a display.
 
-```cpp
-template <class Memory = FastMemory, class Io = OpenBusIo>
-class CPUImpl { Memory memory; Io io; /* … */ };
-
-using CPU = CPUImpl<FastMemory, OpenBusIo>;   // the bare Z80 (honest open bus)
-```
-
-- **Compile-time** binding ⇒ each configuration is fully inlined and **zero-cost**;
-  a GPIO twin carries no Spectrum-keyboard logic and vice-versa.
-- **Interrupts** are an *external method* (`Interrupt()`), not a policy — the
-  twin loop never calls it, so it costs nothing when unused.
-
-This is the mechanism. The use cases are just **named instantiations** of it.
-
-## 4. Named configurations (use case → config)
+## Actual configurations
 
 ```cpp
-// Bare Z80 — honest default (open bus); the performance reference:
-using CPU          = CPUImpl<FastMemory, OpenBusIo>;
-// Mass IoT twin — specialise I/O per deployment:
-//                   CPUImpl<FastMemory, GpioIo>         // real Raspberry Pi pins
-//                   CPUImpl<FastMemory, SerialIo>       // UART / serial chip
-//                   CPUImpl<FastMemory, LatchedIo>      // simple latched ports (opt-in)
+// z80::CPU
+CPUImpl<FastMemory, OpenBusIo>
 
-// ZX Spectrum, runnable: real device behaviour, zero observation overhead:
-using SpectrumCPU      = CPUImpl<ObservableMemory, SpectrumIo>;
-// ZX Spectrum, in the debugger: same truth + bus-transaction observation:
-using SpectrumDebugCPU = CPUImpl<ObservableMemory, ObservableIo<SpectrumIo>>;
+// SpectrumMachine::Cpu: viewer
+CPUImpl<ObservableMemory, ObservableIo<CallbackIo>>
+
+// DebugCPU == DebugSpectrumMachine::Cpu: debugger and probe
+CPUImpl<MetadataMemory, ObservableIo<CallbackIo>>
 ```
 
-Each picks its environment at compile time; nothing bleeds across; the bare
-`FastMemory + OpenBusIo` stays the benchmark-guarded reference (§8).
+`SpectrumMachineImpl<Memory>` shares scheduling and device wiring across both
+machine aliases. `DebugSession` is a concrete class over `DebugCPU`, not a
+session template. It references the same CPU owned by `DebugSpectrumMachine`.
+Without a Spectrum attached, its callback I/O reads as open bus. There is no
+separate `SpectrumIo` policy in the current source.
 
-## 5. Memory policies
+## Instruction and machine boundaries
 
-- **`FastMemory`** — zero-overhead `std::array`; the twin's plug. The hot path is
-  a direct indexed access.
-- **`ObservableMemory`** — a **multi-observer write hook** (a small list of
-  `(addr, old, new)` callbacks). Used by the debugger *and* machines; both attach
-  observers, so a *running* machine is also debuggable. This **subsumes** the
-  earlier single-hook debug memory plug.
+`CPUImpl::Step()` advances one opcode/prefix stage. `StepInstruction()` owns
+bounded whole-instruction execution and reports completion, HALT or budget
+exhaustion. `DebugSession` retains pending captures across incomplete prefix
+slices and publishes instruction evidence only on completion.
 
-Reads are never hooked, so observation costs nothing on fetch/operand traffic.
+`SpectrumMachineImpl::prepare_execution()` and `advance_execution()` bracket
+execution. Viewer frame batching and debugger/probe instruction control use
+this same lifecycle. Partial frames survive pause/resume; rendering uses the
+latest completed frame. See [Spectrum design](spectrum-machine-design.md) for
+the existing early-HALT and one-shot frame-interrupt limitations.
 
-## 6. I/O policies — I/O is a *device*, not storage
+## Analysis and persistence boundaries
 
-Real Z80 I/O has no implicit storage. `OUT` is a **transient bus pulse** (~2
-T-states); whether a value persists is entirely up to the external device (it
-must latch it). `IN` reads a device's **live state**, which may be unrelated to
-anything written (write and read can hit different hardware behind one port).
-Memory is just the special case where the device — RAM — latches every address.
+Byte activity belongs to `MetadataMemory`; completed instruction evidence and
+counts belong to `InstructionHistory` in the debugger core. The latest record
+per address survives eviction from the separate 8192-event recent-history
+queue. UI panels interpret those records without owning execution state.
 
-The `Io` policy reflects this: it's an **event/query** seam with the **full
-16-bit port** (`(A<<8)|n` for `IN/OUT (n)`, `BC` for `(C)` forms) — and adopting
-it *is* the 16-bit-addressing fix the Spectrum keyboard needs.
+Analysis is currently in memory only. JSON `.sym` files persist typed labels
+and descriptions, not execution evidence or machine state. Architectural vector
+labels are defaults, not evidence that code executed. See
+[debugger design](debugger-design.md) for retention and reset contracts.
 
-```cpp
-struct Io {                          // policy contract — events, not a store
-    uint8_t In(uint16_t port);                 // ask the device for live state
-    void    Out(uint16_t port, uint8_t value); // hand the device a transient write
-};
-```
+The LSP runs as an independent Python process over stdio. VS Code tasks and
+terminal users invoke the same external Pasmo workflow and inspectable build
+artifacts. Starting a fresh debugger from a build is implemented; live reload
+and durable reverse-engineering projects remain future work.
 
-Devices (truth):
-- **`OpenBusIo`** — the honest **default** for "nothing attached": `Out` is
-  discarded; `In` returns the floating-bus value (`0xFF`). No round-trip.
-- **`LatchedIo`** — a bank of read/write latches (the old 256-byte array, *named
-  for what it is*: one legitimate-but-simplistic device, handy for tests and
-  simple IoT models — **not** "how I/O works").
-- **`SpectrumIo`** — real machine behaviour: `OUT 0xFE` latches only the
-  border/MIC/speaker bits, `IN 0xFE` returns keyboard+EAR, unmapped ports →
-  open bus.
-- **`GpioIo` / `SerialIo` / …** — drive real hardware or device models.
+## Performance and support limits
 
-Observation (debugger), mirroring memory:
-- **`ObservableIo<Inner>`** — a **decorator** that forwards `In`/`Out` to the
-  real device and **records each transaction** (direction, port, value, cycle)
-  for the debugger. It shows a *bus-transaction log*, never a fake "current value
-  of each port."
+The bare CPU is the performance reference. Policy selection avoids adding
+metadata work to that configuration, but performance claims require a measured
+Release comparison. `performance_benchmark` is a standalone executable; CMake
+does not enforce a throughput threshold as a build or CTest failure.
 
-> **Why this matters beyond accuracy:** a real `IN` can have side effects
-> (clear a flag, advance a FIFO). So the debugger must **never poll-read ports**
-> to display them — it may only observe transactions the program itself makes.
-> The old storing-array model silently licensed that wrong behaviour; the device
-> model forbids it.
+Current verification is primarily macOS. CMake contains Unix-style compiler
+flags; do not treat the use of C++23 or cross-platform GUI libraries as proof of
+Windows/MSVC support. The installed-header layout also remains incomplete:
+installation flattens headers although CPU includes use `memory/` and `io/`.
+Use the source-tree CMake targets until packaging is corrected.
 
-A policy is a thin seam; stateful device logic (e.g. the ULA) lives in a device
-object the policy forwards to, so devices stay independently testable and can be
-shared across the I/O *and* memory seams (the ULA needs both).
-
-**Default decision (i):** the bare `CPU` defaults to `OpenBusIo` — correctness is
-the default; the convenient `LatchedIo` round-trip is opt-in (a few port-poking
-tests/examples select it explicitly).
-
-## 7. The debugger over policy configurations
-
-**Decided (a):** the whole stack is parameterized on **one** config, threaded
-through consistently. The config is named once as a type alias; everything that
-touches the CPU uses it:
-
-```cpp
-using AppCpu     = CPUImpl<ObservableMemory, ObservableIo<SpectrumIo>>;  // this build's config
-using AppSession = DebugSession<AppCpu>;                                 // Machine<AppCpu> too
-```
-
-- `DebugSession` and `Machine` are **templates on the config** (constrained to an
-  `ObservableMemory` plug); they are explicitly instantiated for each shipped
-  config.
-- The **disassembler and symbol table stay non-templated and shared** — they are
-  config-agnostic (byte-reader callback / address maps). Only code that touches
-  the CPU is parameterized; that *is* the consistent rule, not an exception.
-- The **UI binds the alias** (`UiContext`/panels reference `AppSession`), so
-  panels aren't templated per-config — the single config choice lives at the
-  alias.
-- **Consequence:** the integrated app is built as one config — the Spectrum
-  config — which also serves generic-Z80 debugging (arbitrary code simply
-  doesn't exercise the Spectrum ports). The mass twin is a separate build on
-  bare policies (`CPUImpl<FastMemory, OpenBusIo>` / `…, GpioIo>` etc.), with no
-  debugger or UI.
-- (Rejected alternative (b): fixing the debugger to a runtime-routing I/O — it
-  would debug a proxy rather than the real `SpectrumIo`, losing fidelity.)
-
-## 8. The performance invariant (sacred)
-
-`CPUImpl<FastMemory, OpenBusIo>` is the **null configuration** and the performance
-reference. Every capability must be **opt-in and zero-cost when off**, achieved
-by compile-time policy selection — never by runtime flags on the hot path. The
-`performance_benchmark` is the guardrail: **a throughput regression there is a
-build failure.** This single rule is what stops the twin from eroding as the
-debugger and emulators grow.
-
-## 9. Module layout & build targets
-
-```
-src/                  core engine            -> z80_cpu        (memory: FastMemory/ObservableMemory; io: OpenBusIo/LatchedIo/ObservableIo)
-debugger/{exec,disasm,symbols}  capability   -> z80_debugger_core
-machine/                        capability   -> z80_machine    (Spectrum: SpectrumIo, ULA, decoder, …)
-debugger/ui  (+ machine UI panels)  frontend -> z80_debugger   (+ imgui)
-tests/                           headless tests link the relevant library
-```
-
-Directory names are kept as-is for now (the **layering rules** matter more than
-folder names); a `core/` + `apps/` rename can happen later at a clean boundary
-if desired. New capabilities follow §2's sibling rule.
-
----
-
-*Companion docs: [DEBUGGER_DESIGN.md](debugger-design.md) (debugger),
-[SPECTRUM_DESIGN.md](spectrum-machine-design.md) (the Spectrum machine + ULA/PAL timing),
-[DEBUGGER_ROADMAP.md](reverse-engineering-roadmap.md) (reverse-engineering vision),
-[STATUS.md](../reference/status.md) (current state).*
+Historical rationale: [previous architecture](../archive/architecture-pre-2026-09-15.md).
+Current work: [roadmap](roadmap.md). Validation: [testing](../testers/testing.md).

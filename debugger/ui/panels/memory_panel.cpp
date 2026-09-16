@@ -46,7 +46,7 @@ void MemoryPanel::Draw(UiContext& ctx) {
     ImGui::TextDisabled("changed bytes are highlighted");
 
     ImGui::SameLine();
-    ImGui::TextDisabled("| green=exec  magenta=SMC  amber=blocked-write  blue=read-only");
+    ImGui::TextDisabled("| green=past execution  magenta=SMC  amber=blocked-write  blue=read-only");
 
     DebugCPU& cpu = ctx.cpu();
     DebugSession& session = ctx.session;
@@ -74,7 +74,7 @@ void MemoryPanel::Draw(UiContext& ctx) {
                 ImGui::Text("%04X ", base);
                 // Right-click the address to label this location.
                 if (ImGui::BeginPopupContextItem("lbl")) {
-                    if (ImGui::IsWindowAppearing()) PrimeSymbolEdit(edit_, base, ctx.symbols);
+                    if (ImGui::IsWindowAppearing()) PrimeSymbolEdit(edit_, base, ctx.analysis);
                     DrawSymbolEditForm(ctx, edit_);
                     ImGui::EndPopup();
                 }

@@ -24,7 +24,7 @@ void check(bool ok, const char* what) {
 }
 
 void step1(CPU& c) {  // one whole instruction (across prefix bytes)
-    do { c.Step(); } while (!c.InstructionComplete());
+    check(c.StepInstruction().completed, "instruction completed");
 }
 
 void load(CPU& c, std::vector<uint8_t> bytes) {
@@ -41,6 +41,48 @@ uint16_t stack_word(CPU& c) {  // the word at SP (a pushed return address)
 
 int main() {
     std::cout << "Maskable interrupt verification\n===============================\n";
+
+    // Bounded completion must not turn a partial prefix chain into an instruction.
+    {
+        CPU c;
+        std::vector<uint8_t> bytes(20, 0xDD);
+        bytes.push_back(0x00);
+        load(c, bytes);
+        auto r = c.StepInstruction(0);
+        check(!r.completed && r.stages == 0 && c.PC() == 0,
+              "zero budget leaves the CPU unchanged");
+        r = c.StepInstruction(8);
+        check(r.stop == z80::InstructionStop::BudgetExhausted && !r.completed &&
+              r.cycles == 32 && c.PC() == 8 && !c.InstructionComplete(),
+              "prefix budget reports incomplete execution");
+        c.IFF1() = true;
+        check(!c.Interrupt(), "interrupt declined inside a prefix chain");
+        r = c.StepInstruction(13);
+        check(r.completed && r.stages == 13 && r.cycles == 52 && c.PC() == 21,
+              "continuation completes the original instruction");
+        check(c.Interrupt(), "interrupt accepted at completed boundary");
+    }
+    {
+        CPU c;
+        load(c, {0xFB, 0xDD, 0xFD, 0x00});
+        c.StepInstruction();
+        c.StepInstruction(1);
+        check(!c.Interrupt(), "EI shadow survives the first prefix");
+        c.StepInstruction(1);
+        check(!c.Interrupt(), "EI shadow survives a second prefix");
+        check(c.StepInstruction().completed && c.Interrupt(),
+              "EI shadow ends after the whole following instruction");
+    }
+    {
+        CPU c;
+        load(c, {0x76});
+        auto r = c.StepInstruction();
+        check(r.stop == z80::InstructionStop::Halted && r.completed && r.cycles == 4,
+              "executing HALT is a completed instruction");
+        r = c.StepInstruction();
+        check(r.stop == z80::InstructionStop::Halted && !r.completed && r.cycles == 0,
+              "already halted does not invent an instruction or idle time");
+    }
 
     // --- IM 1 acceptance ----------------------------------------------------
     std::cout << "\n[1] IM 1: accept, push PC, jump to 0x0038\n";

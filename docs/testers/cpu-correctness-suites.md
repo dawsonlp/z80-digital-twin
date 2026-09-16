@@ -1,5 +1,10 @@
 # CPU Correctness Suites
 
+> Implementation boundary, 15 September 2026: the executable currently supports
+> built-in CP/M ZEXDOC/ZEXALL cases and CTest skip code 77. Manifest parsing and
+> Spectrum-native adapters below remain proposals. Current runs/limits are in
+> [Testing](testing.md); older pass results are historical evidence.
+
 **Audience:** testers and developers stabilizing CPU behavior.
 **Purpose:** define how to run freely available Z80 correctness suites in a
 repeatable headless harness.

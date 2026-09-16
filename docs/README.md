@@ -14,6 +14,7 @@ claims of current completion.
 - [Getting started](users/getting-started.md): prerequisites, build and main tools.
 - [Spectrum assembly development](../examples/spectrum-dev/README.md): VS Code
   or terminal, external Pasmo, build artifacts and a fresh debugger launch.
+- [Durable symbols and semantic assembly](users/symbol-analysis.md): stable IDs, enrichment, save/reopen and verified export.
 - [Debugger](users/debugger.md): execution, address/history browsing, observation
   markers, symbols, clear-analysis and restart behavior.
 - [Spectrum viewer](users/spectrum-viewer.md): keyboard, tape, screen and beeper.
@@ -24,15 +25,22 @@ claims of current completion.
 ## Understand and extend the implementation
 
 - [Architecture](developers/architecture.md): actual targets, policies and ownership.
+- [Analysis implementation](developers/analysis-implementation.md): schema, verified boundaries and pending runtime identity decision.
 - [Debugger design](developers/debugger-design.md): execution, evidence and lifecycle.
 - [Spectrum design](developers/spectrum-machine-design.md): runtime/devices and fidelity limits.
 - [Floating bus](developers/floating-bus-design.md): detailed timing rationale.
 - [Decisions](developers/decisions.md) and [contributing](developers/contributing.md).
+- [C++ conventions](developers/cpp-standards.md): incremental quality rules and the register-union exception.
 - [Current handoff](../handoff.md): short continuation guide.
 
 ## Plan and acceptance records
 
+- [Deterministic execution analysis](developers/deterministic-analysis-development-plan.md):
+  checklist for evidence capture, concrete transfer tactics, overlapping routine
+  usage and experiments, after integrating the existing work into main.
 - [Current roadmap](developers/roadmap.md): delivered foundations and remaining priorities.
+- [Symbol analysis and assembly projection](developers/symbol-analysis-development-plan.md):
+  incremental plan for stable symbol identity, enrichment, persistence and semantic export.
 - [Address metadata](developers/address-metadata-checklist.md): partial implementation
   acceptance, including unresolved audit/resource/native checks.
 - [ROM-first reverse loop](developers/rom-reverse-loop-checklist.md): path to durable
@@ -46,6 +54,8 @@ claims of current completion.
 
 ## Verify behavior
 
+- [Main integration verification](testers/main-integration-verification.md):
+  fresh baseline checks before the deterministic-analysis branch.
 - [Testing](testers/testing.md): CTest, dependencies/skips, LSP and extension checks.
 - [Current refresh verification](testers/documentation-refresh-verification.md):
   fresh results and explicit limitations.

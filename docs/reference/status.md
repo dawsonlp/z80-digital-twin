@@ -1,38 +1,61 @@
 # Status
 
 **Audience:** users and developers checking current capability.
-**Purpose:** summarize what exists now without repeating the full design docs.
-**Last reviewed:** 2026-06-09.
+**Last reviewed:** 2026-09-15.
+**Baseline:** source commit `b94fa00` on `feature/spectrum-dev-loop`, including
+the address-metadata changes following checkpoint `a3dd462`. This is an unreleased development baseline;
+CMake's project version remains 1.0.3.
 
-## Working Now
+## Implemented
 
-- Z80 CPU core with documented and prefixed instruction support, T-state
-  accounting, interrupts, refresh register behavior, and focused unit coverage.
-- Compile-time memory and I/O policies:
-  `FastMemory`, `ObservableMemory`, `OpenBusIo`, `LatchedIo`,
-  `ObservableIo`, and `CallbackIo`.
-- Debugger core and ImGui UI with stepping, breakpoints, symbols, disassembly,
-  coverage, self-modifying-code detection, blocked ROM-write reporting, and
-  Spectrum mode.
-- ZX Spectrum 48K machine layer with PAL frame timing, ULA screen rendering,
-  keyboard matrix, border, floating bus, tape signal playback, beeper resampling,
-  ROM write protection, headless probe, and windowed viewer.
-- Headless CTest coverage for CPU behavior, timing, memory/I/O policies,
-  Spectrum video/keyboard/tape/beeper/floating bus, and debugger core.
+- C++23 policy-based Z80 CPU, opcode/prefix stepping, bounded whole-instruction
+  stepping, T-state accounting, maskable interrupts and focused correctness tests.
+- `FastMemory`, `ObservableMemory` and optional `MetadataMemory`; open-bus,
+  latched, callback and observable I/O policies.
+- Shared Spectrum 48K runtime for viewer, debugger and probe: screen/border,
+  keyboard, tape, beeper, floating bus, ROM protection and instruction/frame
+  progress. Both cheaper and metadata-enabled memory configurations use it.
+- Debugger stepping, breakpoints, write-watchpoints, disassembly, typed JSON
+  symbols, coverage, SMC and refused-write reporting.
+- Full address browsing, independent RO/X/SM/O markers and tooltips, per-address
+  execution counts/latest captured bytes, byte activity summaries and a separate
+  bounded recent-history view. Address evidence survives recent-history eviction.
+- Architectural vector default labels, preserving existing labels.
+- `Clear analysis` preserves machine state; the core also has `ResetCpu()`.
+  The UI's **Restart program** still clears analysis and cold-boots Spectrum ROM.
+- Independent Pasmo-oriented Python LSP and VS Code client. Terminal and editor
+  tasks share `tools/spectrum_dev.py`: external Pasmo assembly, inspectable build
+  artifacts, symbol conversion, launch validation and a fresh debugger process.
+- `z80_disassemble` and independent assembler/byte-round-trip gates. Export is
+  linear byte reconstruction, not recovery of original source or persisted analysis.
 
-## Known Gaps
+## Verification
 
-- Contended memory timing is not modeled yet.
-- Some TZX flow-control blocks are parsed linearly rather than executed as full
-  control flow.
-- External compatibility suites and games are not yet wrapped in structured
-  regression harnesses.
-- Audio regression is unit-tested at the resampler level, not yet with
-  full-program beeper fingerprints.
+The [15 September verification record](../testers/documentation-refresh-verification.md)
+separates fresh build/test results, optional skips and GUI limitations. Tests
+establish their covered cases, not exhaustive Z80 or Spectrum compatibility.
+Older workflow and native-interaction evidence remains dated in the linked
+checklists; it is not a fresh acceptance result for every current change.
 
-## Current Priorities
+## Remaining limitations
 
-See [Roadmap](../developers/roadmap.md) and
-[Stabilization Harness Plan](../testers/stabilization-harness-plan.md).
+- Analysis is in memory only. JSON symbols do not persist execution history,
+  full machine state or a reverse-engineering project.
+- Address metadata is implemented but full acceptance remains open: complete
+  access-accounting/overflow audit, resource/overhead measurement and remaining
+  native interaction checks. First/latest byte activity exists; first-completion
+  summaries per instruction start are not yet a complete delivered contract.
+- Replacement-load lifecycle is not uniform: generic binary/GCD loaders reset
+  the CPU without clearing the session analysis. Use a fresh process when
+  switching analyzed programs; full lifecycle acceptance remains open.
+- No contention, complete HALT bus/refresh progression or persistent INT-line
+  model. Some TZX flow-control blocks remain linearized.
+- No live reload into an existing debugger, durable evidence/annotation recovery,
+  integrated evidence-aware source export, call graphs or complete mutation archive.
+- External CPU runner has built-in ZEXDOC/ZEXALL cases; the manifest is descriptive,
+  not parsed. Broad game compatibility and full-program audio regression remain open.
+- macOS is the exercised development platform. Windows/MSVC and installed-header
+  SDK use are not verified; the current install layout needs correction.
 
-Historical snapshot: [status-2026-06-06.md](../archive/status-2026-06-06.md).
+See [roadmap](../developers/roadmap.md) for sequencing and
+[testing](../testers/testing.md) for reproducible commands.

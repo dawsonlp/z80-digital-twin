@@ -1,9 +1,14 @@
 # Headless Instrumentation
 
+**Runtime update, 15 September 2026:** the probe uses `DebugSpectrumMachine`,
+sharing Spectrum scheduling with the viewer while selecting `MetadataMemory`
+for observation. `DebugSession` is concrete over that CPU. See
+[current architecture](../developers/architecture.md).
+
 **Status:** living document. How to drive and observe a running machine from
 code — no window, no GPU — and why the architecture makes that the *default*
 rather than an afterthought.
-**Date:** 2026-06-08
+**Last reviewed:** 2026-09-15. The Underwurlde diagnosis below is historical.
 
 This is the "how do I explore anything without a UI" guide. The worked example
 is a real bug: *Underwurlde* loaded a stub then froze in a tight loop. We
@@ -18,7 +23,7 @@ See also: [ARCHITECTURE.md](../developers/architecture.md) (the layering this bu
 ## 1. Why headless is first-class here
 
 The engine is one CPU core templated on its environment (memory + I/O policies),
-and the capabilities are **UI-free static libraries**:
+and the capabilities are **UI-free libraries** (the machine is header-only):
 
 ```
 CORE        z80_cpu (src/)        — CPUImpl<Memory, Io>, fully inlined per config
@@ -27,9 +32,9 @@ CAPABILITY  z80_debugger_core     — DebugSession: stepping, breakpoints, cover
 FRONTEND    spectrum / z80_debugger — the ONLY layer that pulls in GLFW/ImGui
 ```
 
-The crucial property: **`SpectrumMachine` and `DebugSession` are the same CPU
+The crucial property: **`DebugSpectrumMachine` and `DebugSession` use the same CPU
 configuration** —
-`CPUImpl<ObservableMemory, ObservableIo<CallbackIo>>`. So a `DebugSession` can
+`CPUImpl<MetadataMemory, ObservableIo<CallbackIo>>`. So a `DebugSession` can
 wrap the *live* machine's CPU and instrument it while the machine runs. The
 window in `apps/spectrum/main.cpp` is just one consumer of `SpectrumMachine`;
 everything it shows (screen, keyboard, tape) is reachable from a `.cpp` with no
@@ -42,38 +47,46 @@ a ROM, types on the keyboard, plays a tape, and reports what the CPU did.
 
 ## 2. The instrumented frame
 
-`SpectrumMachine::run_frame()` advances one PAL frame using the machine's *raw*
-stepper — fast, but opaque. To **observe** each frame, advance the same CPU
-through the `DebugSession` instead. The two differ only in the stepper; the ULA
-wiring (border timeline, screen writes, frame counter) is identical:
+The probe configures the same lifecycle hooks used by the debugger:
 
 ```cpp
-void run_instrumented_frame(SpectrumMachine& machine, DebugSession& session) {
-    machine.ula().begin_frame();          // drop last frame's write/border history
-    machine.cpu().Interrupt(0xFF);        // assert 50 Hz /INT; wakes the ROM's HALT
-    session.Run();
-    session.RunForTStates(timing::kTPerFrame);   // 69,888 T — breakpoint/coverage-aware
-    machine.ula().end_frame();            // resolve border per-line, advance FLASH
+sm::DebugSpectrumMachine machine;
+DebugSession session(machine.cpu());
+session.SetExecutionHooks([&] { machine.prepare_execution(); },
+                          [&] { machine.advance_execution(); });
+```
+
+A frame batch drives the session until that shared runtime completes a frame:
+
+```cpp
+void run_instrumented_frame(sm::DebugSpectrumMachine& machine, DebugSession& session) {
+    const auto frame = machine.frame_count();
+    while (machine.frame_count() == frame) {
+        const auto r = session.RunSlice(1);
+        if (r.reason == StopReason::Breakpoint || r.reason == StopReason::Watchpoint ||
+            r.reason == StopReason::SelfModified || r.reason == StopReason::IncompleteInstruction)
+            break;
+        if (r.reason == StopReason::Halted) machine.advance_execution();
+    }
 }
 ```
 
-This is exactly the decomposition `machine.h` documents: *"production/fast = a
-lambda over `RunUntilCycle`; debugging = a lambda over
-`DebugSession::RunForTStates`."* `Interrupt(0xFF)` each frame both fires the
-frame interrupt and wakes the CPU if the ROM is idling on `HALT` (which it does
-between frames). The session then accumulates coverage, dirty-RAM, and SMC for
-that frame, for free.
+This mirrors `examples/spectrum_probe.cpp`; `sm` is the Spectrum namespace and
+`DebugSession`/`StopReason` are debugger types. Do not manually begin/end ULA
+frames or inject an interrupt in a second frontend loop. Preparation owns the
+existing frame-interrupt attempt. Early HALT and one-shot interrupt limitations
+remain in [Spectrum design](../developers/spectrum-machine-design.md).
 
 What the session exposes after each frame (`debugger/exec/debug_session.h`):
 
 | Call | What it tells you |
 |---|---|
-| `CoveredBytes()` / `CoveragePercent()` | distinct bytes ever executed as code — *grows while new code paths run* |
+| `CoveredBytes()` / `CoveragePercent()` | completed starts plus decoder-derived operand spans; distinct from observed fetches |
 | `DirtyAddresses()` / `ClearDirty()` | addresses written since the last clear — *grows while RAM is being filled* |
 | `SmcCount()` / `SmcEvents()` | self-modifying-code writes (decompressors, decryptors) |
 | `BlockedWrites()` | writes refused by ROM write-protect |
 | `AddBreakpoint()` / `AddWatchpoint()` | stop at a PC or on a write to an address |
-| `cpu().PC()`, `cpu().A()`, `cpu().HL()`, … | full register/flag state at any boundary |
+| `session.Cpu().PC()`, `session.Cpu().A()`, `session.Cpu().HL()`, … | full register/flag state at any boundary |
 
 ---
 
@@ -233,6 +246,8 @@ spectrum_probe spec48.rom --type "P\n" --screen
 **Break at a PC and inspect** — in your own harness:
 ```cpp
 DebugSession session(machine.cpu());
+session.SetExecutionHooks([&] { machine.prepare_execution(); },
+                          [&] { machine.advance_execution(); });
 session.AddBreakpoint(0x0556);                 // ROM LD-BYTES entry (48K)
 session.Run();
 while (session.State() == RunState::Running) run_instrumented_frame(machine, session);
@@ -247,5 +262,6 @@ next `RunForTStates` stops with `StopReason::Watchpoint` and
 just read `SmcCount()` per window (Underwurlde shows 411 SMC writes — its loader
 rewrites itself).
 
-The pattern generalises beyond the Spectrum: any `Machine<Cpu>` config can be
-driven frame-by-frame through a `DebugSession` and observed the same way.
+The lifecycle pattern can support other machines, but the current `DebugSession`
+requires its concrete `DebugCPU` configuration. Arbitrary `Machine<Cpu>` types
+do not automatically satisfy that contract.

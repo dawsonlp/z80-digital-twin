@@ -1,5 +1,10 @@
 # Source Architecture Feedback
 
+> Historical review of the July baseline. As of 15 September 2026, shared
+> Spectrum runtime and CPU-owned bounded stepping have landed; packaging and
+> fidelity concerns still need individual resolution. The findings below retain
+> their original evidence. Follow [current roadmap](roadmap.md) for sequencing.
+
 **Review date:** 2026-07-13
 
 **Scope:** source structure, KISS, DRY, dependency coherence, test evidence, and

@@ -1,5 +1,11 @@
 # ROM-first reverse development checklist
 
+> Continuation update, 15 September 2026: instruction control and in-memory
+> observed browsing have progressed beyond the initial checkpoint below.
+> [Address metadata](address-metadata-checklist.md) tracks current acceptance;
+> the durable save/reopen/export loop remains incomplete. Earlier unchecked
+> items and dated notes are historical checkpoints, not a current feature list.
+
 Agreed direction: 14 September 2026. Implementation starts from the dirty
 `feature/spectrum-dev-loop` checkout at `98cf7fb`; preserve existing work.
 

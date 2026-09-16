@@ -1,6 +1,9 @@
 # Address-based observation: developer checklist
 
-Status: agreed direction documented; implementation not started for this increment.
+Status: implementation and focused tests exist after checkpoint `a3dd462`;
+acceptance remains partial. Unchecked items mean the full requirement has not
+been accepted, not necessarily that no corresponding code exists.
+Reviewed 15 September 2026; see [fresh verification](../testers/documentation-refresh-verification.md).
 Requested 14 September 2026. This document supersedes the retention and exclusive
 state model in [observed disassembly](observed-disassembly-checklist.md), which
 remains the record of the earlier implementation and its verification.
@@ -12,8 +15,8 @@ throughout an analysis session. Run with the actual Spectrum 48K ROM loaded and
 write-protected, preserving instruction-level control, T-state accounting,
 screen updates and audio behavior.
 
-Today, address evidence depends on the latest record surviving an 8192-event
-queue. Repeated execution of the RAM loop at 8000–8006 evicts evidence for the
+At the original checkpoint, address evidence depended on the latest record
+surviving an 8192-event queue. Repeated execution of the RAM loop at 8000–8006 evicts evidence for the
 previous NOPs, even though those bytes have not changed. The display also moves
 between Modified and Observed as though they were exclusive facts.
 
@@ -65,7 +68,7 @@ change, but are not attributed to the emulated CPU as self-modification.
       value. Replace these summaries in place; do not append per-write versions.
 - [ ] Maintain completed-execution counts and first/latest completion summaries
       per instruction start. Do not confuse starts with operand-byte usage.
-- [ ] Keep at most one latest instruction observation per start, including actual
+- [x] Keep at most one latest instruction observation per start, including actual
       captured bytes, span, and their revisions. It may become invalid for current
       memory; replace it on the next completed execution without retaining a
       version chain. Counts and sticky facts survive replacement.
@@ -118,7 +121,7 @@ than silently choosing broader behavior.
       session. Do not accumulate cross-build evidence implicitly.
 - [ ] Abandon pending instruction capture safely when resetting execution or
       clearing analysis; never join bytes from opposite sides of that boundary.
-- [ ] Remove address evidence's dependence on the 8192-entry history queue.
+- [x] Remove address evidence's dependence on the 8192-entry history queue.
       Queue eviction must have no effect on flags, counts or current validity.
 - [ ] If the existing recent-history view remains, label it as a bounded optional
       inspection aid. It is not the evidence store; do not expand its retention.
@@ -142,7 +145,7 @@ than silently choosing broader behavior.
 
 ## Acceptance tests and delivery evidence
 
-- [ ] Execute NOPs through 7FFF, then run the 8000–8006 loop well beyond 8192
+- [x] Execute NOPs through 7FFF, then run the 8000–8006 loop well beyond 8192
       instructions. Earlier NOP evidence and counts remain valid and visible.
 - [ ] Verify all three stages of the LD A example above. Executed and
       Self-modified survive repeated rewrites and re-execution.
@@ -177,3 +180,67 @@ Bring back any requirement to change machine ownership/timing, introduce runtime
 memory-policy swapping, retain historical versions, select a banked-memory
 identity model, or change the agreed analysis lifecycle. The current scope is
 the Spectrum 48K address space; no such expansion is authorized by this checklist.
+
+## First implementation evidence (historical checkpoint)
+
+Checkpoint `a3dd462` contains the prior working state and this design. Subsequent
+uncommitted changes begin the implementation:
+
+- Latest instruction records are owned per address, independent of queue eviction.
+- Instruction starts retain a sticky self-modification fact across re-execution.
+- Same-value writes no longer create SMC events. The existing observer/watchpoint
+  path still receives the write.
+- Address rows compose execution, self-modification, protection and current-byte
+  validity properties. Horizontal scrolling accommodates the added text.
+- A regression executes the initial NOP region and 80,000 loop instructions,
+  checks preserved 7FFF evidence, coexisting observed/self-modified properties,
+  stable address-record count and bounded recent-history size.
+
+Build and complete CTest run: 34 passed, two external ZEX suites skipped. The new
+UI has not yet been verified in the native Spectrum ROM demo. Access attribution,
+byte activity summaries, lifecycle separation and resource measurement remain
+pending; the full checklist is not complete. Existing reset still clears analysis.
+
+## Compact presentation follow-up
+
+The address table now has fixed-position RO/X/SM/O markers with independent
+colors, an overlap marker and partial-capture indication. Row hover expands the
+properties and activity summaries; the on-screen status key has a hover legend.
+Bytes and Instruction retain resizable columns with readable defaults; fixed
+headers and column separators expose their boundaries. A separate compact table
+settings identity avoids inheriting the earlier oversized text-status column.
+
+Native Spectrum ROM demo verified simultaneous visible mnemonics, bytes, aligned
+RO/X/O markers and an expanded status tooltip for 0038 showing 39 executions.
+Automated drag attempts did not establish a width change; resizing support is
+retained in the table flags but that interaction still needs confirmation.
+
+## Source reconciliation — 15 September 2026
+
+The current implementation goes beyond the first evidence section above:
+
+- `MetadataMemory` now records per-byte activity kinds with first/latest stamps;
+  CPU scopes distinguish instruction/data access and interrupt entry. Focused
+  tests exercise read-modify-write counts, same-value/refused writes, inspection
+  exclusion, prefix attribution and interrupt stack writes. This is not a full
+  opcode-by-opcode access-accounting audit.
+- `ResetCpu()` preserves analysis; `ClearAnalysis()` preserves bytes/protection
+  and refuses a pending instruction. `Reset()` combines reset and clearing.
+  The UI exposes Clear analysis and Restart program; Spectrum restart still
+  cold-boots ROM and clears RAM. There is no separate CPU-only reset UI action.
+- The long-loop regression checks retained NOP evidence, coexisting observed/SMC
+  properties, fixed byte-activity storage and bounded recent history. It does
+  not measure all allocator activity or metadata execution overhead.
+- Generic `LoadProgramFile()` and GCD demo loading still reset the CPU directly,
+  without the session reset used by Spectrum/SMC setup. The replacement-load
+  lifecycle requirement therefore remains open.
+- Architectural vector defaults and browsing boundaries are now included.
+- Counts saturate and revision overflow invalidates observations; a complete
+  review of all sequence/epoch counters remains outstanding.
+- Completed-start counts/latest observations exist. The proposed first/latest
+  completion-summary contract is not fully delivered by the byte activity stamps.
+
+The larger audit, resource/performance and native-interaction requirements stay
+unchecked until their complete acceptance evidence exists. Earlier native checks
+above are dated observations; the current refresh's actual checks and limitations
+are in the linked verification record.

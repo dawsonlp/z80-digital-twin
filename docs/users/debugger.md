@@ -2,7 +2,7 @@
 
 **Audience:** users debugging binaries or running a Spectrum under inspection.
 **Purpose:** explain the primary `z80_debugger` workflows.
-**Last reviewed:** 2026-06-09.
+**Last reviewed:** 2026-09-15.
 
 ## Launch
 
@@ -32,8 +32,9 @@ a binary and Spectrum ROM. This starts with interrupts disabled, without BASIC
 initialization, and requires an exact 16 KB ROM and a valid RAM/stack placement.
 `--sym` takes debugger JSON, not Pasmo's unconverted symbol output. Tape and
 writable-ROM options are incompatible with this standalone launch mode.
-Reset retains its existing cold-ROM-boot behavior; restart the program through
-the build/run command.
+The button labeled **Restart program** cold-boots the Spectrum ROM and clears
+RAM and analysis; it does not reload this standalone binary. Restart the binary
+through the build/run command.
 
 ## What It Shows
 
@@ -46,8 +47,8 @@ the build/run command.
 
 ## Execution Controls
 
-The debugger owns the execution loop. Step and Step Over advance complete Z80
-instructions, including prefixed instructions. Spectrum free-run is driven in
+The debugger controls execution through the CPU's bounded whole-instruction API.
+Step and Step Over advance Z80 instructions, including prefixed instructions. Spectrum free-run is driven in
 frame-sized T-state budgets so breakpoints still work inside a frame.
 
 ## Related Docs
@@ -96,13 +97,59 @@ Evidence labels apply to the exact instruction start:
   overwritten by the instruction itself. Memory view decodes today's bytes;
   history continues to show the bytes actually read during the old execution.
 - **Unobserved**: tentative disassembly, not proof that bytes are instructions or data.
-- **Not retained**: execution was counted here, but its byte evidence has been evicted.
 - **Partial capture**: an instruction completed but the retained capture cannot
   describe its whole span. It is not used as a reliable instruction anchor.
 
-History retains the latest 8192 events and at most 256 bytes per instruction;
-older-event loss is displayed. Machine preparation transitions are separate
+Recent history retains the latest 8192 events and at most 256 bytes per
+instruction; older-event loss is displayed. The separate address store keeps
+one latest observation and accumulated execution count per start, independent
+of queue eviction. Re-execution replaces that address observation; older versions
+are available only while their events remain in recent history. Machine preparation transitions are separate
 rows, not invented instructions. Refused writes and same-value writes do not
 invalidate byte evidence; a change followed by restoration does. Overlapping
-observed starts remain visible (marked `*`). Reset clears the history. It is
-currently in-memory only: closing the debugger does not save this evidence.
+observed starts remain visible (marked `*`). Analysis is currently in memory
+only: closing the debugger does not save this evidence. JSON symbol files save
+labels and descriptions, not execution evidence or machine state.
+
+### Clear analysis and restart
+
+**Clear analysis** clears counts, byte activity, captured
+evidence, coverage and diagnostic logs without changing registers, memory bytes
+or ROM protection. Pause first to inspect an empty analysis: a running session
+continues collecting evidence immediately after clearing. If an instruction is
+incomplete, finish it before clearing.
+**Restart program** clears analysis and resets execution; in Spectrum mode it
+cold-boots ROM and clears RAM. The core has a CPU-only reset API that preserves
+analysis, but there is no separate CPU-only reset control in this UI.
+
+Use a fresh debugger process when switching analyzed programs. Generic binary
+and GCD-demo loading in an existing session do not consistently clear prior
+analysis; changed-byte invalidation is not a complete replacement-session boundary.
+
+### Compact address status
+
+Address rows show independent markers in fixed positions: `RO` (read-only),
+`X` (executed instruction start), `SM` (self-modified), and `O` (current bytes
+observed executing). A dash means that property is not established; `?` in the
+observation position means incomplete capture, and a final `*` marks overlap.
+Execution and self-modification persist when current observation becomes invalid.
+
+Colors reinforce the letters: read-only is blue, execution/current observation
+are green, and self-modification is amber. Hover the status for full descriptions,
+activity counts and latest access information. Hover the status key above the
+column headers for the legend. Bytes and Instruction columns remain resizable;
+headers stay visible during scrolling and status positions remain aligned.
+
+### Architectural vector labels
+
+Fresh debugger symbol tables include `RST_00_RESET`, `RST_08`, `RST_10`,
+`RST_18`, `RST_20`, `RST_28`, `RST_30`, `RST_38_IM1`, and `NMI_66`.
+These are debugger naming conventions, not standard-mandated assembler symbols.
+Hover a label for its architectural role; imported/user labels take precedence.
+The vector addresses remain navigable disassembly boundaries even before execution.
+
+0038h is both the RST 38h target and maskable interrupt entry in IM 1. NMI enters
+at 0066h. IM 0 depends on the device-supplied instruction, and IM 2 uses a vector
+table. Labels describe architecture, not observed execution, the currently
+selected interrupt mode, or implemented NMI support.
+Reference: [Zilog Z80 CPU User Manual](https://www.zilog.com/docs/z80/um0080.pdf).

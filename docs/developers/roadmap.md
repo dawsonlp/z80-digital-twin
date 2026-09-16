@@ -1,102 +1,77 @@
 # Roadmap
 
 **Audience:** developers choosing implementation work.
-**Purpose:** keep current priorities separate from historical TODOs.
-**Last reviewed:** 2026-07-16.
+**Last reviewed:** 2026-09-15.
+**Purpose:** current delivery sequence. [Status](../reference/status.md) describes
+implemented capability; the longer proposals preserve requirements and intent.
 
-The [Source Architecture Feedback](source-architecture-feedback.md) is the
-current review basis for structural work. Its consolidation findings take
-priority over major feature expansion until they are resolved or consciously
-accepted as constraints.
+## Delivered foundations
 
-## Recently completed
+- Independent LSP/VS Code integration and byte-preserving Pasmo disassembly gates.
+- Source-to-Spectrum build/run using an external assembler, generated symbols,
+  launch validation and a fresh debugger process. This does not deliver live reload.
+- CPU-owned bounded whole-instruction stepping and a shared Spectrum runtime
+  across viewer, debugger and probe, including retained partial-frame progress.
+- Observed address browsing, execution-time bytes, bounded recent history and
+  independently retained latest address evidence.
+- Byte activity, sticky execution/self-modification properties, compact status
+  markers, vector labels and clear-analysis control. Acceptance is still partial.
 
-- CPU correctness now has a headless suite runner and manifest-backed external
-  tests. `ZEXDOC` and `ZEXALL` pass when the local compatibility assets are
-  present.
-- The main CPU flag classes exercised by ZEX are covered by focused unit tests,
-  so future regressions should fail in small tests before the full exercisers.
-- The documentation tree now separates user, developer, tester, reference, and
-  archive material.
+## Now: close the address-analysis increment
 
-## Now
+Use [address metadata](address-metadata-checklist.md) as the acceptance checklist.
+Finish the access-accounting and overflow audit, first/latest completion contract,
+resource measurements and remaining GUI checks. Preserve the distinction between
+implemented APIs, tested cases and unverified broader requirements. Keep existing
+restart semantics explicit; a CPU-only reset API does not imply a UI command.
 
-### Architecture consolidation
+The [July source review](source-architecture-feedback.md) remains historical
+rationale. Shared runtime and stepping consolidation have landed; its remaining
+HALT/interrupt, packaging, performance and correctness concerns still need
+individual resolution rather than a blanket “consolidation complete” claim.
 
-- Establish one authoritative Spectrum runtime for the viewer, debugger, and
-  probe instead of allowing their machine behavior to drift independently.
-- Define one whole-instruction stepping and machine-time contract, including
-  interrupt and `HALT` behavior.
-- Close executor/disassembler opcode disagreements and add consistency checks
-  that make future drift visible.
-- Make the policy/install surface and developer documentation match the behavior
-  the project actually supports.
+## Next: close a durable ROM reverse-engineering loop
 
-### Development workbench
+Follow the [ROM-first checklist](rom-reverse-loop-checklist.md): bind evidence
+and annotations to an exact image and build identity, retain provenance, save
+and reopen one understood routine, export a selected range, and reassemble to
+compare bytes. Reopening evidence is distinct from resuming a machine or replaying
+execution. Existing JSON symbols and raw-binary export are foundations, not this
+complete user loop.
 
-- Extend the integrated [`lsp-z80`](../../lsp-z80/) subproject without making
-  source editing depend on a running emulator. Consume assembler and runtime
-  facts through explicit, provenance-aware integration boundaries.
-- Add a source-to-machine loop: edit Z80 assembly, invoke a configured assembler,
-  load the produced bytes directly into the running machine, import generated
-  labels/symbols, and optionally set PC/SP/register state before running.
-- Add binary insert support: load raw bytes into a chosen address range, record
-  provenance, expose the changed range in memory/disassembly, and optionally set
-  CPU state from a sidecar or UI form.
-- Add session state save/load for debugger work: CPU registers, RAM image or
-  patches, breakpoints, symbols, annotations, selected machine model, tape
-  position, and relevant UI/debugger settings.
-- Use Pasmo as the first assembler and dialect, but keep invocation and output
-  parsing behind a toolchain boundary so other assemblers remain possible.
+Do not infer code/data classification from absence of execution. Separate observed
+bytes, user interpretations, imported names and generated suggestions.
 
-### Reverse engineering
+## Parallel maintenance priorities
 
-- Promote the existing coverage and self-modifying-code tracking into a durable
-  project model: execution starts, write events, user labels, comments, data
-  regions, and generated symbols.
-- Add flow tracking beyond isolated branch targets: basic blocks, call edges,
-  jump edges, returns, hot paths, and observed entry points.
-- Extend symbol discovery: auto-label branch targets, detect likely functions,
-  identify pointer tables and strings where evidence supports it, and preserve
-  user overrides.
-- Build the RAM-to-source path: capture a memory image, classify code/data from
-  execution evidence, render a documented listing, export reassemblable assembly,
-  reassemble it, and compare bytes back to the captured image.
+- Correct and test HALT progression and interrupt signaling without conflating
+  shared scheduling with hardware fidelity; contention follows with deterministic
+  tests before raster-sensitive compatibility claims.
+- Maintain executor/decoder consistency and independent encoding checks; preserve
+  explicit limits on undocumented opcode behavior.
+- Repair installed headers and validate intended compiler/platform support.
+  Benchmark bare CPU and metadata-enabled execution separately.
+- Extend external CPU-suite adapters when assets are available; implement manifest
+  parsing before treating `compat/cpu-suites.json` as executable configuration.
+- Expand TZX flow-control tests, floating-bus calibration and local compatibility
+  artifacts; keep optional assets outside the repository.
 
-### User interface and formats
+## Later workbench capabilities
 
-- Add settings/configuration UI for machine model, ROM path, compatibility asset
-  paths, assembler toolchain, keyboard/tape/audio/video options, timing knobs,
-  and debugger behavior.
-- Make load/save flows complete and visible: ROM, TAP/TZX, raw binary inserts,
-  symbols, project/session files, screenshots, and CPU/machine state.
-- Add tape streaming controls that expose playback state directly: insert/eject,
-  play/pause, rewind/seek where the format supports it, current block/pulse
-  diagnostics, and save/restore of tape position in sessions.
-- Keep command-line equivalents for important UI flows so testers can reproduce
-  failures headlessly.
+- Live reload/binary insertion into an existing machine with explicit provenance
+  and state-placement rules; retain the current fresh-process workflow.
+- Durable project/session formats, machine snapshots and tape-position recovery.
+- Control-flow graphs, hot paths, candidate routines and evidence-based discovery.
+- Integrated annotated export, additional assembler dialects and source recovery
+  beyond linear byte reconstruction.
+- Settings/load-save UI completion and full-program audio regression metrics.
 
-## Next
+## Supporting proposals and history
 
-- Maintain the CPU-suite harness and add adapters/assets for `z80ccf`,
-  `z80memptr`, and Spectrum-native CPU edge suites as they become available.
-- Expand synthetic TZX block coverage, especially currently linearized flow
-  blocks.
-- Add TZX jump/call/return flow semantics where needed by real loaders.
-- Implement contended memory timing.
-- Add deterministic contention unit tests before promoting multicolour/raster
-  software to compatibility acceptance.
-- Calibrate floating-bus timing against `fbustest`.
-- Add golden screen/artifact capture for free or local-only fixtures.
-
-## Later
-
-- Add richer project packaging for reverse-engineering sessions, including
-  assembler outputs, source files, symbol maps, RAM captures, and verification
-  reports.
-- Support additional assembler dialects after one end-to-end path is reliable.
-- Add snapshot import/export formats once the internal CPU/machine-state model is
-  stable.
-- Add headless beeper/audio regression metrics.
-
-Historical TODO material is archived in [../archive/early-todo.md](../archive/early-todo.md).
+- [Enhanced roadmap](enhanced-roadmap.md): proposed M0–M6 requirements; partial
+  delivery does not imply entire milestones or acceptance scenarios are complete.
+- [Reverse-engineering roadmap](reverse-engineering-roadmap.md): L1–L9 vision.
+- [Forward-loop plan](spectrum-development-loop-plan.md): delivered milestone and
+  historical implementation sequence.
+- [Current handoff](../../handoff.md): short continuation guide.
+- [Early TODO](../archive/early-todo.md): historical record.

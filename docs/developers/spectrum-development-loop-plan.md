@@ -1,5 +1,9 @@
 # Step one: the Spectrum assembly development loop
 
+> Historical implementation sequence for the delivered first loop. Use
+> [the example guide](../../examples/spectrum-dev/README.md) for current commands
+> and [current status](../reference/status.md) for the broader workbench boundary.
+
 **Date:** 13 September 2026  
 **Status:** First loop implemented and verified on macOS, 14 September 2026.  
 **Reviewed baseline:** `dev`, commit `98cf7fb`.

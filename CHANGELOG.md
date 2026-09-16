@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Independent Pasmo-oriented LSP and VS Code client.
+- External Pasmo Spectrum build/run workflow with symbols, artifact identity,
+  validated standalone RAM/stack launch and failed-build blocking.
+- Byte-preserving `z80_disassemble` CLI and independent assembler/round-trip gates.
+- Bounded instruction evidence, full address browsing and recent-history views.
+- Address-owned latest observations independent of history eviction, byte-activity
+  summaries, sticky execution/self-modification markers and architectural vector labels.
+- Core CPU-only reset and clear-analysis operations; Clear analysis UI control.
+
+### Changed
+
+- CPU-owned bounded whole-instruction stepping and shared Spectrum instruction/frame
+  lifecycle across viewer, debugger and probe.
+- Same-value writes preserve evidence validity and do not count as value-changing SMC.
+- Documentation now describes current types, workflows, retention and lifecycle;
+  superseded designs/handoffs are retained as historical records.
+
+### Validation and limits
+
+- See [15 September verification](docs/testers/documentation-refresh-verification.md)
+  for fresh build/test results and skipped external/native boundaries.
+- Address-metadata acceptance remains partial. Analysis persistence, live reload,
+  HALT/interrupt fidelity corrections and contention remain future work.
+- No release/version bump is implied; the project version remains 1.0.3.
+
+
 ## v1.0.3 - 2026-06-12
 
 ### Changed

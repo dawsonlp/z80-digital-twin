@@ -1,7 +1,11 @@
 # Assembly and disassembly verification
 
 The development loop has three checks. The first two are executable gates;
-canonical-source stability is deferred. CPU execution is unchanged by this work.
+canonical-source stability is deferred. The original export implementation did
+not change CPU execution; later instruction-control work is documented in
+[architecture](../developers/architecture.md).
+
+**Last reviewed:** 2026-09-15.
 
 ## Contracts
 
@@ -46,8 +50,9 @@ Relative branches normally use source-location expressions such as `jr $-2`.
 
 This is linear reconstruction, not code/data discovery. It neither claims that
 every decoded byte will execute nor recovers original source structure. Symbol
-imports, annotation persistence, assembler invocation in the product, deployment
-and complete reverse-engineering projects remain separate work.
+imports into this exporter, annotation persistence and complete reverse-engineering
+projects remain separate work. External assembly, debugger-symbol conversion and
+fresh-process deployment now exist in the [Spectrum workflow](../../examples/spectrum-dev/README.md).
 
 Byte directives preserve exceptional encodings, with a reason and, where
 complete, the decoder's display as a comment:
@@ -70,8 +75,8 @@ or promise that assembling the displayed mnemonic reproduces those bytes.
 The bounded decoder reports incomplete input explicitly and retains lengths
 beyond four bytes. `Instruction.bytes` remains a four-byte display preview;
 source export reads the complete original range. The changed length type is
-also used by coverage and the UI. This does not alter the CPU's stepping API or
-the debugger's separate prefix-step guard.
+also used by coverage and the UI. Current instruction control uses the CPU-owned
+bounded stepping API, separately from the decoder/export limits.
 
 ### Observed Pasmo 0.5.5 limits
 

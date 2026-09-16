@@ -1,5 +1,11 @@
 # Z80 Digital Twin — Enhanced Roadmap
 
+**Delivery update · 15 September 2026:** This remains a requirements proposal.
+The independent LSP, external Pasmo build/fresh launch, byte-preserving export
+and in-memory observed browsing now exist. Live reload, durable projects and
+the full acceptance scenarios are not delivered. Use [current roadmap](roadmap.md)
+and [status](../reference/status.md); the pinned baseline below is historical.
+
 *Assembly development, live execution, and progressive reverse engineering*
 
 **Requirements draft · 5 September 2026 · Version 1.0**

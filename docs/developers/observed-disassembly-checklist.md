@@ -1,5 +1,10 @@
 # Observed disassembly and backward browsing
 
+> Historical acceptance record for the first observed-browsing increment.
+> The [address-metadata checklist](address-metadata-checklist.md) supersedes
+> queue-dependent address retention and the exclusive status model. Its checked
+> items below do not certify all later metadata changes.
+
 **Historical increment:** the next [address-metadata checklist](address-metadata-checklist.md)
 supersedes the eviction-dependent evidence and exclusive Modified/Observed model
 below. Its implementation is pending; retain this document as delivery evidence.

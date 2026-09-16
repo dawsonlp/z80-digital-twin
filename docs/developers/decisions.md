@@ -3,7 +3,7 @@
 **Audience:** developers.
 **Purpose:** record durable architectural decisions without preserving stale
 roadmap text as current work.
-**Last reviewed:** 2026-06-09.
+**Last reviewed:** 2026-09-15.
 
 ## CPU Environment Is Policy-Based
 
@@ -23,7 +23,9 @@ in the machine/ULA layer.
 
 ## Debugger Runs The Real CPU Configuration
 
-`DebugSession` drives the same CPU configuration used by `SpectrumMachine`.
+`DebugSession` drives the CPU owned by `DebugSpectrumMachine`, using
+`MetadataMemory` and `ObservableIo<CallbackIo>`. The viewer uses the same
+`SpectrumMachineImpl` runtime with cheaper `ObservableMemory`.
 
 Consequence: debugger observations are observations of the running machine, not
 a proxy.
@@ -42,3 +44,23 @@ skip cleanly when those assets are absent.
 
 Consequence: the in-repo test suite stays legally clean and green on a fresh
 checkout, while local compatibility runs can still be strict.
+
+## CPU Owns Instruction Completion; Machine Owns Time Progress
+
+Bounded `StepInstruction()` belongs to the CPU. Debugger control and viewer frame
+batching use shared Spectrum prepare/advance hooks. Pause and rendering do not
+advance emulated time. HALT and interrupt fidelity remain explicit limitations.
+
+## Optional Analysis and Independent Retention
+
+Rich byte accounting belongs to `MetadataMemory`, leaving the other policies
+separate. Latest per-address evidence outlives chronological queue eviction.
+Executed/self-modified facts are independent of current-byte validity. Evidence
+is in memory only; a symbol file is not a saved analysis session.
+
+## External Tools and Inspectable Artifacts
+
+Pasmo 0.5.5 is the first assembler/dialect. Editor tasks and terminal commands
+share an ordinary CLI, binary/symbol outputs and build manifest. The independent
+LSP does not embed an assembler or require a running emulator. The current launch
+starts a new debugger; live reload remains future work.

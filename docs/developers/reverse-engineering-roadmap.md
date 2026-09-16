@@ -1,5 +1,12 @@
 # Z80 Digital Twin — Reverse-Engineering Laboratory Roadmap
 
+**Delivery update · 15 September 2026:** This is the longer-term L1–L9 proposal.
+Coverage/SMC, per-address counts and latest evidence, bounded recent history,
+typed symbols and standalone byte-preserving export exist. Durable evidence,
+full provenance, graphs and integrated annotated export remain open. Baseline
+claims and implementation sketches below are historical, not current API contracts.
+See [current roadmap](roadmap.md) and [debugger design](debugger-design.md).
+
 **Status:** In progress. **L1 (execution coverage)** and **L2 (self-modifying-
 code detection)** are implemented, unit-tested, and surfaced in the UI (see
 [STATUS.md](../reference/status.md)). L3+ remain future work.

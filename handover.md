@@ -1,4 +1,8 @@
-# Z80 Digital Twin handover
+# Z80 Digital Twin handover (historical)
+
+> Superseded as a continuation guide on 15 September 2026 by
+> [handoff.md](handoff.md). Commit state, paths, next steps and test results below
+> describe their original dates, not the current working tree.
 
 ## Current continuation — 14 September 2026
 

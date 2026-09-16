@@ -15,9 +15,9 @@ The project has four main surfaces:
 ## Quick Start
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DZ80_BUILD_UI=ON
 cmake --build build -j
-ctest --test-dir build
+ctest --test-dir build --output-on-failure
 ./build/gcd_example 1071 462
 ```
 
@@ -28,7 +28,8 @@ cmake -S . -B build -DZ80_BUILD_UI=OFF
 cmake --build build -j
 ```
 
-The language server is an independent Python package within this repository:
+The language server is an independent Python 3.14+ package within this repository
+(the separate build/run CLI needs Python 3.9+):
 
 ```sh
 cd lsp-z80
@@ -44,7 +45,8 @@ For the first assembly development loop, open the
 [Spectrum VS Code example](examples/spectrum-dev/README.md): edit source,
 assemble with external Pasmo, and run it in the Spectrum debugger.
 
-Start with [docs/README.md](docs/README.md).
+Start with [docs/README.md](docs/README.md), [current capability and limits](docs/reference/status.md),
+and the [latest verification record](docs/testers/documentation-refresh-verification.md).
 
 - **Users:** [getting started](docs/users/getting-started.md),
   [Spectrum viewer](docs/users/spectrum-viewer.md),
@@ -67,6 +69,7 @@ Start with [docs/README.md](docs/README.md).
 - `gcd_stress_test`: throughput stress test.
 - `performance_benchmark`: raw CPU benchmark.
 - `spectrum_probe`: headless Spectrum instrumentation and tape-loading probe.
+- `cpu_suite_runner`: optional local ZEXDOC/ZEXALL exerciser harness.
 - `z80_disassemble`: reconstruct byte-preserving Pasmo source from a raw binary
   range; see [verification and limits](docs/testers/disassembly-verification.md).
 - `z80_debugger`: ImGui debugger, optionally in Spectrum mode.

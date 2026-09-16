@@ -46,6 +46,15 @@ Result<void> validate(const TransferCapture& capture) {
         const auto& e = sample.event;
         if (sample.id.empty() || sample.id.size() > 4096 || !ids.insert(sample.id).second)
             return invalid("sample IDs must be nonempty and unique within capture");
+        if (sample.stack) {
+            if (sample.stack->accesses.size() > kMaxDataAccesses ||
+                (sample.stack->previous && (sample.stack->previous->empty() || sample.stack->previous->size() > 4096 ||
+                                           *sample.stack->previous == sample.id)))
+                return invalid("invalid stack evidence size or predecessor");
+            for (const auto& access : sample.stack->accesses)
+                if (access.kind < DataAccessKind::Read || access.kind > DataAccessKind::RefusedWrite)
+                    return invalid("invalid data access kind");
+        }
         if (e.bytes.size() > MetadataMemory::kCaptureLimit || e.read_count < e.bytes.size() ||
             (!e.revisions.empty() && e.revisions.size() != e.bytes.size()))
             return invalid("invalid captured byte counts or revisions");
@@ -66,6 +75,17 @@ J capture_json(const TransferCapture& capture) {
         A bytes, revisions;
         for (auto b : e.bytes) bytes.emplace_back(int(b));
         for (auto revision : e.revisions) revisions.emplace_back(std::to_string(revision));
+        J stack;
+        if (s.stack) {
+            A accesses;
+            for (const auto& a : s.stack->accesses)
+                accesses.emplace_back(O{{"kind", a.kind == DataAccessKind::Read ? "read" :
+                    a.kind == DataAccessKind::Write ? "write" : "refused_write"},
+                    {"address", int(a.address)}, {"value", int(a.value)}});
+            stack = O{{"before_sp", int(s.stack->before_sp)}, {"after_sp", int(s.stack->after_sp)},
+                {"complete_data_accesses", s.stack->complete_data_accesses},
+                {"previous", s.stack->previous ? J(*s.stack->previous) : J{}}, {"accesses", std::move(accesses)}};
+        }
         samples.emplace_back(O{{"id", s.id},
             {"kind", e.kind == ObservationKind::Instruction ? "instruction" : "machine_transition"},
             {"sequence", std::to_string(e.sequence)}, {"start", int(e.start)}, {"next_pc", int(e.next_pc)},
@@ -73,9 +93,9 @@ J capture_json(const TransferCapture& capture) {
             {"complete_capture", e.complete_capture}, {"bytes", std::move(bytes)}, {"revisions", std::move(revisions)},
             {"before", O{{"flags", optional_number(s.before.flags)}, {"b", optional_number(s.before.b)},
                 {"hl", optional_number(s.before.hl)}, {"ix", optional_number(s.before.ix)},
-                {"iy", optional_number(s.before.iy)}}}});
+                {"iy", optional_number(s.before.iy)}}}, {"stack", std::move(stack)}});
     }
-    return O{{"format", "z80-transfer-capture"}, {"version", 1}, {"source", capture.source},
+    return O{{"format", "z80-transfer-capture"}, {"version", 2}, {"source", capture.source},
         {"limitations", capture.limitations}, {"samples", std::move(samples)}};
 }
 } // namespace
@@ -176,18 +196,24 @@ TransferFinding ClassifyTransfer(const TransferSample& sample) {
 
 Result<std::string> WriteTransferCapture(const TransferCapture& capture) {
     if (auto valid = validate(capture); !valid) return std::unexpected(valid.error());
-    return json::Write(capture_json(capture));
+    auto text = json::Write(capture_json(capture));
+    if (text.size() > 16 * 1024 * 1024) return invalid("capture exceeds 16 MiB storage limit");
+    return text;
 }
 Result<TransferCapture> ReadTransferCapture(std::string_view text) {
     try {
         const auto root = json::Parse(text);
         json::Keys(root, {"format", "version", "source", "limitations", "samples"});
-        if (root.at("format").string() != "z80-transfer-capture" || root.at("version").integer() != 1)
+        const auto version = root.at("version").integer();
+        if (root.at("format").string() != "z80-transfer-capture" || (version != 1 && version != 2))
             return invalid("unsupported transfer capture format/version");
         TransferCapture capture{root.at("source").string(), root.at("limitations").string(), {}};
         if (root.at("samples").array().size() > kMaxTransferSamples) return invalid("too many samples");
         for (const auto& row : root.at("samples").array()) {
-            json::Keys(row, {"id", "kind", "sequence", "start", "next_pc", "cycles", "read_count", "complete_capture", "bytes", "revisions", "before"});
+            if (version == 1)
+                json::Keys(row, {"id", "kind", "sequence", "start", "next_pc", "cycles", "read_count", "complete_capture", "bytes", "revisions", "before"});
+            else
+                json::Keys(row, {"id", "kind", "sequence", "start", "next_pc", "cycles", "read_count", "complete_capture", "bytes", "revisions", "before", "stack"});
             TransferSample sample;
             sample.id = row.at("id").string();
             auto& e = sample.event;
@@ -207,6 +233,23 @@ Result<TransferCapture> ReadTransferCapture(std::string_view text) {
             if (!before.at("hl").null()) sample.before.hl = bounded(before.at("hl"));
             if (!before.at("ix").null()) sample.before.ix = bounded(before.at("ix"));
             if (!before.at("iy").null()) sample.before.iy = bounded(before.at("iy"));
+            if (version == 2 && !row.at("stack").null()) {
+                const auto& s = row.at("stack");
+                json::Keys(s, {"before_sp", "after_sp", "complete_data_accesses", "previous", "accesses"});
+                StackEvidence stack;
+                stack.before_sp = bounded(s.at("before_sp")); stack.after_sp = bounded(s.at("after_sp"));
+                stack.complete_data_accesses = s.at("complete_data_accesses").boolean();
+                if (!s.at("previous").null()) stack.previous = s.at("previous").string();
+                if (s.at("accesses").array().size() > kMaxDataAccesses) return invalid("too many data accesses");
+                for (const auto& a : s.at("accesses").array()) {
+                    json::Keys(a, {"kind", "address", "value"});
+                    const auto& kind = a.at("kind").string();
+                    if (kind != "read" && kind != "write" && kind != "refused_write") return invalid("unknown data access kind");
+                    stack.accesses.push_back({kind == "read" ? DataAccessKind::Read : kind == "write" ? DataAccessKind::Write : DataAccessKind::RefusedWrite,
+                                             bounded(a.at("address")), uint8_t(bounded(a.at("value"), 255))});
+                }
+                sample.stack = std::move(stack);
+            }
             capture.samples.push_back(std::move(sample));
         }
         if (auto valid = validate(capture); !valid) return std::unexpected(valid.error());
@@ -219,18 +262,27 @@ Result<std::string> TransferReport(const TransferCapture& capture) {
     A occurrences, edges;
     using Key = std::tuple<uint16_t, std::vector<uint8_t>, TransferMechanism, uint16_t, int>;
     std::map<Key, A> grouped;
-    for (const auto& s : capture.samples) {
+    const auto continuations = AnalyzeContinuations(capture);
+    for (size_t i = 0; i < capture.samples.size(); ++i) {
+        const auto& s = capture.samples[i];
+        const auto& continuation = continuations[i];
         const auto f = ClassifyTransfer(s);
         A unresolved;
-        for (const auto& reason : f.unresolved) unresolved.emplace_back(reason);
+        for (const auto& reason : f.unresolved)
+            if (reason != "stack effects and continuation relationship not analyzed" ||
+                !s.stack) unresolved.emplace_back(reason);
+        for (const auto& reason : continuation.unresolved) unresolved.emplace_back(reason);
         occurrences.emplace_back(O{{"sample_id", s.id}, {"mechanism", mechanism_name(f.mechanism)},
             {"taken", f.taken ? J(*f.taken) : J{}}, {"encoded_target", optional_number(f.encoded_target)},
             {"observed_next_pc", int(s.event.next_pc)}, {"target_basis", f.target_basis},
+            {"continuation", O{{"status", continuation.status},
+                {"call_sample", continuation.call_sample ? J(*continuation.call_sample) : J{}},
+                {"explanation", continuation.explanation}, {"tactic", std::string(kContinuationTacticVersion)}}},
             {"completeness", O{{"capture", s.event.complete_capture ? "instruction_bytes_complete" : "instruction_bytes_unavailable_or_partial"},
                 {"entry_context", (s.before.flags && s.before.b && s.before.hl && s.before.ix && s.before.iy)
                     ? "transfer_inputs_captured" : "partial_or_absent"},
                 {"target_provenance", f.target_basis},
-                {"continuation", "not_analyzed"},
+                {"continuation", continuation.status},
                 {"scope", "one_observation"}, {"possible_additional_usages", true},
                 {"unresolved", std::move(unresolved)}}}});
         grouped[{s.event.start, s.event.bytes, f.mechanism, s.event.next_pc,
@@ -244,7 +296,7 @@ Result<std::string> TransferReport(const TransferCapture& capture) {
             {"mechanism", mechanism_name(mechanism)}, {"taken", taken < 0 ? J{} : J(bool(taken))},
             {"count", static_cast<uint32_t>(samples.size())}, {"samples", samples}});
     }
-    return json::Write(O{{"format", "z80-transfer-report"}, {"version", 1},
+    return json::Write(O{{"format", "z80-transfer-report"}, {"version", 2},
         {"tactic", std::string(kTransferTacticVersion)}, {"capture_sha256", Sha256(json::Write(capture_json(capture)))},
         {"source", capture.source}, {"limitations", capture.limitations}, {"destination_sets_closed", false},
         {"occurrences", std::move(occurrences)}, {"edges", std::move(edges)}});

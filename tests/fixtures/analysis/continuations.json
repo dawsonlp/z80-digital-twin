@@ -1,0 +1,88 @@
+{
+  "format": "z80-transfer-capture",
+  "version": 2,
+  "source": "synthetic-continuation-example",
+  "limitations": "Synthetic instruction-level example; no hardware, image or runtime-identity claim.",
+  "samples": [
+    {
+      "id": "call-outer",
+      "kind": "instruction",
+      "sequence": "0",
+      "start": 32768,
+      "next_pc": 33024,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        205,
+        0,
+        129
+      ],
+      "revisions": [],
+      "before": {
+        "flags": 0,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": null,
+        "accesses": [
+          {
+            "kind": "write",
+            "address": 40958,
+            "value": 3
+          },
+          {
+            "kind": "write",
+            "address": 40959,
+            "value": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "return",
+      "kind": "instruction",
+      "sequence": "0",
+      "start": 33024,
+      "next_pc": 32771,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        201
+      ],
+      "revisions": [],
+      "before": {
+        "flags": 0,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": "call-outer",
+        "accesses": [
+          {
+            "kind": "read",
+            "address": 40958,
+            "value": 3
+          },
+          {
+            "kind": "read",
+            "address": 40959,
+            "value": 128
+          }
+        ]
+      }
+    }
+  ]
+}

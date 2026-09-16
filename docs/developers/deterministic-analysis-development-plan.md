@@ -1,7 +1,7 @@
 # Deterministic execution analysis: development checklist
 
 **Date:** 16 September 2026.  
-**Status:** initial independent transfer-analysis slice implemented; runtime
+**Status:** transfer classification and ordinary stack-continuation matching implemented; runtime
 capture integration and the broader stages remain open.
 **Outcome:** build program understanding through reproducible experiments and
 deterministic tactics, preserving every observed usage and keeping routine
@@ -140,9 +140,27 @@ reproduces the same edge report without executing the program again.
 
 ## 3. Match continuations and trace target origins (rungs 3–4)
 
-- [ ] Track continuation values created by CALL/RST using the actual stack writes
+Rung 3 checkpoint (16 September 2026): headless analysis accepts version 2
+interchange evidence with before/after SP, actual instruction-level data accesses
+and explicit predecessor continuity. Version 1 remains readable with unresolved
+stack context. This implements ordinary continuation matching on supplied evidence,
+not automatic runtime collection or the general value tracing of rung 4.
+Creation and matching findings carry explanatory text and supporting call IDs;
+later projection can use those findings as assembly comments without treating a
+single invocation as an exclusive function contract.
+
+Validation for this checkpoint: Debug/UI 41 passed and two optional ZEX skips
+(43 registered); Release/headless 40 passed and the same two skips (42 registered).
+Both configurations supplied Pasmo 0.5.5 and the local ROM. The new CPU integration
+fixture observes actual writes/read-count changes for CALL -> JP (HL) -> RET;
+synthetic cases cover nested and recursive calls with equal numeric continuations,
+partial/contradictory captures, late entries, same-value/refused writes, stack
+wraparound, register saves and PUSH/RET dispatch. Fresh-process CLI tests verify
+version 1 compatibility, version 2 matching/explanations and gap-induced uncertainty.
+
+- [x] Track continuation values created by CALL/RST using the actual stack writes
       and their lineage, not address equality or a conventional shadow stack alone.
-- [ ] Match subsequent consumption, including stack-slot reuse and overwritten
+- [x] Match subsequent consumption, including stack-slot reuse and overwritten
       values; report unmatched events when capture starts mid-invocation.
 - [ ] Track bounded register/value provenance through copies, EX/EXX, pushes,
       pops, spills/reloads and supported address arithmetic.
@@ -232,6 +250,9 @@ the report distinguishes varied inputs, fixed context, tested cases and open cas
       and settings; bounded computation must identify what it did not analyze.
 - [ ] Project findings into the existing symbol/proposal lifecycle without silently
       overriding deliberate names, rejected proposals or imported attribution.
+- [ ] Project supported discoveries into readable assembly comments as well as
+      labels. Retain supporting observation IDs, tactic version, applicability and
+      unresolved cases; never promote one observed convention to a universal one.
 - [ ] Preserve byte-exact export independently of completeness of interpretation.
 - [ ] Measure capture overhead, retained storage and analyzer scaling against
       declared budgets; keep metadata optional for ordinary CPU execution.

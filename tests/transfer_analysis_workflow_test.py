@@ -34,4 +34,25 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     source.write_text(json.dumps(capture))
     invalid = subprocess.run(command, capture_output=True)
     assert invalid.returncode != 0 and not invalid.stdout
+
+    # Real CLI reload of version 2: stack-byte lineage, explanation, then a
+    # deliberately broken predecessor. Version 1 coverage above stays mandatory.
+    fixture = pathlib.Path(__file__).parent / 'fixtures/analysis/continuations.json'
+    capture = json.loads(fixture.read_text())
+    source.write_text(json.dumps(capture))
+    first = subprocess.run(command, check=True, capture_output=True).stdout
+    second = subprocess.run(command, check=True, capture_output=True).stdout
+    assert first == second
+    report = json.loads(first)
+    matched = report['occurrences'][1]['continuation']
+    assert matched['status'] == 'matched' and matched['call_sample'] == 'call-outer'
+    assert 'call-outer' in matched['explanation']
+    capture['samples'][1]['stack']['previous'] = None
+    source.write_text(json.dumps(capture))
+    report = json.loads(subprocess.run(command, check=True, capture_output=True).stdout)
+    assert report['occurrences'][1]['continuation']['status'] == 'unresolved'
+    capture['samples'][1]['stack']['accesses'][0]['kind'] = 'invented'
+    source.write_text(json.dumps(capture))
+    invalid = subprocess.run(command, capture_output=True)
+    assert invalid.returncode != 0 and not invalid.stdout
 print("PASS: read-only transfer reporting across fresh processes")

@@ -14,10 +14,25 @@ struct TransferContext {
     std::optional<uint16_t> hl, ix, iy;
     bool operator==(const TransferContext&) const = default;
 };
+enum class DataAccessKind { Read, Write, RefusedWrite };
+struct DataAccess {
+    DataAccessKind kind = DataAccessKind::Read;
+    uint16_t address = 0;
+    uint8_t value = 0; // read value, committed write value, or refused attempted value
+};
+struct StackEvidence {
+    uint16_t before_sp = 0, after_sp = 0;
+    bool complete_data_accesses = false;
+    // Producer attests no omitted execution or host mutation since this sample.
+    // Numeric sequence adjacency alone never establishes continuity.
+    std::optional<std::string> previous;
+    std::vector<DataAccess> accesses;
+};
 struct TransferSample {
     std::string id; // supplied durable identity, not inferred from queue sequence
     InstructionObservation event;
     TransferContext before;
+    std::optional<StackEvidence> stack = {};
 };
 struct TransferCapture {
     std::string source, limitations; // caller-supplied capture identity and limits
@@ -39,6 +54,16 @@ struct TransferFinding {
 
 inline constexpr std::string_view kTransferTacticVersion = "z80-transfer-effects/1";
 inline constexpr size_t kMaxTransferSamples = 8192;
+inline constexpr size_t kMaxDataAccesses = 256;
+
+struct ContinuationFinding {
+    std::string sample_id, status = "unresolved", explanation;
+    std::optional<std::string> call_sample;
+    std::vector<std::string> unresolved;
+};
+inline constexpr std::string_view kContinuationTacticVersion = "z80-stack-continuations/1";
+// Ordinary CALL/RST -> RET lineage only. Does not infer exclusive routines.
+[[nodiscard]] std::vector<ContinuationFinding> AnalyzeContinuations(const TransferCapture& capture);
 
 // Read-only tactics. Observed RET never implies a matched logical return.
 [[nodiscard]] TransferFinding ClassifyTransfer(const TransferSample& sample);

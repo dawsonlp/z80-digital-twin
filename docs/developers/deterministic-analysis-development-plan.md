@@ -378,6 +378,17 @@ Published names below are reference annotations, not independently discovered na
 - [ ] Record which conclusions were algorithmically recovered, checked against
       references, manually annotated or left unresolved. Missing ROM means skipped.
 
+ROM experiment checkpoint (16 September 2026): [sixteen bounded CPU-only
+ROM-entry runs](rom-control-flow-experiments.md) recorded 914 instructions and
+replayed identically across 49 artifacts. These exercise UNSTACK variants,
+BEEPER low-bit targets, printing/input and channel-selection paths, USR dispatch,
+calculator table targets including a self-targeting RET, and error/CLEAR stack
+changes. Several interpretations remain partial because unsupported instruction
+effects discard lineage. The original integration acceptance items above remain
+open where full callers, complete value chains or automatic structure recovery
+were not established. The harness and verifier are optional laboratory tools;
+ROM bytes and generated listings remain local.
+
 Reference disassemblies: [BEEPER](https://skoolkid.github.io/rom/asm/03B5.html),
 [printing](https://skoolkid.github.io/rom/asm/15EF.html),
 [input](https://skoolkid.github.io/rom/asm/15E6.html),

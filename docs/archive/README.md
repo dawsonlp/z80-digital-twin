@@ -12,7 +12,7 @@ source. Start with [current status](../reference/status.md) and
 - [Spectrum design](spectrum-machine-design-pre-2026-09-15.md): original milestones
   and hardware rationale.
 - [Detailed handoff](handoff-pre-2026-09-15.md): forward-loop and ROM-first continuation history.
-- [Historical root handover](../../handover.md): earlier disassembly and workflow records.
+- [Disassembly and workflow history](disassembly-workflow-history.md): earlier disassembly and workflow records.
 
 ## Earlier records
 

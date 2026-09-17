@@ -1,7 +1,7 @@
-# Z80 Digital Twin handover (historical)
+# Disassembly and forward-workflow history (September 2026)
 
 > Superseded as a continuation guide on 15 September 2026 by
-> [handoff.md](handoff.md). Commit state, paths, next steps and test results below
+> [handoff.md](../../handoff.md). Commit state, paths, next steps and test results below
 > describe their original dates, not the current working tree.
 
 ## Current continuation — 14 September 2026
@@ -11,9 +11,9 @@ on `98cf7fb`. The changes are in the working tree; no commit or push has been
 made for this increment. The older sections below describe the preceding
 disassembly investigation and retain its historical context.
 
-Start with [the Spectrum example](examples/spectrum-dev/README.md), the
-[development plan](docs/developers/spectrum-development-loop-plan.md), and the
-[verification record](docs/testers/spectrum-development-loop-verification.md).
+Start with [the Spectrum example](../../examples/spectrum-dev/README.md), the
+[development plan](../../docs/developers/spectrum-development-loop-plan.md), and the
+[verification record](../../docs/testers/spectrum-development-loop-verification.md).
 VS Code editing/completion/navigation, real Pasmo build artifacts, validated
 standalone Spectrum loading, symbols, visible red-to-green rebuilds and
 failed-build blocking have been exercised. Final checks: 33 CTest passes,
@@ -43,7 +43,7 @@ results below are from the earlier implementation run, not a fresh test run.
 1. Run `git status --short` and inspect the existing diff before editing. HEAD
    is `928ef03` (`Ignore local ROM directory`); CMake project version is 1.0.3.
    Substantial work is **uncommitted**, including untracked source and tests.
-2. Read [Disassembly Verification](docs/testers/disassembly-verification.md),
+2. Read [Disassembly Verification](../../docs/testers/disassembly-verification.md),
    then the decoder, source renderer and test harness listed below.
 3. Restore an external Pasmo 0.5.5 executable and run the first two verification
    gates. Pasmo is currently absent from PATH. The earlier temporary build at
@@ -172,16 +172,16 @@ limits; do not silently loosen the checks or silently truncate output.
 
 | File / directory | Role |
 |---|---|
-| [disassembler.cpp](debugger/disasm/disassembler.cpp), [header](debugger/disasm/disassembler.h) | Instruction decoding, displayed text, branch targets, bounded lengths |
-| [pasmo_source.cpp](debugger/disasm/pasmo_source.cpp), [header](debugger/disasm/pasmo_source.h) | `DisassemblePasmo`, source spelling and explicit byte-preservation exceptions |
-| [tools/disassemble/main.cpp](tools/disassemble/main.cpp) | CLI input/origin validation and source output |
-| [tests/disassembler_test.cpp](tests/disassembler_test.cpp) | Display, length, target and incomplete-input regressions |
-| [tests/assembly_roundtrip.py](tests/assembly_roundtrip.py) | Real Pasmo subprocesses, independent and section gates, artifact reports |
-| [documented.json](tests/fixtures/assembly/documented.json) | Explicit assembly source, expected bytes and reference metadata |
-| [CMakeLists.txt](CMakeLists.txt) | CLI target and CTest integration, `Z80_PASMO_EXECUTABLE` |
-| [debug_session.cpp](debugger/exec/debug_session.cpp) | Execution control, coverage, SMC and blocked-write observation |
-| [symbol_table.h](debugger/symbols/symbol_table.h) | Existing typed symbols/descriptions and JSON `.sym` persistence |
-| [lsp-z80/README.md](lsp-z80/README.md) | Independent Pasmo LSP; nested VS Code client has its own build/tests |
+| [disassembler.cpp](../../debugger/disasm/disassembler.cpp), [header](../../debugger/disasm/disassembler.h) | Instruction decoding, displayed text, branch targets, bounded lengths |
+| [pasmo_source.cpp](../../debugger/disasm/pasmo_source.cpp), [header](../../debugger/disasm/pasmo_source.h) | `DisassemblePasmo`, source spelling and explicit byte-preservation exceptions |
+| [tools/disassemble/main.cpp](../../tools/disassemble/main.cpp) | CLI input/origin validation and source output |
+| [tests/disassembler_test.cpp](../../tests/disassembler_test.cpp) | Display, length, target and incomplete-input regressions |
+| [tests/assembly_roundtrip.py](../../tests/assembly_roundtrip.py) | Real Pasmo subprocesses, independent and section gates, artifact reports |
+| [documented.json](../../tests/fixtures/assembly/documented.json) | Explicit assembly source, expected bytes and reference metadata |
+| [CMakeLists.txt](../../CMakeLists.txt) | CLI target and CTest integration, `Z80_PASMO_EXECUTABLE` |
+| [debug_session.cpp](../../debugger/exec/debug_session.cpp) | Execution control, coverage, SMC and blocked-write observation |
+| [symbol_table.h](../../debugger/symbols/symbol_table.h) | Existing typed symbols/descriptions and JSON `.sym` persistence |
+| [lsp-z80/README.md](../../lsp-z80/README.md) | Independent Pasmo LSP; nested VS Code client has its own build/tests |
 
 ## Recreate verification
 
@@ -191,7 +191,7 @@ The independent LSP package requires Python 3.14+.
 Obtain the official Pasmo 0.5.5 source archive and verify its SHA-256 before
 building with `./configure` and `make -j` in the extracted directory. A local
 build is sufficient; no system-wide installation is required. Source URL and
-checksum are in [the verification guide](docs/testers/disassembly-verification.md#reproduce-the-locally-validated-tool-build).
+checksum are in [the verification guide](../../docs/testers/disassembly-verification.md#reproduce-the-locally-validated-tool-build).
 CMake/tests do not automatically download or install Pasmo.
 
 Replace the executable placeholder below with the actual absolute path:
@@ -279,7 +279,7 @@ its verification; choose a bounded next change.
 
 ### Subsequent workbench milestones
 
-The broader [enhanced roadmap](docs/developers/enhanced-roadmap.md) remains a
+The broader [enhanced roadmap](../../docs/developers/enhanced-roadmap.md) remains a
 requirements draft, not a list of delivered features. Useful next increments
 after the disassembly baseline are:
 
@@ -297,7 +297,7 @@ after the disassembly baseline are:
   mutable-code analysis. Current coverage records flags, not frequencies; SMC
   tracks writes to previously executed bytes, not all write-then-execute cases.
 
-The [architecture review](docs/developers/source-architecture-feedback.md) also
+The [architecture review](../../docs/developers/source-architecture-feedback.md) also
 records unresolved duplicated Spectrum runtime/frame drivers, HALT/time and
 whole-instruction stepping concerns, and public policy/install limitations.
 Those matter before depending on detailed timing evidence or live deployment,
@@ -318,7 +318,7 @@ Some tracked files therefore contain contributions from both efforts. Inspect
 hunks and untracked contents before staging; do not discard or scoop up unrelated
 changes. No commit or push was made in this work.
 
-Use current source plus [Disassembly Verification](docs/testers/disassembly-verification.md)
+Use current source plus [Disassembly Verification](../../docs/testers/disassembly-verification.md)
 for this feature's implemented contract. Older status/roadmap documents may say
 source export is entirely future work, or retain pre-fix display observations.
 This small linear export exists; the larger annotated reconstruction and live

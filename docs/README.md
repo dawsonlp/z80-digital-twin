@@ -2,7 +2,7 @@
 
 **Audience:** users, developers and testers.
 **Purpose:** route readers to the smallest current document answering their question.
-**Last reviewed:** 2026-09-15.
+**Last reviewed:** 2026-09-16.
 
 Start with [current status](reference/status.md) for implemented capability and
 limits. [Roadmap](developers/roadmap.md) gives current sequencing. Dated plans,
@@ -40,6 +40,8 @@ claims of current completion.
 - [Deterministic execution analysis](developers/deterministic-analysis-development-plan.md):
   checklist for evidence capture, concrete transfer tactics, overlapping routine
   usage and experiments, after integrating the existing work into main.
+- [Transfer graph and caller metrics](developers/transfer-graph-and-caller-metrics.md):
+  implemented capture-local counts and graph, with routine projection still planned.
 - [Current roadmap](developers/roadmap.md): delivered foundations and remaining priorities.
 - [Symbol analysis and assembly projection](developers/symbol-analysis-development-plan.md):
   incremental plan for stable symbol identity, enrichment, persistence and semantic export.

@@ -1,7 +1,7 @@
 # Roadmap
 
 **Audience:** developers choosing implementation work.
-**Last reviewed:** 2026-09-15.
+**Last reviewed:** 2026-09-16.
 **Purpose:** current delivery sequence. [Status](../reference/status.md) describes
 implemented capability; the longer proposals preserve requirements and intent.
 
@@ -21,7 +21,36 @@ implemented capability; the longer proposals preserve requirements and intent.
 - Byte activity, sticky execution/self-modification properties, compact status
   markers, vector labels and clear-analysis control. Acceptance is still partial.
 
-## Now: close the address-analysis increment
+## Now: one semantically explained source section
+
+The evening implementation on `feature/deterministic-execution-analysis` reaches
+`3ff0629`: deterministic transfer/continuation/value/stack tactics, repeatable
+resolution, selective instruction-effect coverage and capture-local transfer
+graphs/caller metrics. The earlier baseline is merged to main; these additions
+remain on the development branch.
+
+The next deliverable is a channel-selection/dispatch source section that explains
+purpose, data fields, selectors, shared entries and observable consequences.
+Follow authentic callers alongside isolated experiments, write testable semantic
+claims, and verify a predicted case. Instruction paraphrases and graphs alone do
+not satisfy this acceptance.
+
+1. Continue [Stage 4a instruction coverage](deterministic-analysis-development-plan.md)
+   where the source slice needs it; retain scoped uncertainty. Remaining byte
+   transfers, shifts/rotates and I/O boundaries are not complete.
+2. Connect resolved observations and caller summaries to image-bound enrichment
+   and assembly projection. Preserve provenance and deliberate names. Test the
+   reader's understanding separately from save/reopen and byte reassembly.
+3. Build blocks with overlapping routine memberships and derive routine call
+   graphs. The existing graph counts instruction sites within one capture; it
+   does not yet establish routine callers or cross-experiment totals.
+4. Resolve run/epoch identity before automatic capture or cross-capture aggregation.
+   Then extend the repeatable experiment and durable evidence loop.
+
+See [graph and metric contracts](transfer-graph-and-caller-metrics.md) and the
+[single current handoff](../../handoff.md) for checkpoint details and continuation.
+
+## Outstanding address-analysis acceptance
 
 Use [address metadata](address-metadata-checklist.md) as the acceptance checklist.
 Finish the access-accounting and overflow audit, first/latest completion contract,
@@ -34,7 +63,7 @@ rationale. Shared runtime and stepping consolidation have landed; its remaining
 HALT/interrupt, packaging, performance and correctness concerns still need
 individual resolution rather than a blanket “consolidation complete” claim.
 
-## Next: close a durable ROM reverse-engineering loop
+## Integration boundary: durable ROM understanding
 
 The [symbol analysis and assembly projection plan](symbol-analysis-development-plan.md)
 now has Stages 0–3 implemented with the native walkthrough caveat above.
@@ -72,8 +101,10 @@ bytes, user interpretations, imported names and generated suggestions.
 
 - Live reload/binary insertion into an existing machine with explicit provenance
   and state-placement rules; retain the current fresh-process workflow.
-- Durable project/session formats, machine snapshots and tape-position recovery.
-- Control-flow graphs, hot paths, candidate routines and evidence-based discovery.
+- Runtime session snapshots and tape-position recovery; image-bound symbol projects
+  already persist, but do not restore machine state.
+- Routine-level call graphs, cross-capture graph aggregation, hot paths and broader
+  evidence-based discovery; capture-local transfer graphs are implemented.
 - Integrated annotated export, additional assembler dialects and source recovery
   beyond linear byte reconstruction.
 - Settings/load-save UI completion and full-program audio regression metrics.

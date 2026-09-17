@@ -45,7 +45,7 @@ display progress; separate HALT/interrupt-signal fidelity corrections are deferr
   demonstration source to restore an old test expectation.
 - Use focused checks while implementing, then verify the actual CLI and GUI
   boundaries. Report passes, skips and untested claims separately.
-- This file is the current task handoff. [handover.md](../../handover.md) retains the
+- This file is the current task handoff. [disassembly/workflow history](disassembly-workflow-history.md) retains the
   earlier disassembly investigation and the initial forward-loop handover.
   Older roadmaps contain outdated implementation and assembler statements.
 

@@ -2,10 +2,10 @@
 
 **Audience:** users and developers checking current capability.
 **Last reviewed:** 2026-09-16.
-**Baseline:** source commit `b94fa00` on `feature/spectrum-dev-loop`, including
-the address-metadata changes following checkpoint `a3dd462`, plus the current
-working-tree symbol-analysis implementation. This is an unreleased development baseline;
-CMake's project version remains 1.0.3.
+**Baseline:** implementation checkpoint `3ff0629` on
+`feature/deterministic-execution-analysis`. The earlier symbol/runtime baseline
+was merged through PR #1 at `2539862`; execution-analysis additions remain on the
+feature branch. These are unreleased development capabilities.
 
 ## Implemented
 
@@ -32,7 +32,26 @@ CMake's project version remains 1.0.3.
   manifests. Independent Pasmo gates verify reconstructed bytes; this does not
   recover original authored source.
 
+## Deterministic execution analysis
+
+Headless supplied-capture analysis now classifies transfers, traces values and
+continuations, recognizes bounded stack reconstruction, and resolves findings
+repeatedly after each stage. Report v7 includes capture-local typed transfer
+graphs, distinct caller-site/occurrence metrics and continuation variants, with
+JSON and readable text output. BIT/comparison/logical coverage preserves unrelated
+lineage while retaining explicit limitations.
+
+Sixteen bounded CPU-only ROM-entry experiments preserve observed targets and
+repeat deterministically. They do not establish authentic BASIC calling contexts
+or universal routine contracts. See [usage](../users/transfer-analysis.md) and
+[the current handoff](../../handoff.md) for scope and next work.
+
 ## Verification
+
+Latest analysis checkpoint: Debug/UI 45 passed plus two optional ZEX skips;
+Release/headless 44 passed plus the same skips, with local ROM and Pasmo supplied.
+All sixteen ROM experiments replayed identically across 49 artifacts. This is
+recorded implementation verification, not a fresh run during documentation edits.
 
 The [15 September verification record](../testers/documentation-refresh-verification.md)
 separates fresh build/test results, optional skips and GUI limitations. Tests
@@ -54,8 +73,10 @@ checklists; it is not a fresh acceptance result for every current change.
   switching analyzed programs; full lifecycle acceptance remains open.
 - No contention, complete HALT bus/refresh progression or persistent INT-line
   model. Some TZX flow-control blocks remain linearized.
-- No live reload into an existing debugger, durable evidence/annotation recovery,
-  integrated evidence-aware source export, call graphs or complete mutation archive.
+- No live reload into an existing debugger, automatic durable runtime capture,
+  integrated execution-evidence-aware source export, routine-level call graph,
+  cross-capture occurrence aggregation or complete mutation archive. Image-bound
+  annotations already persist; selected supplied captures can be saved/reanalyzed.
 - External CPU runner has built-in ZEXDOC/ZEXALL cases; the manifest is descriptive,
   not parsed. Broad game compatibility and full-program audio regression remain open.
 - macOS is the exercised development platform. Windows/MSVC and installed-header
@@ -67,7 +88,7 @@ See [roadmap](../developers/roadmap.md) for sequencing and
 ## Durable symbol analysis (2026-09-16)
 
 Stable IDs, aliases, field enrichment, image-bound save/reopen, strict legacy
-import and semantic Pasmo export are implemented in the current working tree.
+import and semantic Pasmo export are implemented in the merged baseline.
 The shared debugger editor and `z80_analyze` use one project authority. Assembly,
 source maps and manifests support selected code/data interpretations and preserve
 bytes across the synthetic gates and the supplied Spectrum ROM.

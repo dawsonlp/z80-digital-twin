@@ -36,7 +36,7 @@ uint32_t number(std::string_view text, uint32_t maximum = 65535) {
 void usage() {
     std::cout
         << "Usage: z80_analyze COMMAND --image file.bin --org 0xADDR --project file.z80analysis [options]\n"
-           "       z80_analyze transfers --source capture.json [--through effects|continuations|values]\n"
+           "       z80_analyze transfers --source capture.json [--through effects|continuations|values|constructed]\n"
            "  new                           create an image-bound project (will not overwrite)\n"
            "  show                          print the authoritative JSON\n"
            "  create --name NAME (--address ADDR | --value N [--width 8|16|32])\n"
@@ -66,16 +66,17 @@ int main(int argc, char **argv) try {
         for (int i = 2; i < argc; i += 2) {
             const std::string key = argv[i];
             if ((key != "--source" && key != "--through") || arguments.contains(key) || i + 1 >= argc)
-                throw std::invalid_argument("usage: z80_analyze transfers --source capture.json [--through effects|continuations|values]");
+                throw std::invalid_argument("usage: z80_analyze transfers --source capture.json [--through effects|continuations|values|constructed]");
             arguments.emplace(key, argv[i + 1]);
         }
         if (!arguments.contains("--source")) throw std::invalid_argument("missing --source");
-        AnalysisStage stage = AnalysisStage::Values;
+        AnalysisStage stage = AnalysisStage::Constructed;
         if (arguments.contains("--through")) {
             const auto& name = arguments.at("--through");
             if (name == "effects") stage = AnalysisStage::Effects;
             else if (name == "continuations") stage = AnalysisStage::Continuations;
-            else if (name != "values") throw std::invalid_argument("unknown analysis stage: " + name);
+            else if (name == "values") stage = AnalysisStage::Values;
+            else if (name != "constructed") throw std::invalid_argument("unknown analysis stage: " + name);
         }
         const auto capture = require(ReadTransferCapture(require(ReadText(arguments.at("--source")))));
         std::cout << require(TransferReport(capture, stage));

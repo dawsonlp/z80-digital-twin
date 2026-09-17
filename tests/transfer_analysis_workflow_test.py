@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     first = subprocess.run(command, check=True, capture_output=True).stdout
     assert first == subprocess.run(command, check=True, capture_output=True).stdout
     report = json.loads(first)
-    assert report['version'] == 4
+    assert report['version'] == 5
     jump = report['occurrences'][-1]
     assert jump['value_origin']['status'] == 'traced'
     assert jump['target_basis'] == 'traced_value_origin'
@@ -80,7 +80,7 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     # earlier findings, while recording exactly which limitations were covered.
     reports = {}
     original = source.read_bytes()
-    for stage in ('effects', 'continuations', 'values'):
+    for stage in ('effects', 'continuations', 'values', 'constructed'):
         staged = command + ['--through', stage]
         output = subprocess.run(staged, check=True, capture_output=True).stdout
         assert output == subprocess.run(staged, check=True, capture_output=True).stdout
@@ -88,7 +88,17 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
         assert reports[stage]['through'] == stage
         assert source.read_bytes() == original
     effects, continuations, values = [reports[s] for s in ('effects', 'continuations', 'values')]
-    assert values == report  # Default stage is the latest implemented tactic.
+    assert reports['constructed'] == report  # Default stage is the latest implemented tactic.
+    constructed = reports['constructed']
+    last = constructed['occurrences'][-1]
+    assert last['constructed_transfer']['pattern'] == 'popped_continuation_jump'
+    assert last['constructed_transfer']['return_role_established'] is True
+    assert 'register-mediated return' in last['resolution']['comment']
+    assert 'Logical call/return role is not established' not in last['resolution']['comment']
+    for early, late in zip(values['occurrences'], constructed['occurrences']):
+        assert early['constructed_transfer'] is None
+        for field in ('instruction_effect', 'continuation', 'value_origin'):
+            assert early[field] == late[field]
     assert len({r['capture_sha256'] for r in reports.values()}) == 1
     assert effects['value_graph'] is None and continuations['value_graph'] is None
     for early, middle, late in zip(effects['occurrences'], continuations['occurrences'], values['occurrences']):
@@ -128,7 +138,7 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     capture['samples'].append(later)
     source.write_text(json.dumps(capture))
     expanded = json.loads(subprocess.run(command, check=True, capture_output=True).stdout)
-    assert expanded['occurrences'][:-1] == values['occurrences']
+    assert expanded['occurrences'][:-1] == reports['constructed']['occurrences']
     site = next(s for s in expanded['sites'] if s['start'] == jump_sample['start'])
     assert len(site['variants']) == 2
     assert {i for v in site['variants'] for i in v['samples']} == {'jump-hl', 'later-jump'}
@@ -145,6 +155,18 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     source.write_text(json.dumps(capture))
     changed_report = json.loads(subprocess.run(command, check=True, capture_output=True).stdout)
     assert len([s for s in changed_report['sites'] if s['start'] == jump_sample['start']]) == 2
+    examples = pathlib.Path(__file__).parent / 'fixtures/analysis/constructed-transfers.json'
+    example_report = json.loads(subprocess.run([sys.argv[1], 'transfers', '--source', str(examples)],
+                                               check=True, capture_output=True).stdout)
+    by_id = {o['sample_id']: o for o in example_report['occurrences']}
+    assert by_id['jump-hl']['constructed_transfer']['pattern'] == 'popped_continuation_jump'
+    assert by_id['jump-hl']['completeness']['continuation'] == 'matched_register_continuation'
+    assert by_id['dispatch-ret']['constructed_transfer']['pattern'] == 'pushed_target_ret'
+    assert by_id['dispatch-ret']['completeness']['continuation'] == 'pushed_target'
+    assert by_id['helper-jump']['constructed_transfer']['pattern'] == 'continuation_preserving_indirect_jump'
+    assert by_id['helper-jump']['completeness']['continuation'] == 'preserved_call_continuation'
+    assert by_id['helper-return']['continuation']['status'] == 'matched'
+
     # Presentation can hit its own bound while value analysis remains complete.
     # It must disclose truncation and preserve the underlying graph.
     capture = json.loads(original)

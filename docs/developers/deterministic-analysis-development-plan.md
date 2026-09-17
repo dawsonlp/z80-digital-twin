@@ -1,7 +1,7 @@
 # Deterministic execution analysis: development checklist
 
 **Date:** 16 September 2026.  
-**Status:** transfer classification, ordinary stack-continuation matching and bounded value tracing and repeatable resolution implemented; runtime
+**Status:** transfer classification, ordinary stack-continuation matching and bounded value tracing, constructed-transfer tactics and repeatable resolution implemented; runtime
 capture integration and the broader stages remain open.
 **Outcome:** build program understanding through reproducible experiments and
 deterministic tactics, preserving every observed usage and keeping routine
@@ -212,7 +212,7 @@ observed evidence without declaring universal functions or logical return roles.
 - [x] Preserve raw findings and record explicit coverage of earlier limitations.
 - [x] Group per-site comments with supporting samples and alternative usages.
 - [x] Keep capture inputs and earlier occurrence findings unchanged as evidence grows.
-- [ ] Add rung 5 constructed-transfer findings as new inputs to this resolver.
+- [x] Add rung 5 constructed-transfer findings as new inputs to this resolver.
 
 Resolution validation: Debug/UI 42 passed and two optional ZEX skips (44
 registered); Release/headless 41 passed and the same two skips (43 registered).
@@ -225,8 +225,10 @@ separately in both configurations. No native UI changes or acceptance are claime
 
 ## 4. Recognize constructed transfers and stack changes (rungs 5–6)
 
-- [ ] Implement separate tactics for a popped continuation followed by JP through
-      a register, a pushed target consumed by RET, and an indirect-call helper.
+- [x] Implement separate tactics for a popped continuation followed by JP through
+      a register and a pushed target consumed by RET.
+- [x] Establish the continuation-preserving indirect-jump primitive used by call
+      helpers, while retaining internal jumps as an alternative interpretation.
 - [ ] Recognize explicit continuation construction, discarded continuations,
       return-address substitution, SP replacement and restored stack pointers.
 - [ ] Describe continuation-preserving transfers before claiming a tail call;
@@ -240,6 +242,26 @@ separately in both configurations. No native UI changes or acceptance are claime
 Acceptance: synthetic equivalents of UNSTACK_Z, USR dispatch and stack rebuilding
 are explained alongside conventional CALL/RET paths into the same target. Negative
 fixtures with similar opcodes but different value lineage do not match falsely.
+
+Rung 5 checkpoint: report v5 adds the `constructed` stage and separate findings
+for register-mediated returns, PUSH/RET target consumption and continuation-
+preserving indirect jumps. Exact low/high byte identity is propagated through
+modeled data operations; equal values, address-only dependencies and arithmetic
+ancestry do not establish identity. Captured invocation lifetimes prevent reuse
+of consumed continuations. The resolver now includes the observed continuation
+relationship and retains raw earlier findings. This does not complete the broader
+stack reconstruction or function-role work in this section.
+
+Validation: Debug/UI 43 passed and two optional ZEX skips (45 registered);
+Release/headless 42 passed and the same two skips (44 registered). The local ROM
+and Pasmo were supplied; build logs contain no compiler warning/error matches.
+The existing real-CPU CALL/POP/EX/JP fixture now verifies the return-role finding.
+Synthetic tests cover nesting, IX, stack wrap, same-value and address-only false
+matches, byte-lane identity, repeated consumption, PUSH/RET dispatch, refused
+writes, SP mismatch, interrupt-return boundaries and unavailable value evidence.
+Fresh-process tests verify all four stages, preserved raw findings, resolved
+relationships and the three runnable examples. No runtime hooks or UI changes
+are included.
 
 ## 5. Build overlapping structures and usage patterns (rungs 7–8)
 

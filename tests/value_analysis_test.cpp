@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Larry Dawson. Licensed under the MIT License (see LICENSE).
 #include "value_analysis.h"
+#include "constructed_analysis.h"
 #include "debug_session.h"
 #include <iostream>
 #include <set>
@@ -82,6 +83,9 @@ int main() {
             previous = id;
         }
         const auto actual = AnalyzeAddressValues(observed);
+        const auto constructed = AnalyzeConstructedTransfers(observed, AnalyzeContinuations(observed), actual);
+        check(constructed.back().return_role_established && constructed.back().call_sample == "cpu-call",
+              "actual CPU execution supports a register-mediated return finding");
         check(actual.findings.back().status == ValueStatus::Traced &&
               has(actual, "call_continuation", "cpu-call") && has(actual, "exchange", "cpu-exchange"),
               "actual CPU execution traces a popped continuation through EX to JP (HL)");

@@ -1,6 +1,6 @@
 # Deterministic transfer analysis
 
-**Status:** headless transfer, ordinary continuation and bounded address-value analysis, 16 September
+**Status:** headless transfer, ordinary continuation, bounded value and constructed-transfer analysis, 16 September
 2026. Automatic runtime capture and routine recovery remain unimplemented.
 
 Analyze a bounded file of recorded instruction effects without running the CPU:
@@ -59,8 +59,8 @@ not a run/session persistence schema or a resumable snapshot. Each file supplies
   sample ID and instruction-level reads, committed writes and refused writes.
 
 Version 1 inputs remain readable and contain no stack evidence. Writers emit
-version 2; reports use version 4 with separate transfer, continuation and value tactic
-versions. Stack accesses are bounded to 256 per sample; the writer rejects a
+version 2; reports use version 5 with separate transfer, continuation, value and constructed-transfer tactic
+versions, plus a versioned resolver. Stack accesses are bounded to 256 per sample; the writer rejects a
 serialized capture larger than the reader's 16 MiB limit.
 
 `stack.previous` is an explicit producer assertion of uninterrupted execution
@@ -100,8 +100,8 @@ New calls after a gap can establish new local evidence.
 Balanced register PUSH/POP and jumps can preserve a caller's continuation. A
 PUSH/RET dispatch does not become a matched ordinary return simply because its
 numeric destination equals an earlier saved return address. Register-mediated
-return-role recognition and stack-restoration tactics remain later work. Value
-provenance is available independently, as described below.
+return-role recognition is a separate constructed-transfer tactic described below;
+stack reconstruction remains later work.
 
 Explanations are attached to individual observations and their supporting call
 IDs. They are suitable input for future assembly comments, but are not yet
@@ -114,7 +114,8 @@ IDs and malformed ranges/counts are rejected. The current limits are 8192 sample
 256 instruction bytes per sample and the shared 16 MiB JSON input limit.
 
 The C++ API offers `WriteTransferCapture`, `ReadTransferCapture`,
-`ClassifyTransfer`, `AnalyzeContinuations`, `AnalyzeAddressValues` and `TransferReport`. Reports include tactic versions and
+`ClassifyTransfer`, `AnalyzeContinuations`, `AnalyzeAddressValues`,
+`AnalyzeConstructedTransfers`, `ResolveTransferFindings` and `TransferReport`. Reports include tactic versions and
 the canonical capture hash. Identical input and tactic versions produce identical
 reports, including after save/reopen. This hash identifies input; it does not
 authenticate its producer or establish hardware fidelity.
@@ -154,7 +155,7 @@ name the accessed address. Nodes are report-local identities, not symbol IDs.
 
 These statuses concern this value derivation only. They do not establish a
 logical return, routine boundary, exhaustive target set or hardware fidelity.
-In particular, a separate future tactic will interpret the popped-continuation
+The constructed-transfer stage separately interprets the popped-continuation
 usage above. A coincidentally equal immediate address has different ancestry.
 
 Supported effects include immediate register loads, unprefixed byte copies and
@@ -191,12 +192,12 @@ build/z80_analyze transfers --source tests/fixtures/analysis/value-origins.json 
 build/z80_analyze transfers --source tests/fixtures/analysis/value-origins.json --through values
 ```
 
-`values` is the default. This selects which tactics run, not just a display filter.
+`constructed` is the default. This selects which tactics run, not just a display filter.
 A tactic that has not run has a null finding, distinct from `not_applicable` or
 `unresolved`. The capture hash is unchanged across stages.
 
 Each occurrence has a versioned `resolution` containing its current comment,
-target basis, remaining unresolved dependencies and `resolved_dependencies`.
+target basis, continuation relationship, remaining unresolved dependencies and `resolved_dependencies`.
 Each covered dependency identifies the original tactic/reason and the tactic
 that supplied the missing evidence. Raw `instruction_effect`, `continuation`
 and `value_origin` findings remain available alongside it. The compatibility
@@ -220,3 +221,46 @@ and may be rerun as new evidence arrives. The ancestry summary examines at most
 4,096 unique nodes per occurrence; exhaustion is explicitly reported and leaves
 the full bounded value graph intact. These report comments are ready for review;
 projection into exported assembly remains separate work.
+
+## Constructed transfers (rung 5)
+
+```sh
+build/z80_analyze transfers --source tests/fixtures/analysis/constructed-transfers.json --through constructed
+```
+
+The fixture contains three independent synthetic paths, with explicit capture
+gaps between them. The new stage runs after value tracing and adds a separate
+`constructed_transfer` finding to each occurrence:
+
+| Pattern | Established by this tactic |
+| --- | --- |
+| `popped_continuation_jump` | An observed register-mediated return: both original CALL/RST continuation bytes were popped from that invocation's stack slot, carried unchanged into the indirect jump, and SP is restored. |
+| `pushed_target_ret` | RET consumed the target bytes written by a particular PUSH. This alone does not establish a logical return or call. |
+| `continuation_preserving_indirect_jump` | The indirect jump leaves the live caller's saved continuation intact at the current SP. A helper and an internal jump remain possible interpretations. |
+
+Findings name supporting CALL/POP/PUSH samples and the target's value-graph root.
+The resolver incorporates them without replacing earlier tactic findings. The
+sample's jump now says `Observed register-mediated return to $8003`, while the
+`values` stage continues to show only the value ancestry and unresolved role.
+Resolved continuation relationships also appear in `completeness.continuation`;
+the raw ordinary-continuation result remains in `continuation`.
+
+Identity is propagated in one forward pass over the bounded value graph. Each
+byte retains its original low/high position. Only modeled copies, exchanges,
+splits/joins and memory data lineage preserve that identity. Memory-address
+inputs never confer identity on the data read. Arithmetic deliberately breaks
+identity even when it produces the same numeric address; this tactic does not
+prove algebraic equivalence. A non-PUSH overwrite breaks PUSH-write identity,
+even at equal value; refused writes leave it intact.
+
+A register return requires the most recent live captured invocation and its
+recorded stack slot, not just an ancestor mentioning a CALL. Consuming a call's
+continuation retires that identity, including when a PUSH/RET consumes its bytes.
+Missing continuity, unsupported value effects and unclassified possible exits
+conservatively discard lifecycle knowledge. Partial value origins may still
+support a PUSH/RET finding when the actual pushed/read bytes establish that
+specific mechanism; their earlier value provenance remains partial.
+
+Caller-skipping exits, arbitrary stack reconstruction, modified continuations,
+exclusive helper/function classification and ROM-wide capture remain later work.
+These tactics do not modify CPU behavior, source labels or exported assembly.

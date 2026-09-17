@@ -1,0 +1,390 @@
+{
+  "format": "z80-transfer-capture",
+  "version": 2,
+  "source": "synthetic-constructed-transfer-examples",
+  "limitations": "Three synthetic instruction-level paths separated by explicit gaps; not a Spectrum ROM trace.",
+  "samples": [
+    {
+      "id": "call-outer",
+      "kind": "instruction",
+      "sequence": "0",
+      "start": 32768,
+      "next_pc": 33024,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        205,
+        0,
+        129
+      ],
+      "revisions": [],
+      "before": {
+        "flags": 0,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": null,
+        "accesses": [
+          {
+            "kind": "write",
+            "address": 40958,
+            "value": 3
+          },
+          {
+            "kind": "write",
+            "address": 40959,
+            "value": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "pop-de",
+      "kind": "instruction",
+      "sequence": "0",
+      "start": 33024,
+      "next_pc": 33025,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        209
+      ],
+      "revisions": [],
+      "before": {
+        "flags": 0,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": "call-outer",
+        "accesses": [
+          {
+            "kind": "read",
+            "address": 40958,
+            "value": 3
+          },
+          {
+            "kind": "read",
+            "address": 40959,
+            "value": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "exchange",
+      "kind": "instruction",
+      "sequence": "2",
+      "start": 33025,
+      "next_pc": 33026,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        235
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": "pop-de",
+        "accesses": []
+      }
+    },
+    {
+      "id": "jump-hl",
+      "kind": "instruction",
+      "sequence": "3",
+      "start": 33026,
+      "next_pc": 32771,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        233
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": "exchange",
+        "accesses": []
+      }
+    },
+    {
+      "id": "dispatch-target",
+      "kind": "instruction",
+      "sequence": "4",
+      "start": 33280,
+      "next_pc": 33283,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        33,
+        0,
+        144
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": null,
+        "accesses": []
+      }
+    },
+    {
+      "id": "dispatch-push",
+      "kind": "instruction",
+      "sequence": "5",
+      "start": 33283,
+      "next_pc": 33284,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        229
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": "dispatch-target",
+        "accesses": [
+          {
+            "kind": "write",
+            "address": 40958,
+            "value": 0
+          },
+          {
+            "kind": "write",
+            "address": 40959,
+            "value": 144
+          }
+        ]
+      }
+    },
+    {
+      "id": "dispatch-ret",
+      "kind": "instruction",
+      "sequence": "6",
+      "start": 33284,
+      "next_pc": 36864,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        201
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": "dispatch-push",
+        "accesses": [
+          {
+            "kind": "read",
+            "address": 40958,
+            "value": 0
+          },
+          {
+            "kind": "read",
+            "address": 40959,
+            "value": 144
+          }
+        ]
+      }
+    },
+    {
+      "id": "helper-target",
+      "kind": "instruction",
+      "sequence": "7",
+      "start": 33536,
+      "next_pc": 33539,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        33,
+        0,
+        144
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": null,
+        "accesses": []
+      }
+    },
+    {
+      "id": "helper-call",
+      "kind": "instruction",
+      "sequence": "8",
+      "start": 33539,
+      "next_pc": 33792,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        205,
+        0,
+        132
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": "helper-target",
+        "accesses": [
+          {
+            "kind": "write",
+            "address": 40958,
+            "value": 6
+          },
+          {
+            "kind": "write",
+            "address": 40959,
+            "value": 131
+          }
+        ]
+      }
+    },
+    {
+      "id": "helper-jump",
+      "kind": "instruction",
+      "sequence": "9",
+      "start": 33792,
+      "next_pc": 36864,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        233
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": "helper-call",
+        "accesses": []
+      }
+    },
+    {
+      "id": "helper-return",
+      "kind": "instruction",
+      "sequence": "10",
+      "start": 36864,
+      "next_pc": 33542,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        201
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": "helper-jump",
+        "accesses": [
+          {
+            "kind": "read",
+            "address": 40958,
+            "value": 6
+          },
+          {
+            "kind": "read",
+            "address": 40959,
+            "value": 131
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -263,16 +263,18 @@ Result<std::string> TransferReport(const TransferCapture& capture, AnalysisStage
     A occurrences, edges;
     using Key = std::tuple<uint16_t, std::vector<uint8_t>, TransferMechanism, uint16_t, int>;
     std::map<Key, A> grouped;
-    if (through != AnalysisStage::Effects && through != AnalysisStage::Continuations && through != AnalysisStage::Values)
+    if (through != AnalysisStage::Effects && through != AnalysisStage::Continuations && through != AnalysisStage::Values && through != AnalysisStage::Constructed)
         return invalid("unknown analysis stage");
     std::vector<TransferFinding> transfers;
     for (const auto& sample : capture.samples) transfers.push_back(ClassifyTransfer(sample));
     std::optional<std::vector<ContinuationFinding>> continuations;
     std::optional<ValueAnalysis> values;
     if (through != AnalysisStage::Effects) continuations = AnalyzeContinuations(capture);
-    if (through == AnalysisStage::Values) values = AnalyzeAddressValues(capture);
+    if (through == AnalysisStage::Values || through == AnalysisStage::Constructed) values = AnalyzeAddressValues(capture);
+    std::optional<std::vector<ConstructedFinding>> constructed;
+    if (through == AnalysisStage::Constructed) constructed = AnalyzeConstructedTransfers(capture, *continuations, *values);
     const auto resolutions = ResolveTransferFindings(capture, transfers,
-        continuations ? &*continuations : nullptr, values ? &*values : nullptr);
+        continuations ? &*continuations : nullptr, values ? &*values : nullptr, constructed ? &*constructed : nullptr);
     auto strings = [](const std::vector<std::string>& items) {
         A array;
         for (const auto& item : items) array.emplace_back(item);
@@ -282,7 +284,6 @@ Result<std::string> TransferReport(const TransferCapture& capture, AnalysisStage
         const auto& s = capture.samples[i];
         const auto& f = transfers[i];
         const auto& resolution = resolutions[i];
-        const auto continuation_status = continuations ? (*continuations)[i].status : "not_run";
         J continuation_json;
         if (continuations) {
             const auto& c = (*continuations)[i];
@@ -297,12 +298,13 @@ Result<std::string> TransferReport(const TransferCapture& capture, AnalysisStage
                 {"unresolved", strings(f.unresolved)}}},
             {"value_origin", values ? ValueFindingJson(values->findings[i]) : J{}},
             {"continuation", std::move(continuation_json)},
+            {"constructed_transfer", constructed ? ConstructedFindingJson((*constructed)[i]) : J{}},
             {"resolution", ResolutionJson(resolution)},
             {"completeness", O{{"capture", s.event.complete_capture ? "instruction_bytes_complete" : "instruction_bytes_unavailable_or_partial"},
                 {"entry_context", (s.before.flags && s.before.b && s.before.hl && s.before.ix && s.before.iy)
                     ? "transfer_inputs_captured" : "partial_or_absent"},
                 {"target_provenance", resolution.target_basis},
-                {"continuation", continuation_status},
+                {"continuation", resolution.continuation_relationship},
                 {"scope", "one_observation"}, {"possible_additional_usages", true},
                 {"unresolved", strings(resolution.unresolved)}}}});
         grouped[{s.event.start, s.event.bytes, f.mechanism, s.event.next_pc,
@@ -316,10 +318,10 @@ Result<std::string> TransferReport(const TransferCapture& capture, AnalysisStage
             {"mechanism", mechanism_name(mechanism)}, {"taken", taken < 0 ? J{} : J(bool(taken))},
             {"count", static_cast<uint32_t>(samples.size())}, {"samples", samples}});
     }
-    return json::Write(O{{"format", "z80-transfer-report"}, {"version", 4},
+    return json::Write(O{{"format", "z80-transfer-report"}, {"version", 5},
         {"tactic", std::string(kTransferTacticVersion)}, {"capture_sha256", Sha256(json::Write(capture_json(capture)))},
         {"source", capture.source}, {"limitations", capture.limitations}, {"destination_sets_closed", false},
-        {"through", through == AnalysisStage::Effects ? "effects" : through == AnalysisStage::Continuations ? "continuations" : "values"},
+        {"through", through == AnalysisStage::Effects ? "effects" : through == AnalysisStage::Continuations ? "continuations" : through == AnalysisStage::Values ? "values" : "constructed"},
         {"occurrences", std::move(occurrences)}, {"edges", std::move(edges)},
         {"value_graph", values ? ValueGraphJson(*values) : J{}}, {"sites", SiteResolutionsJson(capture, resolutions)}});
 }

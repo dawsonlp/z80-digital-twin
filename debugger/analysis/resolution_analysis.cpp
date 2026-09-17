@@ -29,7 +29,8 @@ std::string target_comment(const TransferSample& sample, const TransferFinding& 
 } // namespace
 std::vector<OccurrenceResolution> ResolveTransferFindings(
     const TransferCapture& capture, const std::vector<TransferFinding>& transfers,
-    const std::vector<ContinuationFinding>* continuations, const ValueAnalysis* values) {
+    const std::vector<ContinuationFinding>* continuations, const ValueAnalysis* values,
+    const std::vector<ConstructedFinding>* constructed) {
     // Index graph nodes once; resolution remains bounded by retained evidence.
     std::map<std::string, std::vector<const ValueNode*>> by_sample;
     if (values) for (const auto& node : values->nodes) by_sample[node.sample_id].push_back(&node);
@@ -39,8 +40,10 @@ std::vector<OccurrenceResolution> ResolveTransferFindings(
         const auto& transfer = transfers.at(i);
         const auto* continuation = continuations ? &continuations->at(i) : nullptr;
         const auto* origin = values ? &values->findings.at(i) : nullptr;
+        const auto* construction = constructed ? &constructed->at(i) : nullptr;
         OccurrenceResolution resolved;
         resolved.target_basis = transfer.target_basis;
+        if (continuation) resolved.continuation_relationship = continuation->status;
         resolved.comment = target_comment(sample, transfer);
         const bool value_available = origin && origin->root &&
             (origin->status == ValueStatus::Traced || origin->status == ValueStatus::Partial);
@@ -96,9 +99,20 @@ std::vector<OccurrenceResolution> ResolveTransferFindings(
             for (const auto& call : calls) resolved.comment += " Value ancestry includes the continuation created by sample " + call + ".";
         }
         if (continuation && continuation->status == "matched") resolved.target_basis = "matched_call_continuation";
-        if (transfer.mechanism == TransferMechanism::IndirectJump ||
+        if (construction) {
+            if (construction->return_role_established) resolved.continuation_relationship = "matched_register_continuation";
+            else if (construction->pattern == "pushed_target_ret") resolved.continuation_relationship = "pushed_target";
+            else if (construction->pattern == "continuation_preserving_indirect_jump") resolved.continuation_relationship = "preserved_call_continuation";
+            // Prefer the supported composite explanation over repeating its
+            // lower-level facts. All original findings stay in the report.
+            if (construction->status == "matched") resolved.comment = construction->explanation;
+            else if (!construction->explanation.empty()) resolved.comment += " " + construction->explanation;
+            for (const auto& reason : construction->unresolved) retain(kConstructedTacticVersion, reason);
+        }
+        if ((!construction || construction->status != "matched") &&
+            (transfer.mechanism == TransferMechanism::IndirectJump ||
             ((transfer.mechanism == TransferMechanism::Return || transfer.mechanism == TransferMechanism::InterruptReturn) &&
-             transfer.taken != false && (!continuation || continuation->status != "matched")))
+             transfer.taken != false && (!continuation || continuation->status != "matched"))))
             resolved.comment += " Logical call/return role is not established by these tactics.";
         for (const auto& reason : resolved.unresolved) resolved.comment += " Unresolved: " + reason + ".";
         result.push_back(std::move(resolved));
@@ -112,7 +126,8 @@ json::Value ResolutionJson(const OccurrenceResolution& resolution) {
     for (const auto& item : resolution.resolved_dependencies)
         dependencies.emplace_back(J::Object{{"tactic", item.tactic}, {"reason", item.reason}, {"resolved_by", item.resolved_by}});
     return J::Object{{"resolver", std::string(kResolutionVersion)}, {"comment", resolution.comment},
-        {"target_basis", resolution.target_basis}, {"unresolved", std::move(unresolved)},
+        {"target_basis", resolution.target_basis}, {"continuation_relationship", resolution.continuation_relationship},
+        {"unresolved", std::move(unresolved)},
         {"resolved_dependencies", std::move(dependencies)}, {"scope", "one_observation"}};
 }
 json::Value SiteResolutionsJson(const TransferCapture& capture, const std::vector<OccurrenceResolution>& resolutions) {

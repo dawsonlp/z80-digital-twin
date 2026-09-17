@@ -143,6 +143,18 @@ class Analyzer {
             const auto old = word(20);
             put_word(20, old ? make("stack_adjust", expected_sp, 16, {*old}) : Node{});
         };
+        const auto invalidate_flags = [&] {
+            registers_[7].reset();
+            finding.explanation = "Known instruction effects preserve unrelated value lineage; resulting flags are not traced.";
+            finding.unresolved.push_back("resulting flag value lineage not modeled; later captured flags are a new evidence boundary");
+        };
+        const auto memory_operand = [&](int pair, int displacement) -> Node {
+            const auto base = word(pair);
+            if (!base) { fail("address unavailable for memory operand"); return {}; }
+            const auto address = displacement == 0 ? base :
+                make("indexed_address", uint16_t(value(base) + displacement), 16, {*base});
+            return address ? read(value(address), address) : Node{};
+        };
         if (transfer.mechanism == TransferMechanism::Call || transfer.mechanism == TransferMechanism::Restart) {
             if (transfer.taken == true) {
                 expected_sp = uint16_t(s.before_sp - 2);
@@ -213,6 +225,38 @@ class Analyzer {
             const int reg = byte_reg((op >> 3) & 7); const auto old = registers_[reg];
             registers_[reg] = old ? make((op & 1) ? "dec8" : "inc8", uint8_t(value(old) + ((op & 1) ? -1 : 1)), 8, {*old}) : Node{};
             registers_[7].reset();
+        } else if (op == 0xCB &&
+                   (e.bytes.at(i + (prefix ? 1 : 0)) & 0xC0) == 0x40) {
+            // BIT reads its operand but changes only flags, including indexed
+            // encodings whose low opcode bits do not select a destination.
+            const auto extension = e.bytes.at(i + (prefix ? 1 : 0));
+            if (prefix) memory_operand(hl, int8_t(e.bytes.at(i)));
+            else if ((extension & 7) == 6) memory_operand(4, 0);
+            invalidate_flags();
+        } else if ((op >= 0xB8 && op <= 0xBF) || op == 0xFE) {
+            // CP leaves both operands intact. Their values are unnecessary
+            // here because flags are deliberately not evaluated by this tactic.
+            if (op == 0xBE) memory_operand(hl, prefix ? int8_t(e.bytes.at(i)) : 0);
+            invalidate_flags();
+        } else if (op == 0x37 || op == 0x3F) {
+            invalidate_flags(); // SCF / CCF leave all data registers intact.
+        } else if ((op >= 0xA0 && op <= 0xB7) || op == 0xE6 || op == 0xEE || op == 0xF6) {
+            const unsigned operation = (op >> 3) & 3;
+            Node operand;
+            if (op >= 0xE6) operand = make("immediate", e.bytes.at(i), 8);
+            else if ((op & 7) == 6) operand = memory_operand(hl, prefix ? int8_t(e.bytes.at(i)) : 0);
+            else operand = registers_[byte_reg(op & 7)];
+            const auto accumulator = registers_[6];
+            if (accumulator && operand) {
+                const auto left = value(accumulator), right = value(operand);
+                registers_[6] = make(operation == 0 ? "and8" : operation == 1 ? "xor8" : "or8",
+                    uint8_t(operation == 0 ? left & right : operation == 1 ? left ^ right : left | right),
+                    8, {*accumulator, *operand});
+            } else {
+                registers_[6].reset();
+                finding.unresolved.push_back("accumulator result lineage unavailable because a logical operand is unknown");
+            }
+            invalidate_flags();
         } else if (op == 0xF9) {
             const auto source = word(hl);
             if (!source) fail("source for LD SP unavailable");

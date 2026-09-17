@@ -18,6 +18,8 @@ def targets(name, pc):
 assert len(list(folder.glob('*.capture.json'))) == 16
 assert targets('unstack-runtime', 0x1FC8) == [0x1FF8]
 assert targets('unstack-syntax', 0x1FC7) == [0x8003]
+assert report('unstack-runtime')['occurrences'][-1]['constructed_transfer']['pattern'] == 'popped_continuation_jump'
+assert report('unstack-syntax')['occurrences'][-1]['stack_reconstruction']['pattern'] == 'caller_skipping_exit'
 for low in range(4):
     for site in (0x03F0, 0x03F4):
         assert targets(f'beeper-l{low}', site) == [0x03D4 - low]
@@ -27,6 +29,10 @@ for case, target in [('channel-print', 0x09F4), ('channel-input', 0x10A8),
 for case in ('channel-select-k', 'channel-select-s'):
     assert targets(case, 0x1646) == [0x164A]
     assert targets(case, 0x164A) == [0x0D4D]
+    sample_id = next(s['id'] for s in capture(case) if s['start'] == 0x162C)
+    occurrence = next(o for o in report(case)['occurrences'] if o['sample_id'] == sample_id)
+    assert occurrence['constructed_transfer']['pattern'] == 'continuation_preserving_indirect_jump'
+    assert occurrence['value_origin']['status'] == 'partial'
 assert targets('usr-tail', 0x34BB) == [0x9000]
 assert targets('usr-tail', 0x9000) == [0x2D2B]
 assert report('usr-tail')['occurrences'][-1]['stack_reconstruction']['pattern'] == 'constructed_continuation_consumed'

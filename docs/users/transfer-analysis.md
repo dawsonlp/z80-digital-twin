@@ -161,7 +161,17 @@ usage above. A coincidentally equal immediate address has different ancestry.
 Supported effects include immediate register loads, unprefixed byte copies and
 (HL) loads/stores, EX/EXX and EX (SP), register PUSH/POP, absolute word loads/stores,
 16-bit ADD and INC/DEC, unprefixed register-byte INC/DEC, LD SP, CALL/RST/RET and
-indirect jumps. HL, IX and IY word forms are supported where applicable. Other
+indirect jumps. Value tactic v3 also supports BIT, CP, SCF/CCF and AND/XOR/OR
+(register, immediate and applicable HL/indexed memory operands). BIT and CP
+validate memory reads while preserving their operands. Logical operations derive
+the accumulator when its operands are known; otherwise only accumulator lineage
+is lost. These operations discard flag-byte lineage and record that limitation
+on their findings; a later captured flag value starts a new evidence boundary.
+Unrelated register, memory and continuation lineage survives. Flags are not yet
+tracked individually, and logical arithmetic never establishes byte-copy identity
+even when its result equals an input.
+
+HL, IX and IY word forms are supported where applicable. Other
 operations conservatively discard lineage. The graph records arithmetic width
 and wrapped results; pointer reads retain their source locations and address
 inputs. It does not infer an entire table from one accessed entry.

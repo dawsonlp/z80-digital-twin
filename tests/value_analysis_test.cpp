@@ -51,17 +51,20 @@ bool has(const ValueAnalysis& result, std::string_view operation, std::string_vi
 }
 int main() {
     // Independent integration fixture: copy actual write-observer events and
-    // actual data-read counter changes for CALL / POP DE / EX DE,HL / JP (HL). These instructions
+    // actual data-read counter changes for a CALL / POP DE / BIT / CP / SCF /
+    // EX DE,HL / JP (HL) path. These instructions
     // do not mix data reads and writes, so read values are unchanged at completion.
     // This test adapter makes no general runtime-capture or bus-order claim.
     {
         DebugCPU cpu; DebugSession session(cpu);
         cpu.LoadProgram({0xCD, 0x10, 0x80}, 0x8000);
-        cpu.LoadProgram({0xD1, 0xEB, 0xE9}, 0x8010);
+        cpu.LoadProgram({0xD1, 0xFD, 0xCB, 0xFF, 0x7E, 0xFE, 0x17, 0x37, 0xEB, 0xE9}, 0x8010);
+        cpu.IY() = 0x9001;
+        cpu.LoadProgram({0x80}, 0x9000);
         cpu.PC() = 0x8000; cpu.SP() = 0xA000; cpu.HL() = 0x8020;
         TransferCapture observed{"cpu-stack-fixture", "Instruction-level test capture; no run identity or bus timing", {}};
         std::optional<std::string> previous;
-        for (const auto& id : {"cpu-call", "cpu-pop", "cpu-exchange", "cpu-jump"}) {
+        for (const auto& id : {"cpu-call", "cpu-pop", "cpu-bit", "cpu-compare", "cpu-scf", "cpu-exchange", "cpu-jump"}) {
             std::vector<uint64_t> counts(65536);
             using Kind = z80::MetadataMemory::AccessKind;
             for (uint32_t a = 0; a < 65536; ++a)
@@ -169,7 +172,53 @@ int main() {
     f.add({0xE9}, 0x8200);
     check(AnalyzeAddressValues(f.capture).findings.back().status == ValueStatus::Partial, "EX (SP),HL preserves read/write origins with pretrace memory boundary");
 
-    f = {}; f.add({0x21, 0x23, 0x81}); f.add({0xA7}); f.add({0xE9}, 0x8123);
+    // Known effects retain unrelated lineage, even with unknown operands.
+    for (const auto& bytes : std::vector<std::vector<uint8_t>>{
+             {0xCB, 0x7C}, {0xB8}, {0xBF}, {0xFE, 0x23}, {0x37}, {0x3F}, {0xA7}}) {
+        f = {}; f.add({0x21, 0x23, 0x81}); f.add(bytes); f.add({0xE9}, 0x8123);
+        a = AnalyzeAddressValues(f.capture);
+        check(a.findings.back().status == ValueStatus::Traced && !a.findings[1].unresolved.empty(),
+              "known flag/accumulator effects retain HL and record scoped limitations");
+    }
+    for (const auto& bytes : std::vector<std::vector<uint8_t>>{
+             {0xFD, 0xCB, 0xFF, 0x7E}, {0xFD, 0xCB, 0xFF, 0x78}, {0xFD, 0xBE, 0xFF}}) {
+        f = {}; f.add({0x21, 0x23, 0x81}); f.add({0xFD, 0x21, 0, 0});
+        f.add(bytes, {}, {}, {{DataAccessKind::Read, 0xFFFF, 0x80}}); f.add({0xE9}, 0x8123);
+        check(AnalyzeAddressValues(f.capture).findings.back().status == ValueStatus::Traced,
+              "indexed flag operation validates signed displacement and wraparound");
+        f.capture.samples[2].stack->accesses.clear();
+        check(AnalyzeAddressValues(f.capture).findings.back().status == ValueStatus::Unresolved,
+              "missing indexed operand read invalidates lineage");
+        f.capture.samples[2].stack->accesses = {{DataAccessKind::Read, 0xFFFF, 0x80},
+                                              {DataAccessKind::Write, 0xFFFF, 0x80}};
+        check(AnalyzeAddressValues(f.capture).findings.back().status == ValueStatus::Unresolved,
+              "unexpected BIT/CP write is not silently preserved");
+    }
+    f = {}; f.add({0x21, 0x23, 0x81}); f.add({0xCB, 0x7E}, {}, {}, {{DataAccessKind::Read, 0x8123, 1}});
+    f.add({0xE9}, 0x8123);
+    check(AnalyzeAddressValues(f.capture).findings.back().status == ValueStatus::Traced,
+          "BIT through HL retains pointer lineage");
+    f = {}; f.add({0x21, 0x23, 0x81}); f.add({0x37}); f.capture.samples.back().before.flags = 0;
+    f.add({0xE9}, 0x8123); f.capture.samples.back().before.flags = 1;
+    check(AnalyzeAddressValues(f.capture).findings.back().status == ValueStatus::Traced,
+          "new flags snapshot does not contradict discarded flags");
+    f = {}; f.add({0x3E, 0xF0}); f.add({0xE6, 0x0F}); f.add({0xEE, 0x23}); f.add({0xF6, 0x80});
+    f.add({0x6F}); f.add({0x26, 0x81}); f.add({0xE9}, 0x81A3);
+    a = AnalyzeAddressValues(f.capture);
+    check(a.findings.back().status == ValueStatus::Traced && has(a, "and8") && has(a, "xor8") && has(a, "or8"),
+          "logical accumulator results retain arithmetic ancestry");
+    f = {}; f.add({0x3E, 0x23}); f.add({0xA0}); f.add({0x6F}); f.add({0x26, 0x81}); f.add({0xE9}, 0x8123);
+    check(AnalyzeAddressValues(f.capture).findings.back().status == ValueStatus::Unresolved,
+          "unknown logical operand discards accumulator rather than preserving its old value");
+    f = {}; f.add({0xCD, 0x10, 0x80}, 0x8010, 0x9FFE, word(DataAccessKind::Write, 0x9FFE, 0x8003));
+    f.add({0xE1}, {}, 0xA000, word(DataAccessKind::Read, 0x9FFE, 0x8003));
+    f.add({0x7D}); f.add({0xE6, 0xFF}); f.add({0x6F}); f.add({0xE9}, 0x8003);
+    a = AnalyzeAddressValues(f.capture);
+    check(a.findings.back().status == ValueStatus::Traced && has(a, "and8") &&
+          !AnalyzeConstructedTransfers(f.capture, AnalyzeContinuations(f.capture), a).back().return_role_established,
+          "equal-result logical arithmetic does not retain exact continuation identity");
+
+    f = {}; f.add({0x21, 0x23, 0x81}); f.add({0x27}); f.add({0xE9}, 0x8123);
     check(AnalyzeAddressValues(f.capture).findings.back().status == ValueStatus::Unresolved, "unsupported opcode does not silently preserve register lineage");
     f.capture.samples.back().before.hl = 0x8123;
     check(AnalyzeAddressValues(f.capture).findings.back().status == ValueStatus::Partial, "later snapshot is a new boundary, not restoration of lost lineage");

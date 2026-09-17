@@ -111,7 +111,7 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     pop = values['occurrences'][1]
     assert old_reason in pop['continuation']['unresolved']
     assert old_reason not in pop['resolution']['unresolved']
-    assert any(d['reason'] == old_reason and d['resolved_by'] == 'z80-address-values/2'
+    assert any(d['reason'] == old_reason and d['resolved_by'] == 'z80-address-values/3'
                for d in pop['resolution']['resolved_dependencies'])
     assert 'call-outer' in values['occurrences'][-1]['resolution']['comment']
     assert 'Logical call/return role is not established' in values['occurrences'][-1]['resolution']['comment']

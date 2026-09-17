@@ -25,7 +25,7 @@ struct ValueFinding {
     std::vector<std::string> unresolved;
 };
 inline constexpr size_t kMaxValueNodes = 32768;
-inline constexpr std::string_view kValueTacticVersion = "z80-address-values/2";
+inline constexpr std::string_view kValueTacticVersion = "z80-address-values/3";
 struct ValueAnalysis {
     std::vector<ValueNode> nodes;
     std::vector<ValueFinding> findings;

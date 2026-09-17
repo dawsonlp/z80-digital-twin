@@ -2,7 +2,9 @@
 
 **Date:** 16 September 2026.  
 **Status:** transfer classification, ordinary stack-continuation matching and bounded value tracing, constructed-transfer and bounded stack-reconstruction tactics with repeatable resolution implemented; runtime
-capture integration and the broader stages remain open.
+capture integration and the broader stages remain open. The next implementation
+step is instruction-effect coverage and selective invalidation (Stage 4a), before
+overlapping structure recovery.
 **Outcome:** build program understanding through reproducible experiments and
 deterministic tactics, preserving every observed usage and keeping routine
 boundaries, entries, exits and interpretations open to later evidence.
@@ -284,6 +286,85 @@ equal-value/refused writes and exhausted budgets. Fresh-process CLI tests verify
 all five stages, unchanged earlier findings, supporting samples and resolved
 comments. No runtime hooks or native UI acceptance are included.
 
+## 4a. Extend instruction-effect coverage and selective invalidation (next step)
+
+The ROM experiments exposed a concrete limitation: an unsupported instruction
+currently discards all value lineage, even when its effects leave a saved
+continuation or target register untouched. This step strengthens the existing
+rungs before building routine structures; it does not introduce a new function
+classification or claim complete instruction coverage.
+
+- [ ] Inventory instruction forms encountered in the captured ROM paths. Record
+      modeled reads, writes, register/flag effects and remaining unsupported forms,
+      including prefixes and indexed addressing.
+- [ ] Define explicit effect scopes: distinguish a known effect whose resulting
+      value is unavailable from an instruction whose possible effects are unknown.
+      Preserve unrelated lineage only when supported semantics and capture
+      preconditions establish that it survives; never preserve by default.
+- [x] First cover BIT and comparison/flag operations used by UNSTACK and channel
+      selection (including CP and SCF). Invalidate only affected flag/value
+      knowledge; retain unaffected register, memory and continuation identities.
+- [ ] Extend the BEEPER path with shifts/rotates, logical operations and byte
+      loads needed to trace the computed IX target. Model arithmetic ancestry
+      without treating equal numeric results as copied continuation identity.
+- [ ] Cover immediate and indexed byte memory transfers used by ERROR/CLEAR.
+      Validate addresses and observed accesses; preserve distinct memory versions,
+      same-value writes and refused-write behavior.
+- [ ] Specify the supported I/O boundary for encountered instructions such as
+      OUT. Retain CPU lineage only under explicit machine-effect assumptions;
+      unavailable device effects remain unresolved rather than silently modeled.
+- [ ] Carry scoped limitations into value findings and downstream constructed-
+      transfer/stack tactics. Loss of one value must not automatically retire
+      unrelated live continuations; gaps, contradictions and unknown effects must
+      still invalidate every dependency they can affect.
+- [ ] Keep raw findings, supporting samples and unresolved dependencies available
+      to the existing roll-up after every stage. Version changed tactics and any
+      report contract changes; retain open entry, target and exit sets.
+- [ ] Add synthetic and real-CPU checks for both preserved and clobbered evidence:
+      affected registers/flags, memory overwrites, missing accesses, capture gaps,
+      equal-value false matches and bounded-analysis exhaustion.
+- [ ] Replay the existing sixteen ROM experiments, compare recovered findings
+      and remaining limitations, and verify deterministic output on repeated runs.
+      Keep ROM bytes and generated captures/listings local.
+
+Acceptance: recover UNSTACK's popped-continuation JP and caller-skipping RET
+through BIT; trace BEEPER's IX target calculation for all four tested low-bit
+inputs; retain supported continuation context through channel selection and
+supported byte stores in ERROR/CLEAR. Do not misclassify CLEAR's changed-stack
+jump as an ordinary restored-stack return. Preserve the calculator RET's distinct
+usages and USR's prepared/consumed continuation findings. Negative fixtures must
+show that actual clobbers and missing evidence still stop dependent conclusions.
+Record partial ancestry and untested contexts explicitly; these controlled ROM
+entries do not establish universal routine contracts.
+
+Runtime capture ownership, run/epoch identity, device fidelity and snapshot/resume
+remain separate decisions. This step operates on supplied evidence and the
+existing laboratory harness.
+
+First coverage checkpoint (16 September 2026): value tactic v3 models BIT,
+CP, SCF/CCF and AND/XOR/OR, including applicable immediate, register and indexed
+memory operands. Resulting flag-byte lineage is explicitly unavailable; logical
+operations with unknown inputs lose accumulator lineage only. Known unaffected
+values survive without weakening the whole-state invalidation used for unknown
+effects, missing accesses or contradictory evidence. Existing downstream tactics
+can consequently retain supported live continuations. Per-bit flag tracing and
+the remaining coverage checklist are still open.
+
+The sixteen ROM runs again recorded 914 instructions and replayed byte-identically
+across 49 artifacts. UNSTACK now produces `popped_continuation_jump` for the runtime
+path and `caller_skipping_exit` for the syntax path. Both channel-selection paths
+at `$162C` now retain the saved caller continuation, with partial target ancestry
+at the pre-trace table-memory boundary. USR and the calculator's two RET usages
+remain verified. BEEPER, indexed stores and I/O coverage remain follow-up work.
+
+Validation: Debug/UI 44 passed with two optional ZEX skips (46 registered);
+Release/headless 43 passed with the same skips (45 registered). Both supplied the
+local ROM and Pasmo. Tests cover a real-CPU continuation carried through BIT/CP/SCF,
+signed indexed displacement and wraparound, unknown operands, unexpected writes,
+missing reads, fresh flag snapshots, logical results and equal-result arithmetic
+that must not establish continuation identity. No runtime capture or UI changes
+are included.
+
 ## 5. Build overlapping structures and usage patterns (rungs 7–8)
 
 - [ ] Build instruction blocks and split at newly established entries while
@@ -405,7 +486,9 @@ Reference disassemblies: [BEEPER](https://skoolkid.github.io/rom/asm/03B5.html),
 
 - [ ] First increment: Stages 1–3 with durable evidence and ordinary continuation/
       bounded value tracking; validate one complete headless loop.
-- [ ] Second increment: Stage 4 tactics and Stage 5 overlapping structure, with
+- [ ] Next implementation checkpoint: Stage 4a instruction-effect coverage and
+      selective invalidation, validated against the existing ROM experiments.
+- [ ] Second increment: Stage 4 tactics, Stage 4a coverage and Stage 5 overlapping structure, with
       synthetic acceptance for late-discovered alternative invocation conventions.
 - [ ] Third increment: Stage 6 experiment runner and Stage 7 integrated review,
       with selected Stage 8 ROM demonstrations and explicit resource measurements.

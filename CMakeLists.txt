@@ -75,6 +75,7 @@ add_library(z80_debugger_core STATIC
     debugger/analysis/transfer_analysis.cpp
     debugger/analysis/continuation_analysis.cpp
     debugger/analysis/value_analysis.cpp
+    debugger/analysis/resolution_analysis.cpp
     debugger/analysis/analysis_json.cpp
     debugger/analysis/content_hash.cpp
     debugger/analysis/analysis_project.cpp

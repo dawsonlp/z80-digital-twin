@@ -1,7 +1,7 @@
 # Deterministic execution analysis: development checklist
 
 **Date:** 16 September 2026.  
-**Status:** transfer classification, ordinary stack-continuation matching and bounded value tracing implemented; runtime
+**Status:** transfer classification, ordinary stack-continuation matching and bounded value tracing and repeatable resolution implemented; runtime
 capture integration and the broader stages remain open.
 **Outcome:** build program understanding through reproducible experiments and
 deterministic tactics, preserving every observed usage and keeping routine
@@ -198,6 +198,30 @@ Tests include real CPU execution, pointer loads, index arithmetic and wraparound
 EXX, spills/reloads, overwritten/refused writes, contradictory snapshots, capture
 gaps, unsupported effects, exhausted budgets and deterministic fresh-process
 reports. No new native UI acceptance is claimed.
+
+Resolution checkpoint (16 September 2026): before adding constructed-transfer
+roles, implement the agreed repeatable roll-up over existing findings. Report v4
+retains each tactic's raw limitations and exposes a separate versioned resolved
+view. `--through effects|continuations|values` runs the requested stages; resolution
+can also consume supplied findings directly without rerunning those tactics.
+Covered dependencies name their resolving tactic. Per-site variants preserve
+alternative destinations/usages and changed instruction bytes. Comments summarize
+observed evidence without declaring universal functions or logical return roles.
+
+- [x] Resolve after each available analysis stage, rather than only at the end.
+- [x] Preserve raw findings and record explicit coverage of earlier limitations.
+- [x] Group per-site comments with supporting samples and alternative usages.
+- [x] Keep capture inputs and earlier occurrence findings unchanged as evidence grows.
+- [ ] Add rung 5 constructed-transfer findings as new inputs to this resolver.
+
+Resolution validation: Debug/UI 42 passed and two optional ZEX skips (44
+registered); Release/headless 41 passed and the same two skips (43 registered).
+The local Spectrum ROM and Pasmo 0.5.5 were supplied. Build logs contained no
+compiler warning/error matches. Fresh-process tests compare all three stages,
+preserve raw findings and capture hashes, expose contradictions, retain a later
+alternative target and changed code bytes, and report ancestry-summary budget
+exhaustion without losing the value graph. The expanded CLI test also passed
+separately in both configurations. No native UI changes or acceptance are claimed.
 
 ## 4. Recognize constructed transfers and stack changes (rungs 5–6)
 

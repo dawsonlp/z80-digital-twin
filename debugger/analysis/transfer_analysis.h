@@ -69,7 +69,8 @@ inline constexpr std::string_view kContinuationTacticVersion = "z80-stack-contin
 [[nodiscard]] TransferFinding ClassifyTransfer(const TransferSample& sample);
 [[nodiscard]] Result<TransferCapture> ReadTransferCapture(std::string_view text);
 [[nodiscard]] Result<std::string> WriteTransferCapture(const TransferCapture& capture);
+enum class AnalysisStage { Effects, Continuations, Values };
 // Occurrences are retained alongside grouped edges; destination sets stay open.
-[[nodiscard]] Result<std::string> TransferReport(const TransferCapture& capture);
+[[nodiscard]] Result<std::string> TransferReport(const TransferCapture& capture, AnalysisStage through = AnalysisStage::Values);
 
 } // namespace z80::dbg::analysis

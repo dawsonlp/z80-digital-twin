@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Larry Dawson. Licensed under the MIT License (see LICENSE).
 #include "transfer_analysis.h"
-#include "value_analysis.h"
+#include "resolution_analysis.h"
 #include "content_hash.h"
 #include <array>
 #include <charconv>
@@ -258,46 +258,53 @@ Result<TransferCapture> ReadTransferCapture(std::string_view text) {
     } catch (const std::invalid_argument& error) { return invalid(error.what()); }
 }
 
-Result<std::string> TransferReport(const TransferCapture& capture) {
+Result<std::string> TransferReport(const TransferCapture& capture, AnalysisStage through) {
     if (auto valid = validate(capture); !valid) return std::unexpected(valid.error());
     A occurrences, edges;
     using Key = std::tuple<uint16_t, std::vector<uint8_t>, TransferMechanism, uint16_t, int>;
     std::map<Key, A> grouped;
-    const auto continuations = AnalyzeContinuations(capture);
-    const auto values = AnalyzeAddressValues(capture);
+    if (through != AnalysisStage::Effects && through != AnalysisStage::Continuations && through != AnalysisStage::Values)
+        return invalid("unknown analysis stage");
+    std::vector<TransferFinding> transfers;
+    for (const auto& sample : capture.samples) transfers.push_back(ClassifyTransfer(sample));
+    std::optional<std::vector<ContinuationFinding>> continuations;
+    std::optional<ValueAnalysis> values;
+    if (through != AnalysisStage::Effects) continuations = AnalyzeContinuations(capture);
+    if (through == AnalysisStage::Values) values = AnalyzeAddressValues(capture);
+    const auto resolutions = ResolveTransferFindings(capture, transfers,
+        continuations ? &*continuations : nullptr, values ? &*values : nullptr);
+    auto strings = [](const std::vector<std::string>& items) {
+        A array;
+        for (const auto& item : items) array.emplace_back(item);
+        return array;
+    };
     for (size_t i = 0; i < capture.samples.size(); ++i) {
         const auto& s = capture.samples[i];
-        const auto& continuation = continuations[i];
-        const auto& origin = values.findings[i];
-        const auto f = ClassifyTransfer(s);
-        auto target_basis = f.target_basis;
-        if (origin.status == ValueStatus::Traced) target_basis = "traced_value_origin";
-        if (origin.status == ValueStatus::Partial) target_basis = "partially_traced_value_origin";
-        if (continuation.status == "matched") target_basis = "matched_call_continuation";
-        A unresolved;
-        for (const auto& reason : f.unresolved) {
-            if (reason == "stack effects and continuation relationship not analyzed" && s.stack) continue;
-            if (origin.root && (reason == "target register value origin not traced" ||
-                               reason == "target register not captured; value origin unresolved")) continue;
-            unresolved.emplace_back(reason);
+        const auto& f = transfers[i];
+        const auto& resolution = resolutions[i];
+        const auto continuation_status = continuations ? (*continuations)[i].status : "not_run";
+        J continuation_json;
+        if (continuations) {
+            const auto& c = (*continuations)[i];
+            continuation_json = O{{"status", c.status}, {"call_sample", c.call_sample ? J(*c.call_sample) : J{}},
+                {"explanation", c.explanation}, {"unresolved", strings(c.unresolved)},
+                {"tactic", std::string(kContinuationTacticVersion)}};
         }
-        for (const auto& reason : continuation.unresolved) unresolved.emplace_back(reason);
-        for (const auto& reason : origin.unresolved) unresolved.emplace_back(reason);
         occurrences.emplace_back(O{{"sample_id", s.id}, {"mechanism", mechanism_name(f.mechanism)},
             {"taken", f.taken ? J(*f.taken) : J{}}, {"encoded_target", optional_number(f.encoded_target)},
-            {"observed_next_pc", int(s.event.next_pc)}, {"target_basis", target_basis},
-            {"instruction_effect", O{{"tactic", std::string(kTransferTacticVersion)}, {"target_basis", f.target_basis}}},
-            {"value_origin", ValueFindingJson(origin)},
-            {"continuation", O{{"status", continuation.status},
-                {"call_sample", continuation.call_sample ? J(*continuation.call_sample) : J{}},
-                {"explanation", continuation.explanation}, {"tactic", std::string(kContinuationTacticVersion)}}},
+            {"observed_next_pc", int(s.event.next_pc)}, {"target_basis", resolution.target_basis},
+            {"instruction_effect", O{{"tactic", std::string(kTransferTacticVersion)}, {"target_basis", f.target_basis},
+                {"unresolved", strings(f.unresolved)}}},
+            {"value_origin", values ? ValueFindingJson(values->findings[i]) : J{}},
+            {"continuation", std::move(continuation_json)},
+            {"resolution", ResolutionJson(resolution)},
             {"completeness", O{{"capture", s.event.complete_capture ? "instruction_bytes_complete" : "instruction_bytes_unavailable_or_partial"},
                 {"entry_context", (s.before.flags && s.before.b && s.before.hl && s.before.ix && s.before.iy)
                     ? "transfer_inputs_captured" : "partial_or_absent"},
-                {"target_provenance", target_basis},
-                {"continuation", continuation.status},
+                {"target_provenance", resolution.target_basis},
+                {"continuation", continuation_status},
                 {"scope", "one_observation"}, {"possible_additional_usages", true},
-                {"unresolved", std::move(unresolved)}}}});
+                {"unresolved", strings(resolution.unresolved)}}}});
         grouped[{s.event.start, s.event.bytes, f.mechanism, s.event.next_pc,
                  f.taken ? int(*f.taken) : -1}].emplace_back(s.id);
     }
@@ -309,9 +316,11 @@ Result<std::string> TransferReport(const TransferCapture& capture) {
             {"mechanism", mechanism_name(mechanism)}, {"taken", taken < 0 ? J{} : J(bool(taken))},
             {"count", static_cast<uint32_t>(samples.size())}, {"samples", samples}});
     }
-    return json::Write(O{{"format", "z80-transfer-report"}, {"version", 3},
+    return json::Write(O{{"format", "z80-transfer-report"}, {"version", 4},
         {"tactic", std::string(kTransferTacticVersion)}, {"capture_sha256", Sha256(json::Write(capture_json(capture)))},
         {"source", capture.source}, {"limitations", capture.limitations}, {"destination_sets_closed", false},
-        {"occurrences", std::move(occurrences)}, {"edges", std::move(edges)}, {"value_graph", ValueGraphJson(values)}});
+        {"through", through == AnalysisStage::Effects ? "effects" : through == AnalysisStage::Continuations ? "continuations" : "values"},
+        {"occurrences", std::move(occurrences)}, {"edges", std::move(edges)},
+        {"value_graph", values ? ValueGraphJson(*values) : J{}}, {"sites", SiteResolutionsJson(capture, resolutions)}});
 }
 } // namespace z80::dbg::analysis

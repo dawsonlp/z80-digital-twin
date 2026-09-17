@@ -36,7 +36,7 @@ uint32_t number(std::string_view text, uint32_t maximum = 65535) {
 void usage() {
     std::cout
         << "Usage: z80_analyze COMMAND --image file.bin --org 0xADDR --project file.z80analysis [options]\n"
-           "       z80_analyze transfers --source capture.json  (read-only JSON report on stdout)\n"
+           "       z80_analyze transfers --source capture.json [--through effects|continuations|values]\n"
            "  new                           create an image-bound project (will not overwrite)\n"
            "  show                          print the authoritative JSON\n"
            "  create --name NAME (--address ADDR | --value N [--width 8|16|32])\n"
@@ -62,10 +62,23 @@ int main(int argc, char **argv) try {
     }
     const std::string command = argv[1];
     if (command == "transfers") {
-        if (argc != 4 || std::string_view(argv[2]) != "--source")
-            throw std::invalid_argument("usage: z80_analyze transfers --source capture.json");
-        const auto capture = require(ReadTransferCapture(require(ReadText(argv[3]))));
-        std::cout << require(TransferReport(capture));
+        std::map<std::string, std::string> arguments;
+        for (int i = 2; i < argc; i += 2) {
+            const std::string key = argv[i];
+            if ((key != "--source" && key != "--through") || arguments.contains(key) || i + 1 >= argc)
+                throw std::invalid_argument("usage: z80_analyze transfers --source capture.json [--through effects|continuations|values]");
+            arguments.emplace(key, argv[i + 1]);
+        }
+        if (!arguments.contains("--source")) throw std::invalid_argument("missing --source");
+        AnalysisStage stage = AnalysisStage::Values;
+        if (arguments.contains("--through")) {
+            const auto& name = arguments.at("--through");
+            if (name == "effects") stage = AnalysisStage::Effects;
+            else if (name == "continuations") stage = AnalysisStage::Continuations;
+            else if (name != "values") throw std::invalid_argument("unknown analysis stage: " + name);
+        }
+        const auto capture = require(ReadTransferCapture(require(ReadText(arguments.at("--source")))));
+        std::cout << require(TransferReport(capture, stage));
         return std::cout ? 0 : 1;
     }
     std::map<std::string, std::string> options;

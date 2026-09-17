@@ -59,7 +59,7 @@ not a run/session persistence schema or a resumable snapshot. Each file supplies
   sample ID and instruction-level reads, committed writes and refused writes.
 
 Version 1 inputs remain readable and contain no stack evidence. Writers emit
-version 2; reports use version 3 with separate transfer, continuation and value tactic
+version 2; reports use version 4 with separate transfer, continuation and value tactic
 versions. Stack accesses are bounded to 256 per sample; the writer rejects a
 serialized capture larger than the reader's 16 MiB limit.
 
@@ -178,3 +178,45 @@ The existing capture size/access limits still apply.
 original instruction-only tactic's finding. Earlier observations are unchanged.
 This remains headless analysis of supplied captures; automatic runtime capture,
 ROM-wide application and assembly-comment projection remain integration work.
+
+## Resolution after any stage
+
+The same report holds the raw findings and their current resolved presentation.
+Each tactic retains its own limitations, even when another tactic resolves them.
+The resolver can run after any currently implemented stage:
+
+```sh
+build/z80_analyze transfers --source tests/fixtures/analysis/value-origins.json --through effects
+build/z80_analyze transfers --source tests/fixtures/analysis/value-origins.json --through continuations
+build/z80_analyze transfers --source tests/fixtures/analysis/value-origins.json --through values
+```
+
+`values` is the default. This selects which tactics run, not just a display filter.
+A tactic that has not run has a null finding, distinct from `not_applicable` or
+`unresolved`. The capture hash is unchanged across stages.
+
+Each occurrence has a versioned `resolution` containing its current comment,
+target basis, remaining unresolved dependencies and `resolved_dependencies`.
+Each covered dependency identifies the original tactic/reason and the tactic
+that supplied the missing evidence. Raw `instruction_effect`, `continuation`
+and `value_origin` findings remain available alongside it. The compatibility
+fields `target_basis` and `completeness.unresolved` reflect this resolved view.
+
+For the POP in the sample, continuation analysis reports that register provenance
+is not tracked by that tactic. After successful value analysis, the roll-up says
+that the popped bytes are tracked into registers, and records why the earlier
+limitation is covered. Contradictory or unavailable value evidence does not cover
+it. Value ancestry alone still does not establish a logical return role.
+
+`sites` groups occurrences by address and executed bytes, retaining distinct
+comment variants and the supporting sample IDs for each. Its combined comment
+includes every variant and keeps possible additional usages open. Changed code
+bytes at the same address produce a separate site. Equal bytes across revisions
+may share a view; this does not establish identical memory context or universal
+behavior. Original revision metadata remains in the capture.
+
+Resolution reads existing findings without modifying them. It is deterministic
+and may be rerun as new evidence arrives. The ancestry summary examines at most
+4,096 unique nodes per occurrence; exhaustion is explicitly reported and leaves
+the full bounded value graph intact. These report comments are ready for review;
+projection into exported assembly remains separate work.

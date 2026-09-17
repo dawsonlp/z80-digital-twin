@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     first = subprocess.run(command, check=True, capture_output=True).stdout
     assert first == subprocess.run(command, check=True, capture_output=True).stdout
     report = json.loads(first)
-    assert report['version'] == 3
+    assert report['version'] == 4
     jump = report['occurrences'][-1]
     assert jump['value_origin']['status'] == 'traced'
     assert jump['target_basis'] == 'traced_value_origin'
@@ -76,4 +76,96 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     assert any(nodes[n]['operation'] == 'call_continuation' and
                nodes[n]['sample_id'] == 'call-outer' for n in seen)
     assert report['destination_sets_closed'] is False
+    # Resolution is rerunnable at each stage. Later views preserve the raw
+    # earlier findings, while recording exactly which limitations were covered.
+    reports = {}
+    original = source.read_bytes()
+    for stage in ('effects', 'continuations', 'values'):
+        staged = command + ['--through', stage]
+        output = subprocess.run(staged, check=True, capture_output=True).stdout
+        assert output == subprocess.run(staged, check=True, capture_output=True).stdout
+        reports[stage] = json.loads(output)
+        assert reports[stage]['through'] == stage
+        assert source.read_bytes() == original
+    effects, continuations, values = [reports[s] for s in ('effects', 'continuations', 'values')]
+    assert values == report  # Default stage is the latest implemented tactic.
+    assert len({r['capture_sha256'] for r in reports.values()}) == 1
+    assert effects['value_graph'] is None and continuations['value_graph'] is None
+    for early, middle, late in zip(effects['occurrences'], continuations['occurrences'], values['occurrences']):
+        assert early['instruction_effect'] == middle['instruction_effect'] == late['instruction_effect']
+        assert early['continuation'] is None and early['value_origin'] is None
+        assert middle['continuation'] == late['continuation']
+        assert middle['value_origin'] is None
+    old_reason = 'popped value provenance into registers is not yet tracked'
+    assert old_reason in continuations['occurrences'][1]['resolution']['unresolved']
+    pop = values['occurrences'][1]
+    assert old_reason in pop['continuation']['unresolved']
+    assert old_reason not in pop['resolution']['unresolved']
+    assert any(d['reason'] == old_reason and d['resolved_by'] == 'z80-address-values/1'
+               for d in pop['resolution']['resolved_dependencies'])
+    assert 'call-outer' in values['occurrences'][-1]['resolution']['comment']
+    assert 'Logical call/return role is not established' in values['occurrences'][-1]['resolution']['comment']
+
+    # Contradiction must not be hidden merely because a later tactic ran.
+    capture = json.loads(original)
+    capture['samples'][1]['stack']['accesses'][0]['value'] = 4
+    source.write_text(json.dumps(capture))
+    broken = json.loads(subprocess.run(command, check=True, capture_output=True).stdout)
+    pop = broken['occurrences'][1]
+    assert pop['value_origin']['status'] == 'unresolved'
+    assert old_reason in pop['resolution']['unresolved']
+    assert any('contradict' in r for r in pop['resolution']['unresolved'])
+    assert not pop['resolution']['resolved_dependencies']
+
+    # A later observation at the same instruction can have a different target.
+    # Earlier occurrence results remain intact; both site variants stay visible.
+    capture = json.loads(original)
+    jump_sample = capture['samples'][-1]
+    later = json.loads(json.dumps(jump_sample))
+    later['id'] = 'later-jump'
+    later['before']['hl'] = later['next_pc'] = 0x9000
+    later['stack']['previous'] = None
+    capture['samples'].append(later)
+    source.write_text(json.dumps(capture))
+    expanded = json.loads(subprocess.run(command, check=True, capture_output=True).stdout)
+    assert expanded['occurrences'][:-1] == values['occurrences']
+    site = next(s for s in expanded['sites'] if s['start'] == jump_sample['start'])
+    assert len(site['variants']) == 2
+    assert {i for v in site['variants'] for i in v['samples']} == {'jump-hl', 'later-jump'}
+    assert '$8003' in site['comment'] and '$9000' in site['comment']
+    assert site['destination_sets_closed'] is False
+    assert 'predating this trace' in expanded['occurrences'][-1]['resolution']['comment']
+
+    # Changed bytes at the same address retain a separate presentation identity.
+    changed = json.loads(json.dumps(later))
+    changed['id'] = 'changed-code'
+    changed['bytes'] = [0x00]
+    changed['next_pc'] = changed['start'] + 1
+    capture['samples'].append(changed)
+    source.write_text(json.dumps(capture))
+    changed_report = json.loads(subprocess.run(command, check=True, capture_output=True).stdout)
+    assert len([s for s in changed_report['sites'] if s['start'] == jump_sample['start']]) == 2
+    # Presentation can hit its own bound while value analysis remains complete.
+    # It must disclose truncation and preserve the underlying graph.
+    capture = json.loads(original)
+    capture['samples'] = []
+    pc = 0x8000
+    program = [[0x21, 0x00, 0x90]] + [[0x23]] * 1100 + [[0xE9]]
+    for index, code in enumerate(program):
+        sample = json.loads(json.dumps(jump_sample))
+        sample.update(id=f'bounded-{index}', start=pc, bytes=code,
+                      next_pc=0x9000 + 1100 if index == len(program) - 1 else pc + len(code),
+                      read_count=str(len(code)), sequence=str(index))
+        sample['before'] = dict(flags=None, b=None, hl=None, ix=None, iy=None)
+        sample['stack']['previous'] = capture['samples'][-1]['id'] if capture['samples'] else None
+        capture['samples'].append(sample)
+        pc = sample['next_pc']
+    source.write_text(json.dumps(capture))
+    bounded = json.loads(subprocess.run(command, check=True, capture_output=True).stdout)
+    assert bounded['occurrences'][-1]['value_origin']['status'] == 'traced'
+    assert not bounded['value_graph']['exhausted']
+    assert any('summary budget exhausted' in r for r in bounded['occurrences'][-1]['resolution']['unresolved'])
+    for args in (['--through', 'invented'], ['--through'], ['--source', str(source)]):
+        invalid = subprocess.run(command + args, capture_output=True)
+        assert invalid.returncode != 0 and not invalid.stdout
 print("PASS: read-only transfer reporting across fresh processes")

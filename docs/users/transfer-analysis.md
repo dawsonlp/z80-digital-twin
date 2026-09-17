@@ -59,7 +59,7 @@ not a run/session persistence schema or a resumable snapshot. Each file supplies
   sample ID and instruction-level reads, committed writes and refused writes.
 
 Version 1 inputs remain readable and contain no stack evidence. Writers emit
-version 2; reports use version 6 with separate transfer, continuation, value, constructed-transfer and stack-reconstruction tactic
+version 2; reports use version 7 with separate transfer, continuation, value, constructed-transfer and stack-reconstruction tactic
 versions, plus a versioned resolver. Stack accesses are bounded to 256 per sample; the writer rejects a
 serialized capture larger than the reader's 16 MiB limit.
 
@@ -331,3 +331,47 @@ writes; refused writes preserve them.
 These are observations about supplied execution paths, not closed function
 contracts. Automatic debugger capture, arbitrary symbolic stack recovery and
 assembly-comment projection remain separate work.
+
+## Transfer graph and caller metrics
+
+Report v7 adds `transfer_graph` after every selected stage. Existing occurrences,
+edges and raw findings remain present. The graph tactic is `z80-transfer-graph/1`.
+
+```sh
+build/z80_analyze transfers --source capture.json --through effects --format text
+build/z80_analyze transfers --source capture.json --format json > report.json
+```
+
+JSON is the default full report. Text is a readable graph/metric summary with
+source addresses, report-local site IDs, destination addresses, edge categories
+and counts; it does not replace the detailed occurrence evidence in JSON.
+
+- `sites`: deterministic address/byte-variant IDs, successor counts and supporting
+  samples, outgoing destinations, category counts and conditional outcomes.
+- `edges`: typed successor groups with actual destination, encoded target when
+  present, original architectural mechanism/outcome, supporting samples and
+  resolved continuation-usage variants. Later tactics can refine usage without
+  changing the architectural edge or duplicating its occurrences.
+- `destinations`: reverse edge indexes, taken CALL/RST caller metrics, separate
+  category and continuation-relationship metrics, and concise proposed comments.
+  Same-address captured site candidates do not establish which target encoding
+  executed after a transfer; missing target instructions remain explicit.
+
+`callers` counts only consistent, confirmed taken CALL/RST occurrences. Untaken
+calls contribute fall-through; missing outcomes and contradictions are unresolved.
+Jumps, RET dispatch and machine transitions do not inflate architectural call
+counts. Continuation relationships provide a separate view of those same events;
+do not add the two views' totals.
+
+A metric retains its sample IDs, source-variant IDs, distinct source addresses,
+destinations and counts. A thousand calls from one site and one from another
+produce 1,001 occurrences and two sites. Changed bytes at the same source address
+produce another variant but not another address. Conditional counts concern
+retained executions of that instruction, not whole-program coverage.
+
+Counts are complete for the supplied capture only, bounded by its 8,192-sample
+limit; over-limit captures are rejected rather than silently truncated. Duplicate
+sample IDs are rejected, and rerunning a report does not accumulate counts.
+There is no cross-capture deduplication, image binding, static-reference union,
+routine graph or automatic assembly export of these comments yet. No observed
+callers means zero in this selection, not proof that no callers exist.

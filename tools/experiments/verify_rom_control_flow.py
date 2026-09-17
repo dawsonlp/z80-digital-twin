@@ -43,6 +43,16 @@ assert len(site['variants']) == 2 and not site['destination_sets_closed']
 assert targets('error-stack', 0x005C) == [0x16C5]
 assert targets('clear-tail', 0x1EEC) == [0x8003]
 assert capture('clear-tail')[-1]['stack']['after_sp'] == 0x8FFE
+for case in ('channel-print', 'channel-input', 'channel-select-k', 'channel-select-s'):
+    graph = report(case)['transfer_graph']
+    entry = next(d for d in graph['destinations'] if d['address'] == 0x162C)
+    selected = case.startswith('channel-select-')
+    assert entry['callers']['occurrence_count'] == (0 if selected else 1)
+    assert entry['by_category']['fallthrough' if selected else 'call']['occurrence_count'] == 1
+graph = report('calculator-offset4')['transfer_graph']
+ret = next(s for s in graph['sites'] if s['start'] == 0x33A1)
+assert ret['successors']['occurrence_count'] == 2 and ret['successors']['destination_count'] == 2
+assert next(d for d in graph['destinations'] if d['address'] == 0x33A1)['callers']['occurrence_count'] == 0
 if len(sys.argv) > 2:
     replay = pathlib.Path(sys.argv[2])
     assert {p.name for p in folder.iterdir()} == {p.name for p in replay.iterdir()}

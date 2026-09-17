@@ -73,6 +73,7 @@ target_compile_features(z80_cpu PUBLIC cxx_std_23)
 # UI-free and unit-testable. Disassembler/symbols will join this library next.
 add_library(z80_debugger_core STATIC
     debugger/analysis/transfer_analysis.cpp
+    debugger/analysis/transfer_graph.cpp
     debugger/analysis/continuation_analysis.cpp
     debugger/analysis/stack_analysis.cpp
     debugger/analysis/constructed_analysis.cpp
@@ -299,6 +300,9 @@ add_test(NAME value_analysis_test COMMAND value_analysis_test)
 if(Python3_Interpreter_FOUND)
     add_test(NAME transfer_analysis_workflow
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/transfer_analysis_workflow_test.py
+            $<TARGET_FILE:z80_analyze>)
+    add_test(NAME transfer_graph_workflow
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/transfer_graph_workflow_test.py
             $<TARGET_FILE:z80_analyze>)
 endif()
 

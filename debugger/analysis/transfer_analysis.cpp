@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Larry Dawson. Licensed under the MIT License (see LICENSE).
 #include "transfer_analysis.h"
+#include "transfer_graph.h"
 #include "resolution_analysis.h"
 #include "content_hash.h"
 #include <array>
@@ -321,11 +322,12 @@ Result<std::string> TransferReport(const TransferCapture& capture, AnalysisStage
             {"mechanism", mechanism_name(mechanism)}, {"taken", taken < 0 ? J{} : J(bool(taken))},
             {"count", static_cast<uint32_t>(samples.size())}, {"samples", samples}});
     }
-    return json::Write(O{{"format", "z80-transfer-report"}, {"version", 6},
+    return json::Write(O{{"format", "z80-transfer-report"}, {"version", 7},
         {"tactic", std::string(kTransferTacticVersion)}, {"capture_sha256", Sha256(json::Write(capture_json(capture)))},
         {"source", capture.source}, {"limitations", capture.limitations}, {"destination_sets_closed", false},
         {"through", through == AnalysisStage::Effects ? "effects" : through == AnalysisStage::Continuations ? "continuations" : through == AnalysisStage::Values ? "values" : through == AnalysisStage::Constructed ? "constructed" : "stack"},
         {"occurrences", std::move(occurrences)}, {"edges", std::move(edges)},
-        {"value_graph", values ? ValueGraphJson(*values) : J{}}, {"sites", SiteResolutionsJson(capture, resolutions)}});
+        {"value_graph", values ? ValueGraphJson(*values) : J{}}, {"sites", SiteResolutionsJson(capture, resolutions)},
+        {"transfer_graph", TransferGraphJson(capture, transfers, resolutions)}});
 }
 } // namespace z80::dbg::analysis

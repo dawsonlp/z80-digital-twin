@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Larry Dawson. Licensed under the MIT License (see LICENSE).
 #include "analysis_workspace.h"
 #include "transfer_analysis.h"
+#include "transfer_graph.h"
 #include <charconv>
 #include <iostream>
 #include <map>
@@ -36,7 +37,7 @@ uint32_t number(std::string_view text, uint32_t maximum = 65535) {
 void usage() {
     std::cout
         << "Usage: z80_analyze COMMAND --image file.bin --org 0xADDR --project file.z80analysis [options]\n"
-           "       z80_analyze transfers --source capture.json [--through effects|continuations|values|constructed|stack]\n"
+           "       z80_analyze transfers --source capture.json [--through effects|continuations|values|constructed|stack] [--format json|text]\n"
            "  new                           create an image-bound project (will not overwrite)\n"
            "  show                          print the authoritative JSON\n"
            "  create --name NAME (--address ADDR | --value N [--width 8|16|32])\n"
@@ -65,8 +66,8 @@ int main(int argc, char **argv) try {
         std::map<std::string, std::string> arguments;
         for (int i = 2; i < argc; i += 2) {
             const std::string key = argv[i];
-            if ((key != "--source" && key != "--through") || arguments.contains(key) || i + 1 >= argc)
-                throw std::invalid_argument("usage: z80_analyze transfers --source capture.json [--through effects|continuations|values|constructed|stack]");
+            if ((key != "--source" && key != "--through" && key != "--format") || arguments.contains(key) || i + 1 >= argc)
+                throw std::invalid_argument("usage: z80_analyze transfers --source capture.json [--through effects|continuations|values|constructed|stack] [--format json|text]");
             arguments.emplace(key, argv[i + 1]);
         }
         if (!arguments.contains("--source")) throw std::invalid_argument("missing --source");
@@ -80,7 +81,10 @@ int main(int argc, char **argv) try {
             else if (name != "stack") throw std::invalid_argument("unknown analysis stage: " + name);
         }
         const auto capture = require(ReadTransferCapture(require(ReadText(arguments.at("--source")))));
-        std::cout << require(TransferReport(capture, stage));
+        const auto format = arguments.contains("--format") ? arguments.at("--format") : "json";
+        if (format != "json" && format != "text") throw std::invalid_argument("unknown transfer report format: " + format);
+        const auto report = require(TransferReport(capture, stage));
+        std::cout << (format == "json" ? report : TransferGraphText(json::Parse(report).at("transfer_graph")));
         return std::cout ? 0 : 1;
     }
     std::map<std::string, std::string> options;

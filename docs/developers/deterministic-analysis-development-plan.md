@@ -367,6 +367,19 @@ are included.
 
 ## 5. Build overlapping structures and usage patterns (rungs 7–8)
 
+The [transfer graph and caller metrics analysis](transfer-graph-and-caller-metrics.md)
+defines the additional records, counting rules, graph layers and source-enrichment
+acceptance. Begin with capture-local instruction-site metrics; routine-level caller
+counts depend on explicit, revisable memberships rather than address ranges.
+
+- [x] Build a typed observed-transfer graph and incoming-site index, preserving
+      separate architectural mechanisms and later usage findings.
+- [x] Report distinct calling sites separately from occurrence counts, additional
+      entry mechanisms, conditional outcomes and observed outgoing destinations.
+- [ ] Project a routine call graph through versioned entry/block memberships;
+      preserve uncertain caller attribution and do not turn every jump into a call.
+- [ ] Include scoped caller/entry summaries in enriched assembly and retain links
+      to supporting evidence. Keep static possibilities separate from execution.
 - [ ] Build instruction blocks and split at newly established entries while
       preserving links from historical evidence to execution locations.
 - [ ] Permit overlapping instruction decodings and changed code versions; a jump

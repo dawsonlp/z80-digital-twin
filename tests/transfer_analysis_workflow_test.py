@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     first = subprocess.run(command, check=True, capture_output=True).stdout
     assert first == subprocess.run(command, check=True, capture_output=True).stdout
     report = json.loads(first)
-    assert report['version'] == 6
+    assert report['version'] == 7
     jump = report['occurrences'][-1]
     assert jump['value_origin']['status'] == 'traced'
     assert jump['target_basis'] == 'traced_value_origin'

@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     first = subprocess.run(command, check=True, capture_output=True).stdout
     assert first == subprocess.run(command, check=True, capture_output=True).stdout
     report = json.loads(first)
-    assert report['version'] == 5
+    assert report['version'] == 6
     jump = report['occurrences'][-1]
     assert jump['value_origin']['status'] == 'traced'
     assert jump['target_basis'] == 'traced_value_origin'
@@ -80,7 +80,7 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     # earlier findings, while recording exactly which limitations were covered.
     reports = {}
     original = source.read_bytes()
-    for stage in ('effects', 'continuations', 'values', 'constructed'):
+    for stage in ('effects', 'continuations', 'values', 'constructed', 'stack'):
         staged = command + ['--through', stage]
         output = subprocess.run(staged, check=True, capture_output=True).stdout
         assert output == subprocess.run(staged, check=True, capture_output=True).stdout
@@ -88,7 +88,7 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
         assert reports[stage]['through'] == stage
         assert source.read_bytes() == original
     effects, continuations, values = [reports[s] for s in ('effects', 'continuations', 'values')]
-    assert reports['constructed'] == report  # Default stage is the latest implemented tactic.
+    assert reports['stack'] == report  # Default stage is the latest implemented tactic.
     constructed = reports['constructed']
     last = constructed['occurrences'][-1]
     assert last['constructed_transfer']['pattern'] == 'popped_continuation_jump'
@@ -111,7 +111,7 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     pop = values['occurrences'][1]
     assert old_reason in pop['continuation']['unresolved']
     assert old_reason not in pop['resolution']['unresolved']
-    assert any(d['reason'] == old_reason and d['resolved_by'] == 'z80-address-values/1'
+    assert any(d['reason'] == old_reason and d['resolved_by'] == 'z80-address-values/2'
                for d in pop['resolution']['resolved_dependencies'])
     assert 'call-outer' in values['occurrences'][-1]['resolution']['comment']
     assert 'Logical call/return role is not established' in values['occurrences'][-1]['resolution']['comment']
@@ -138,7 +138,7 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     capture['samples'].append(later)
     source.write_text(json.dumps(capture))
     expanded = json.loads(subprocess.run(command, check=True, capture_output=True).stdout)
-    assert expanded['occurrences'][:-1] == reports['constructed']['occurrences']
+    assert expanded['occurrences'][:-1] == reports['stack']['occurrences']
     site = next(s for s in expanded['sites'] if s['start'] == jump_sample['start'])
     assert len(site['variants']) == 2
     assert {i for v in site['variants'] for i in v['samples']} == {'jump-hl', 'later-jump'}
@@ -166,6 +166,31 @@ with tempfile.TemporaryDirectory(prefix="z80-transfer-test-") as folder:
     assert by_id['helper-jump']['constructed_transfer']['pattern'] == 'continuation_preserving_indirect_jump'
     assert by_id['helper-jump']['completeness']['continuation'] == 'preserved_call_continuation'
     assert by_id['helper-return']['continuation']['status'] == 'matched'
+
+    stack_examples = pathlib.Path(__file__).parent / 'fixtures/analysis/stack-reconstruction.json'
+    stack_command = [sys.argv[1], 'transfers', '--source', str(stack_examples)]
+    encoded = subprocess.run(stack_command, check=True, capture_output=True).stdout
+    assert encoded == subprocess.run(stack_command, check=True, capture_output=True).stdout
+    stack_report = json.loads(encoded)
+    previous_stage = json.loads(subprocess.run(stack_command + ['--through', 'constructed'], check=True, capture_output=True).stdout)
+    assert stack_report['capture_sha256'] == previous_stage['capture_sha256']
+    for early, late in zip(previous_stage['occurrences'], stack_report['occurrences']):
+        assert early['stack_reconstruction'] is None
+        for field in ('instruction_effect', 'continuation', 'value_origin', 'constructed_transfer'):
+            assert early[field] == late[field]
+    by_id = {o['sample_id']: o for o in stack_report['occurrences']}
+    skip = by_id['skip-caller']['stack_reconstruction']
+    assert skip['pattern'] == 'caller_skipping_exit' and skip['skipped_calls'] == ['inner-call']
+    assert skip['supporting_samples'] == ['remove-inner']
+    assert by_id['restore-sp']['stack_reconstruction']['pattern'] == 'restored_stack_pointer'
+    assert not by_id['restore-sp']['resolution']['unresolved']
+    assert by_id['restore-sp']['continuation']['unresolved']  # Raw limitation retained.
+    assert by_id['dispatch']['stack_reconstruction']['pattern'] == 'prepared_continuation_candidate'
+    assert by_id['consume-prepared']['stack_reconstruction']['pattern'] == 'constructed_continuation_consumed'
+    assert by_id['consume-prepared']['resolution']['continuation_relationship'] == 'constructed_continuation_consumed'
+    assert not by_id['consume-prepared']['resolution']['unresolved']
+    assert by_id['use-replacement']['stack_reconstruction']['pattern'] == 'substituted_continuation_transfer'
+    assert by_id['use-replacement']['stack_reconstruction']['return_role_established'] is False
 
     # Presentation can hit its own bound while value analysis remains complete.
     # It must disclose truncation and preserve the underlying graph.

@@ -1,0 +1,651 @@
+{
+  "format": "z80-transfer-capture",
+  "version": 2,
+  "source": "synthetic-stack-reconstruction-examples",
+  "limitations": "Independent synthetic instruction-level paths with explicit gaps; not a Spectrum ROM trace.",
+  "samples": [
+    {
+      "id": "outer-call",
+      "kind": "instruction",
+      "sequence": "0",
+      "start": 32768,
+      "next_pc": 33024,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        205,
+        0,
+        129
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": null,
+        "accesses": [
+          {
+            "kind": "write",
+            "address": 40958,
+            "value": 3
+          },
+          {
+            "kind": "write",
+            "address": 40959,
+            "value": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "inner-call",
+      "kind": "instruction",
+      "sequence": "1",
+      "start": 33024,
+      "next_pc": 33280,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        205,
+        0,
+        130
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40956,
+        "complete_data_accesses": true,
+        "previous": "outer-call",
+        "accesses": [
+          {
+            "kind": "write",
+            "address": 40956,
+            "value": 3
+          },
+          {
+            "kind": "write",
+            "address": 40957,
+            "value": 129
+          }
+        ]
+      }
+    },
+    {
+      "id": "remove-inner",
+      "kind": "instruction",
+      "sequence": "2",
+      "start": 33280,
+      "next_pc": 33281,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        225
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40956,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": "inner-call",
+        "accesses": [
+          {
+            "kind": "read",
+            "address": 40956,
+            "value": 3
+          },
+          {
+            "kind": "read",
+            "address": 40957,
+            "value": 129
+          }
+        ]
+      }
+    },
+    {
+      "id": "skip-caller",
+      "kind": "instruction",
+      "sequence": "3",
+      "start": 33281,
+      "next_pc": 32771,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        201
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": "remove-inner",
+        "accesses": [
+          {
+            "kind": "read",
+            "address": 40958,
+            "value": 3
+          },
+          {
+            "kind": "read",
+            "address": 40959,
+            "value": 128
+          }
+        ]
+      }
+    },
+    {
+      "id": "zero-hl",
+      "kind": "instruction",
+      "sequence": "4",
+      "start": 33536,
+      "next_pc": 33539,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        33,
+        0,
+        0
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": null,
+        "accesses": []
+      }
+    },
+    {
+      "id": "save-sp",
+      "kind": "instruction",
+      "sequence": "5",
+      "start": 33539,
+      "next_pc": 33540,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        57
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": "zero-hl",
+        "accesses": []
+      }
+    },
+    {
+      "id": "switch-stack",
+      "kind": "instruction",
+      "sequence": "6",
+      "start": 33540,
+      "next_pc": 33543,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        49,
+        0,
+        144
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 36864,
+        "complete_data_accesses": true,
+        "previous": "save-sp",
+        "accesses": []
+      }
+    },
+    {
+      "id": "restore-sp",
+      "kind": "instruction",
+      "sequence": "7",
+      "start": 33543,
+      "next_pc": 33544,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        249
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 36864,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": "switch-stack",
+        "accesses": []
+      }
+    },
+    {
+      "id": "prepared-address",
+      "kind": "instruction",
+      "sequence": "8",
+      "start": 33792,
+      "next_pc": 33795,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        33,
+        0,
+        133
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": null,
+        "accesses": []
+      }
+    },
+    {
+      "id": "push-prepared",
+      "kind": "instruction",
+      "sequence": "9",
+      "start": 33795,
+      "next_pc": 33796,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        229
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": "prepared-address",
+        "accesses": [
+          {
+            "kind": "write",
+            "address": 40958,
+            "value": 0
+          },
+          {
+            "kind": "write",
+            "address": 40959,
+            "value": 133
+          }
+        ]
+      }
+    },
+    {
+      "id": "dispatch-address",
+      "kind": "instruction",
+      "sequence": "10",
+      "start": 33796,
+      "next_pc": 33799,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        33,
+        0,
+        144
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": "push-prepared",
+        "accesses": []
+      }
+    },
+    {
+      "id": "push-dispatch",
+      "kind": "instruction",
+      "sequence": "11",
+      "start": 33799,
+      "next_pc": 33800,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        229
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40956,
+        "complete_data_accesses": true,
+        "previous": "dispatch-address",
+        "accesses": [
+          {
+            "kind": "write",
+            "address": 40956,
+            "value": 0
+          },
+          {
+            "kind": "write",
+            "address": 40957,
+            "value": 144
+          }
+        ]
+      }
+    },
+    {
+      "id": "dispatch",
+      "kind": "instruction",
+      "sequence": "12",
+      "start": 33800,
+      "next_pc": 36864,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        201
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40956,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": "push-dispatch",
+        "accesses": [
+          {
+            "kind": "read",
+            "address": 40956,
+            "value": 0
+          },
+          {
+            "kind": "read",
+            "address": 40957,
+            "value": 144
+          }
+        ]
+      }
+    },
+    {
+      "id": "consume-prepared",
+      "kind": "instruction",
+      "sequence": "13",
+      "start": 36864,
+      "next_pc": 34048,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        201
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": "dispatch",
+        "accesses": [
+          {
+            "kind": "read",
+            "address": 40958,
+            "value": 0
+          },
+          {
+            "kind": "read",
+            "address": 40959,
+            "value": 133
+          }
+        ]
+      }
+    },
+    {
+      "id": "original-call",
+      "kind": "instruction",
+      "sequence": "14",
+      "start": 34304,
+      "next_pc": 34560,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        205,
+        0,
+        135
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40960,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": null,
+        "accesses": [
+          {
+            "kind": "write",
+            "address": 40958,
+            "value": 3
+          },
+          {
+            "kind": "write",
+            "address": 40959,
+            "value": 134
+          }
+        ]
+      }
+    },
+    {
+      "id": "replacement-address",
+      "kind": "instruction",
+      "sequence": "15",
+      "start": 34560,
+      "next_pc": 34563,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        33,
+        0,
+        136
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": "original-call",
+        "accesses": []
+      }
+    },
+    {
+      "id": "replace-slot",
+      "kind": "instruction",
+      "sequence": "16",
+      "start": 34563,
+      "next_pc": 34566,
+      "cycles": "0",
+      "read_count": "3",
+      "complete_capture": true,
+      "bytes": [
+        34,
+        254,
+        159
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40958,
+        "complete_data_accesses": true,
+        "previous": "replacement-address",
+        "accesses": [
+          {
+            "kind": "write",
+            "address": 40958,
+            "value": 0
+          },
+          {
+            "kind": "write",
+            "address": 40959,
+            "value": 136
+          }
+        ]
+      }
+    },
+    {
+      "id": "use-replacement",
+      "kind": "instruction",
+      "sequence": "17",
+      "start": 34566,
+      "next_pc": 34816,
+      "cycles": "0",
+      "read_count": "1",
+      "complete_capture": true,
+      "bytes": [
+        201
+      ],
+      "revisions": [],
+      "before": {
+        "flags": null,
+        "b": null,
+        "hl": null,
+        "ix": null,
+        "iy": null
+      },
+      "stack": {
+        "before_sp": 40958,
+        "after_sp": 40960,
+        "complete_data_accesses": true,
+        "previous": "replace-slot",
+        "accesses": [
+          {
+            "kind": "read",
+            "address": 40958,
+            "value": 0
+          },
+          {
+            "kind": "read",
+            "address": 40959,
+            "value": 136
+          }
+        ]
+      }
+    }
+  ]
+}

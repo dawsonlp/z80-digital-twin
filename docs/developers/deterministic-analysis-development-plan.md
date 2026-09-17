@@ -1,7 +1,7 @@
 # Deterministic execution analysis: development checklist
 
 **Date:** 16 September 2026.  
-**Status:** transfer classification, ordinary stack-continuation matching and bounded value tracing, constructed-transfer tactics and repeatable resolution implemented; runtime
+**Status:** transfer classification, ordinary stack-continuation matching and bounded value tracing, constructed-transfer and bounded stack-reconstruction tactics with repeatable resolution implemented; runtime
 capture integration and the broader stages remain open.
 **Outcome:** build program understanding through reproducible experiments and
 deterministic tactics, preserving every observed usage and keeping routine
@@ -229,15 +229,16 @@ separately in both configurations. No native UI changes or acceptance are claime
       a register and a pushed target consumed by RET.
 - [x] Establish the continuation-preserving indirect-jump primitive used by call
       helpers, while retaining internal jumps as an alternative interpretation.
-- [ ] Recognize explicit continuation construction, discarded continuations,
-      return-address substitution, SP replacement and restored stack pointers.
-- [ ] Describe continuation-preserving transfers before claiming a tail call;
+- [x] Recognize supported explicit continuation preparation/consumption, stack-slot
+      removal, return-address substitution, SP assignment and saved-SP restoration.
+- [ ] Extend to arbitrary stack reconstruction beyond the documented supported forms.
+- [x] Describe continuation-preserving transfers before claiming a tail call;
       routine grouping is a separate interpretation.
-- [ ] Track caller-skipping exits and stack rebuilding where provenance supports
+- [x] Track caller-skipping exits and stack rebuilding where provenance supports
       them; retain unresolved stack discontinuities otherwise.
-- [ ] Require semantic/data-flow preconditions for each tactic. Nearby opcode
+- [x] Require semantic/data-flow preconditions for each tactic. Nearby opcode
       patterns alone may produce candidates, not confirmed explanations.
-- [ ] Allow different tactic results for different executions of the same opcode.
+- [x] Allow different tactic results for different executions of the same opcode.
 
 Acceptance: synthetic equivalents of UNSTACK_Z, USR dispatch and stack rebuilding
 are explained alongside conventional CALL/RET paths into the same target. Negative
@@ -262,6 +263,26 @@ writes, SP mismatch, interrupt-return boundaries and unavailable value evidence.
 Fresh-process tests verify all four stages, preserved raw findings, resolved
 relationships and the three runnable examples. No runtime hooks or UI changes
 are included.
+
+Rung 6 checkpoint: report v6 adds a `stack` stage over existing findings and value
+tactic v2 adds SP roots/snapshot lineage. Supported rules identify caller-skipping
+through older live continuations, reconstructed/relocated continuation transfers,
+slot substitution, SP restoration by provenance, and explicit literal continuation
+preparation followed by observed consumption. Earlier candidates and raw findings
+remain unchanged. This is bounded headless reconstruction, not arbitrary symbolic
+stack recovery or runtime capture. See the runnable `stack-reconstruction.json`
+fixture and [supported forms](../users/transfer-analysis.md#stack-reconstruction-and-caller-skipping-rung-6).
+
+Rung 6 validation: Debug/UI 44 passed and two optional ZEX skips (46 registered);
+Release/headless 43 passed and the same two skips (45 registered). The local
+Spectrum ROM and Pasmo were supplied; build logs contain no compiler warning/error
+matches. A real-CPU nested CALL/CALL/POP/RET fixture verifies caller-skipping.
+Synthetic tests cover stack wrap, multiple bypasses, SP byte adjustments,
+reconstructed and relocated continuations, pointer spills/reloads, equal-number
+substitution, contradictory capture, preparation/consumption, repeated dispatch,
+equal-value/refused writes and exhausted budgets. Fresh-process CLI tests verify
+all five stages, unchanged earlier findings, supporting samples and resolved
+comments. No runtime hooks or native UI acceptance are included.
 
 ## 5. Build overlapping structures and usage patterns (rungs 7–8)
 

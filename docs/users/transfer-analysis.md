@@ -1,6 +1,6 @@
 # Deterministic transfer analysis
 
-**Status:** headless transfer, ordinary continuation, bounded value and constructed-transfer analysis, 16 September
+**Status:** headless transfer, ordinary continuation, bounded value, constructed-transfer and stack-reconstruction analysis, 16 September
 2026. Automatic runtime capture and routine recovery remain unimplemented.
 
 Analyze a bounded file of recorded instruction effects without running the CPU:
@@ -59,7 +59,7 @@ not a run/session persistence schema or a resumable snapshot. Each file supplies
   sample ID and instruction-level reads, committed writes and refused writes.
 
 Version 1 inputs remain readable and contain no stack evidence. Writers emit
-version 2; reports use version 5 with separate transfer, continuation, value and constructed-transfer tactic
+version 2; reports use version 6 with separate transfer, continuation, value, constructed-transfer and stack-reconstruction tactic
 versions, plus a versioned resolver. Stack accesses are bounded to 256 per sample; the writer rejects a
 serialized capture larger than the reader's 16 MiB limit.
 
@@ -101,7 +101,7 @@ Balanced register PUSH/POP and jumps can preserve a caller's continuation. A
 PUSH/RET dispatch does not become a matched ordinary return simply because its
 numeric destination equals an earlier saved return address. Register-mediated
 return-role recognition is a separate constructed-transfer tactic described below;
-stack reconstruction remains later work.
+stack reconstruction has its own stage described below.
 
 Explanations are attached to individual observations and their supporting call
 IDs. They are suitable input for future assembly comments, but are not yet
@@ -115,7 +115,7 @@ IDs and malformed ranges/counts are rejected. The current limits are 8192 sample
 
 The C++ API offers `WriteTransferCapture`, `ReadTransferCapture`,
 `ClassifyTransfer`, `AnalyzeContinuations`, `AnalyzeAddressValues`,
-`AnalyzeConstructedTransfers`, `ResolveTransferFindings` and `TransferReport`. Reports include tactic versions and
+`AnalyzeConstructedTransfers`, `AnalyzeStackReconstruction`, `ResolveTransferFindings` and `TransferReport`. Reports include tactic versions and
 the canonical capture hash. Identical input and tactic versions produce identical
 reports, including after save/reopen. This hash identifies input; it does not
 authenticate its producer or establish hardware fidelity.
@@ -192,7 +192,7 @@ build/z80_analyze transfers --source tests/fixtures/analysis/value-origins.json 
 build/z80_analyze transfers --source tests/fixtures/analysis/value-origins.json --through values
 ```
 
-`constructed` is the default. This selects which tactics run, not just a display filter.
+`stack` is the default. This selects which tactics run, not just a display filter.
 A tactic that has not run has a null finding, distinct from `not_applicable` or
 `unresolved`. The capture hash is unchanged across stages.
 
@@ -261,6 +261,63 @@ conservatively discard lifecycle knowledge. Partial value origins may still
 support a PUSH/RET finding when the actual pushed/read bytes establish that
 specific mechanism; their earlier value provenance remains partial.
 
-Caller-skipping exits, arbitrary stack reconstruction, modified continuations,
-exclusive helper/function classification and ROM-wide capture remain later work.
+The next stage handles supported stack reconstruction and caller-skipping cases.
+Arbitrary stack reconstruction, exclusive helper/function classification and
+ROM-wide capture remain open.
 These tactics do not modify CPU behavior, source labels or exported assembly.
+
+## Stack reconstruction and caller-skipping (rung 6)
+
+```sh
+build/z80_analyze transfers --source tests/fixtures/analysis/stack-reconstruction.json --through stack
+```
+
+This synthetic fixture demonstrates an outer return after popping the inner
+continuation, a saved-SP restoration, an explicitly prepared return address, and
+a replaced continuation. `stack` is the default stage; `--through constructed`
+provides the earlier view using the same capture and unchanged raw findings.
+Report v6 adds a separate `stack_reconstruction` finding, supporting sample IDs,
+skipped-call IDs, and value-graph roots. Capture versions 1 and 2 remain readable.
+
+The deterministic rules distinguish:
+
+- **Caller-skipping exit:** exact bytes identify a live older CALL/RST
+  continuation, SP matches that caller's restored context, and recorded POPs or
+  supported SP adjustments prove removal of every intervening continuation.
+- **Reconstructed continuation return:** exact original continuation bytes were
+  carried through copies/writes and consumed again with the caller's SP restored.
+  If they are consumed on a different stack, the report identifies the transferred
+  continuation while leaving caller-stack restoration unresolved.
+- **Substituted continuation transfer:** recorded writes replaced bytes in a
+  captured call's original stack slot, and RET consumed those bytes. Equal numeric
+  addresses do not establish the original continuation's identity.
+- **Saved-SP restoration:** value lineage leads back to a recorded SP through
+  supported copies, spills/reloads, and affine 16-bit pointer arithmetic. Loading
+  an equal immediate address is recorded as an assignment, not proven restoration.
+- **Prepared continuation:** a PUSH/RET dispatch leaves a separately pushed literal
+  address at SP. It remains a candidate until an observed later RET consumes that
+  same pushed value. The later finding names the preparation and dispatch; it
+  does not rewrite the earlier candidate.
+
+A POP records removal from the stack, leaving later register use open. Explicit
+SP changes are reported independently of whether a restoration is proved.
+Caller-skipping rules cover POP, one/two-byte upward SP adjustments and explicit
+assignments between live invocation slots. Other stack arrangements remain
+unresolved rather than being inferred from numeric address ordering.
+
+Value tactic version 2 retains before/after SP roots for explicit SP operations
+and SP snapshot/adjustment lineage. Arithmetic preserves affine SP provenance
+only for supported forms; it still does not preserve return-address identity.
+Data-read address dependencies never become identity of the data read.
+
+The resolver selects a supported combined explanation, preserves all raw tactic
+findings, and records which earlier limitations are covered. Gaps, contradictory
+or unsupported value effects, interrupt-return boundaries and exhausted value
+budgets discard uncertain reconstruction state. Consumed continuation identities
+cannot be reused merely because their bytes remain in RAM. Prepared candidates
+are invalidated by consumption or committed overwrites, including equal-value
+writes; refused writes preserve them.
+
+These are observations about supplied execution paths, not closed function
+contracts. Automatic debugger capture, arbitrary symbolic stack recovery and
+assembly-comment projection remain separate work.

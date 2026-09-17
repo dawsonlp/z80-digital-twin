@@ -21,10 +21,11 @@ struct ValueFinding {
     std::string sample_id, explanation;
     ValueStatus status = ValueStatus::NotApplicable;
     std::optional<ValueNodeId> root;
+    std::optional<ValueNodeId> before_sp_root, after_sp_root;
     std::vector<std::string> unresolved;
 };
 inline constexpr size_t kMaxValueNodes = 32768;
-inline constexpr std::string_view kValueTacticVersion = "z80-address-values/1";
+inline constexpr std::string_view kValueTacticVersion = "z80-address-values/2";
 struct ValueAnalysis {
     std::vector<ValueNode> nodes;
     std::vector<ValueFinding> findings;

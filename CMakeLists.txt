@@ -74,6 +74,7 @@ target_compile_features(z80_cpu PUBLIC cxx_std_23)
 add_library(z80_debugger_core STATIC
     debugger/analysis/transfer_analysis.cpp
     debugger/analysis/continuation_analysis.cpp
+    debugger/analysis/stack_analysis.cpp
     debugger/analysis/constructed_analysis.cpp
     debugger/analysis/value_analysis.cpp
     debugger/analysis/resolution_analysis.cpp
@@ -286,6 +287,9 @@ add_test(NAME transfer_analysis_test COMMAND transfer_analysis_test)
 add_executable(continuation_analysis_test tests/continuation_analysis_test.cpp)
 target_link_libraries(continuation_analysis_test PRIVATE z80_debugger_core)
 add_test(NAME continuation_analysis_test COMMAND continuation_analysis_test)
+add_executable(stack_analysis_test tests/stack_analysis_test.cpp)
+target_link_libraries(stack_analysis_test PRIVATE z80_debugger_core)
+add_test(NAME stack_analysis_test COMMAND stack_analysis_test)
 add_executable(constructed_analysis_test tests/constructed_analysis_test.cpp)
 target_link_libraries(constructed_analysis_test PRIVATE z80_debugger_core)
 add_test(NAME constructed_analysis_test COMMAND constructed_analysis_test)

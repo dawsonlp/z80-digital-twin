@@ -263,18 +263,20 @@ Result<std::string> TransferReport(const TransferCapture& capture, AnalysisStage
     A occurrences, edges;
     using Key = std::tuple<uint16_t, std::vector<uint8_t>, TransferMechanism, uint16_t, int>;
     std::map<Key, A> grouped;
-    if (through != AnalysisStage::Effects && through != AnalysisStage::Continuations && through != AnalysisStage::Values && through != AnalysisStage::Constructed)
+    if (through != AnalysisStage::Effects && through != AnalysisStage::Continuations && through != AnalysisStage::Values && through != AnalysisStage::Constructed && through != AnalysisStage::Stack)
         return invalid("unknown analysis stage");
     std::vector<TransferFinding> transfers;
     for (const auto& sample : capture.samples) transfers.push_back(ClassifyTransfer(sample));
     std::optional<std::vector<ContinuationFinding>> continuations;
     std::optional<ValueAnalysis> values;
     if (through != AnalysisStage::Effects) continuations = AnalyzeContinuations(capture);
-    if (through == AnalysisStage::Values || through == AnalysisStage::Constructed) values = AnalyzeAddressValues(capture);
+    if (through == AnalysisStage::Values || through == AnalysisStage::Constructed || through == AnalysisStage::Stack) values = AnalyzeAddressValues(capture);
     std::optional<std::vector<ConstructedFinding>> constructed;
-    if (through == AnalysisStage::Constructed) constructed = AnalyzeConstructedTransfers(capture, *continuations, *values);
+    if (through == AnalysisStage::Constructed || through == AnalysisStage::Stack) constructed = AnalyzeConstructedTransfers(capture, *continuations, *values);
+    std::optional<std::vector<StackFinding>> stack;
+    if (through == AnalysisStage::Stack) stack = AnalyzeStackReconstruction(capture, *continuations, *values, *constructed);
     const auto resolutions = ResolveTransferFindings(capture, transfers,
-        continuations ? &*continuations : nullptr, values ? &*values : nullptr, constructed ? &*constructed : nullptr);
+        continuations ? &*continuations : nullptr, values ? &*values : nullptr, constructed ? &*constructed : nullptr, stack ? &*stack : nullptr);
     auto strings = [](const std::vector<std::string>& items) {
         A array;
         for (const auto& item : items) array.emplace_back(item);
@@ -299,6 +301,7 @@ Result<std::string> TransferReport(const TransferCapture& capture, AnalysisStage
             {"value_origin", values ? ValueFindingJson(values->findings[i]) : J{}},
             {"continuation", std::move(continuation_json)},
             {"constructed_transfer", constructed ? ConstructedFindingJson((*constructed)[i]) : J{}},
+            {"stack_reconstruction", stack ? StackFindingJson((*stack)[i]) : J{}},
             {"resolution", ResolutionJson(resolution)},
             {"completeness", O{{"capture", s.event.complete_capture ? "instruction_bytes_complete" : "instruction_bytes_unavailable_or_partial"},
                 {"entry_context", (s.before.flags && s.before.b && s.before.hl && s.before.ix && s.before.iy)
@@ -318,10 +321,10 @@ Result<std::string> TransferReport(const TransferCapture& capture, AnalysisStage
             {"mechanism", mechanism_name(mechanism)}, {"taken", taken < 0 ? J{} : J(bool(taken))},
             {"count", static_cast<uint32_t>(samples.size())}, {"samples", samples}});
     }
-    return json::Write(O{{"format", "z80-transfer-report"}, {"version", 5},
+    return json::Write(O{{"format", "z80-transfer-report"}, {"version", 6},
         {"tactic", std::string(kTransferTacticVersion)}, {"capture_sha256", Sha256(json::Write(capture_json(capture)))},
         {"source", capture.source}, {"limitations", capture.limitations}, {"destination_sets_closed", false},
-        {"through", through == AnalysisStage::Effects ? "effects" : through == AnalysisStage::Continuations ? "continuations" : through == AnalysisStage::Values ? "values" : "constructed"},
+        {"through", through == AnalysisStage::Effects ? "effects" : through == AnalysisStage::Continuations ? "continuations" : through == AnalysisStage::Values ? "values" : through == AnalysisStage::Constructed ? "constructed" : "stack"},
         {"occurrences", std::move(occurrences)}, {"edges", std::move(edges)},
         {"value_graph", values ? ValueGraphJson(*values) : J{}}, {"sites", SiteResolutionsJson(capture, resolutions)}});
 }

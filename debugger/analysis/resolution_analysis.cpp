@@ -30,7 +30,7 @@ std::string target_comment(const TransferSample& sample, const TransferFinding& 
 std::vector<OccurrenceResolution> ResolveTransferFindings(
     const TransferCapture& capture, const std::vector<TransferFinding>& transfers,
     const std::vector<ContinuationFinding>* continuations, const ValueAnalysis* values,
-    const std::vector<ConstructedFinding>* constructed) {
+    const std::vector<ConstructedFinding>* constructed, const std::vector<StackFinding>* stack) {
     // Index graph nodes once; resolution remains bounded by retained evidence.
     std::map<std::string, std::vector<const ValueNode*>> by_sample;
     if (values) for (const auto& node : values->nodes) by_sample[node.sample_id].push_back(&node);
@@ -41,6 +41,7 @@ std::vector<OccurrenceResolution> ResolveTransferFindings(
         const auto* continuation = continuations ? &continuations->at(i) : nullptr;
         const auto* origin = values ? &values->findings.at(i) : nullptr;
         const auto* construction = constructed ? &constructed->at(i) : nullptr;
+        const auto* reconstruction = stack ? &stack->at(i) : nullptr;
         OccurrenceResolution resolved;
         resolved.target_basis = transfer.target_basis;
         if (continuation) resolved.continuation_relationship = continuation->status;
@@ -68,7 +69,12 @@ std::vector<OccurrenceResolution> ResolveTransferFindings(
         if (continuation) {
             for (const auto& reason : continuation->unresolved) {
                 const bool covered = pop_tracked && reason == "popped value provenance into registers is not yet tracked";
-                retain(kContinuationTacticVersion, reason, covered ? kValueTacticVersion : std::string_view{});
+                std::string_view resolver = covered ? kValueTacticVersion : std::string_view{};
+                if (reconstruction && reconstruction->return_role_established && reason == "no unbroken lineage from a captured call to these consumed stack bytes")
+                    resolver = kStackTacticVersion;
+                if (reconstruction && reconstruction->sp_root && reconstruction->status == "matched" &&
+                    reason == "unmodeled stack-pointer transition; older continuation lineage discarded") resolver = kStackTacticVersion;
+                retain(kContinuationTacticVersion, reason, resolver);
             }
             if (!continuation->explanation.empty()) resolved.comment += " " + continuation->explanation;
         }
@@ -107,9 +113,19 @@ std::vector<OccurrenceResolution> ResolveTransferFindings(
             // lower-level facts. All original findings stay in the report.
             if (construction->status == "matched") resolved.comment = construction->explanation;
             else if (!construction->explanation.empty()) resolved.comment += " " + construction->explanation;
-            for (const auto& reason : construction->unresolved) retain(kConstructedTacticVersion, reason);
+            for (const auto& reason : construction->unresolved)
+                retain(kConstructedTacticVersion, reason, reconstruction && reconstruction->status == "matched" && reconstruction->target_root &&
+                    reason == "no supported constructed-transfer relationship for this observed target" ? kStackTacticVersion : std::string_view{});
         }
-        if ((!construction || construction->status != "matched") &&
+        if (reconstruction) {
+            if (reconstruction->status == "matched") {
+                resolved.comment = reconstruction->explanation;
+                if (reconstruction->target_root) resolved.continuation_relationship = reconstruction->pattern;
+            }
+            for (const auto& reason : reconstruction->unresolved) retain(kStackTacticVersion, reason);
+        }
+        if ((!reconstruction || reconstruction->status != "matched") &&
+            (!construction || construction->status != "matched") &&
             (transfer.mechanism == TransferMechanism::IndirectJump ||
             ((transfer.mechanism == TransferMechanism::Return || transfer.mechanism == TransferMechanism::InterruptReturn) &&
              transfer.taken != false && (!continuation || continuation->status != "matched"))))

@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Larry Dawson. Licensed under the MIT License (see LICENSE).
 #pragma once
-#include "constructed_analysis.h"
+#include "stack_analysis.h"
 
 namespace z80::dbg::analysis {
-inline constexpr std::string_view kResolutionVersion = "z80-evidence-resolution/2";
+inline constexpr std::string_view kResolutionVersion = "z80-evidence-resolution/3";
 inline constexpr size_t kMaxResolutionAncestors = 4096;
 struct ResolvedDependency {
     std::string tactic, reason, resolved_by;
@@ -19,7 +19,8 @@ struct OccurrenceResolution {
     const TransferCapture& capture, const std::vector<TransferFinding>& transfers,
     const std::vector<ContinuationFinding>* continuations = nullptr,
     const ValueAnalysis* values = nullptr,
-    const std::vector<ConstructedFinding>* constructed = nullptr);
+    const std::vector<ConstructedFinding>* constructed = nullptr,
+    const std::vector<StackFinding>* stack = nullptr);
 json::Value ResolutionJson(const OccurrenceResolution& resolution);
 json::Value SiteResolutionsJson(const TransferCapture& capture,
                                const std::vector<OccurrenceResolution>& resolutions);

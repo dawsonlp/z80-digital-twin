@@ -136,16 +136,23 @@ class Analyzer {
         const auto byte_reg = [&](unsigned n) { return n == 7 ? 6 : n == 4 ? hl : n == 5 ? hl + 1 : int(n); };
         const auto nn = [&] { return uint16_t(e.bytes.at(i) | (uint16_t(e.bytes.at(i + 1)) << 8)); };
         uint16_t expected_sp = s.before_sp;
+        const bool explicit_sp = op == 0x31 || op == 0xF9 || op == 0x33 || op == 0x3B ||
+            (op == 0xED && e.bytes.at(i) == 0x7B);
+        if (explicit_sp) finding.before_sp_root = word(20);
+        auto adjust_sp = [&] {
+            const auto old = word(20);
+            put_word(20, old ? make("stack_adjust", expected_sp, 16, {*old}) : Node{});
+        };
         if (transfer.mechanism == TransferMechanism::Call || transfer.mechanism == TransferMechanism::Restart) {
             if (transfer.taken == true) {
                 expected_sp = uint16_t(s.before_sp - 2);
                 auto continuation = make("call_continuation", uint16_t(e.start + e.bytes.size()), 16);
-                write_word(expected_sp, continuation); put_word(20, make("stack_adjust", expected_sp, 16, {}, false));
+                write_word(expected_sp, continuation); adjust_sp();
             }
         } else if (transfer.mechanism == TransferMechanism::Return || transfer.mechanism == TransferMechanism::InterruptReturn) {
             if (transfer.taken == true) {
                 target(finding, read_word(s.before_sp)); expected_sp = uint16_t(s.before_sp + 2);
-                put_word(20, make("stack_adjust", expected_sp, 16, {}, false));
+                adjust_sp();
             }
         } else if (transfer.mechanism == TransferMechanism::IndirectJump) {
             target(finding, word(hl));
@@ -158,7 +165,7 @@ class Analyzer {
             if ((op & 0xCF) == 0xC1) {
                 put_word(pair, read_word(s.before_sp)); expected_sp = uint16_t(s.before_sp + 2);
             } else { expected_sp = uint16_t(s.before_sp - 2); write_word(expected_sp, word(pair)); }
-            put_word(20, make("stack_adjust", expected_sp, 16, {}, false));
+            adjust_sp();
         } else if (op == 0xEB) {
             exchange(2, 4); exchange(3, 5);
         } else if (op == 0xD9) {
@@ -218,6 +225,11 @@ class Analyzer {
         } else if (op != 0x00 && op != 0x76 && op != 0xF3 && op != 0xFB) {
             fail(std::format("unsupported value operation ${:02X}; prior lineage discarded", op));
         }
+        if (explicit_sp) {
+            const auto assigned = word(20);
+            if (assigned) put_word(20, make("stack_pointer_assignment", expected_sp, 16, {*assigned}));
+            finding.after_sp_root = word(20);
+        }
         if (expected_sp != s.after_sp) fail("stack movement contradicts supported instruction effect");
         if (std::find(used_.begin(), used_.end(), false) != used_.end()) fail("unexplained data accesses; prior lineage discarded");
     }
@@ -241,13 +253,15 @@ public:
                 if (sample.before.flags) entry_byte(7, *sample.before.flags);
                 if (sample.before.b) entry_byte(0, *sample.before.b);
                 entry_word(4, sample.before.hl); entry_word(8, sample.before.ix); entry_word(10, sample.before.iy);
-                entry_word(20, sample.stack->before_sp);
+                if (!registers_[20] && !registers_[21])
+                    put_word(20, make("entry_stack_pointer", sample.stack->before_sp, 16, {}, false));
+                else entry_word(20, sample.stack->before_sp);
                 used_.assign(sample.stack->accesses.size(), false);
                 if (failure_.empty()) execute(finding, transfer);
             }
             if (!failure_.empty()) {
                 out_.nodes.resize(checkpoint); // Do not publish nodes from a failed effect.
-                clear(); finding.root.reset(); finding.status = ValueStatus::Unresolved;
+                clear(); finding.root.reset(); finding.before_sp_root.reset(); finding.after_sp_root.reset(); finding.status = ValueStatus::Unresolved;
                 finding.explanation.clear(); finding.unresolved.push_back(failure_);
             }
             out_.findings.push_back(std::move(finding)); previous = &sample;
@@ -265,7 +279,9 @@ json::Value ValueFindingJson(const ValueFinding& finding) {
     J::Array unresolved;
     for (const auto& reason : finding.unresolved) unresolved.emplace_back(reason);
     return J::Object{{"sample_id", finding.sample_id}, {"status", names.at(size_t(finding.status))},
-        {"root", finding.root ? J(finding.root->value) : J{}}, {"explanation", finding.explanation},
+        {"root", finding.root ? J(finding.root->value) : J{}},
+        {"before_sp_root", finding.before_sp_root ? J(finding.before_sp_root->value) : J{}},
+        {"after_sp_root", finding.after_sp_root ? J(finding.after_sp_root->value) : J{}}, {"explanation", finding.explanation},
         {"unresolved", std::move(unresolved)}, {"tactic", std::string(kValueTacticVersion)}};
 }
 json::Value ValueGraphJson(const ValueAnalysis& analysis) {

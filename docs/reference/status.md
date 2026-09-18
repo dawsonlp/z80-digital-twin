@@ -1,13 +1,21 @@
 # Status
 
 **Audience:** users and developers checking current capability.
-**Last reviewed:** 2026-09-16.
+**Last reviewed:** 2026-09-17.
+**Current work:** `feature/live-disassembly-patching`, based on `c4be116`; first
+checkpoint/patch increment described in the [checklist](../developers/live-disassembly-patching-checklist.md).
 **Baseline:** implementation checkpoint `3ff0629` on
 `feature/deterministic-execution-analysis`. The earlier symbol/runtime baseline
 was merged through PR #1 at `2539862`; execution-analysis additions remain on the
 feature branch. These are unreleased development capabilities.
 
 ## Implemented
+
+- In-process CPU/memory/Spectrum checkpoints and paused raw-binary replacement
+  with explicit PC/HL/memory-word edits, readback, stale-review rejection and
+  rollback recovery blocking. Native panel rendering and headless behavior are
+  verified; native button-level acceptance remains open. See the
+  [worked example](../../examples/live-patching/README.md).
 
 - C++23 policy-based Z80 CPU, opcode/prefix stepping, bounded whole-instruction
   stepping, T-state accounting, maskable interrupts and focused correctness tests.
@@ -48,6 +56,12 @@ or universal routine contracts. See [usage](../users/transfer-analysis.md) and
 
 ## Verification
 
+Live-patching increment, 17 September: fresh full Debug/UI build passed; CTest
+reported 47 passes and two optional ZEX skips. Real-Pasmo live-patching and
+byte-round-trip gates ran. New panel rendering was inspected; native interaction
+remains open after the computer-use tool timed out. These results cover the
+first manual increment, not the proposed editor attach/automatic relocation loop.
+
 Latest analysis checkpoint: Debug/UI 45 passed plus two optional ZEX skips;
 Release/headless 44 passed plus the same skips, with local ROM and Pasmo supplied.
 All sixteen ROM experiments replayed identically across 49 artifacts. This is
@@ -73,7 +87,9 @@ checklists; it is not a fresh acceptance result for every current change.
   switching analyzed programs; full lifecycle acceptance remains open.
 - No contention, complete HALT bus/refresh progression or persistent INT-line
   model. Some TZX flow-control blocks remain linearized.
-- No live reload into an existing debugger, automatic durable runtime capture,
+- No automatic editor attach/live export, symbol-guided state relocation or
+  durable machine checkpoint files. Manual paused replacement is implemented.
+  Still pending: automatic durable runtime capture,
   integrated execution-evidence-aware source export, routine-level call graph,
   cross-capture occurrence aggregation or complete mutation archive. Image-bound
   annotations already persist; selected supplied captures can be saved/reanalyzed.

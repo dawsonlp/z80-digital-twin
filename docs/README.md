@@ -37,6 +37,11 @@ claims of current completion.
 
 ## Plan and acceptance records
 
+- [Live disassembly, code replacement and state adjustment](developers/live-disassembly-patching-design.md):
+  design proposal for attaching the editor, saving state, applying changed code,
+  optional symbol-assisted adjustments and bounded execution checks.
+- [Live patching development checklist](developers/live-disassembly-patching-checklist.md):
+  implementation sequence and verified delivery boundaries.
 - [Deterministic execution analysis](developers/deterministic-analysis-development-plan.md):
   checklist for evidence capture, concrete transfer tactics, overlapping routine
   usage and experiments, after integrating the existing work into main.

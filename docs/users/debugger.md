@@ -2,7 +2,7 @@
 
 **Audience:** users debugging binaries or running a Spectrum under inspection.
 **Purpose:** explain the primary `z80_debugger` workflows.
-**Last reviewed:** 2026-09-15.
+**Last reviewed:** 2026-09-17.
 
 ## Launch
 
@@ -35,6 +35,26 @@ writable-ROM options are incompatible with this standalone launch mode.
 The button labeled **Restart program** cold-boots the Spectrum ROM and clears
 RAM and analysis; it does not reload this standalone binary. Restart the binary
 through the build/run command.
+
+## Live code update (first increment)
+
+Open **Debug → Live code update**, or launch with `--live-update`. Pause to save
+an in-process checkpoint, review a replacement binary and optional PC/HL/memory-word
+edits, then apply while retaining the machine's remaining state. Applying stays
+paused. **Restore checkpoint** recovers the previous code, CPU, memory and machine
+state. A failed rollback blocks execution until restoration succeeds.
+
+The [worked example](../../examples/live-patching/README.md) changes code size and
+updates a saved return address without changing SP. Symbol-based suggestions,
+editor attachment, data migration and durable save/reopen remain pending. The
+panel replaces the complete selected range and starts a new symbol project for
+that binary; the checkpoint retains the previous project. It does not silently
+move old symbols or infer which live data to preserve inside the selected range.
+
+Only the latest checkpoint is retained and it is lost on process exit. Restore
+begins a new transient observation epoch; old execution history is not restored.
+Physical Spectrum keyboard input is resampled when execution resumes, rather
+than changing the paused checkpoint on every UI refresh.
 
 ## What It Shows
 

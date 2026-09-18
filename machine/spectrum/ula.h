@@ -47,6 +47,7 @@ public:
     struct BeeperEdge {
         uint64_t cycle;
         uint8_t level;
+        bool operator==(const BeeperEdge&) const = default;
     };
 
     // -- Wiring (set once, after the CPU exists) -----------------------------
@@ -210,19 +211,63 @@ private:
     static constexpr uint16_t kScreenEnd   = 0x5AFF;
 
     struct BorderEvent {
+        bool operator==(const BorderEvent&) const = default;
         uint32_t tstate;   ///< Frame-relative T-state of the change.
         uint8_t colour;    ///< Border colour 0..7.
     };
 
     struct ScreenWrite {
+        bool operator==(const ScreenWrite&) const = default;
         uint32_t tstate;   ///< Frame-relative T-state of the write.
         uint8_t value;     ///< Byte written.
     };
     struct ScreenCell {
+        bool operator==(const ScreenCell&) const = default;
         uint8_t initial = 0;              ///< Value at frame start (old of the first write).
         std::vector<ScreenWrite> writes;  ///< This frame's writes, in time order.
     };
 
+public:
+    class Snapshot {
+        friend class Ula;
+        std::vector<BorderEvent> border_events_;
+        std::unordered_map<uint16_t, ScreenCell> screen_writes_;
+        std::vector<BeeperEdge> beeper_edges_;
+        std::array<uint8_t, video::kFrameHeight> border_per_line_;
+        uint8_t current_border_;
+        uint8_t beeper_level_;
+        std::array<uint8_t, 8> key_rows_;
+        uint64_t frame_start_;
+        uint64_t frame_counter_;
+        explicit Snapshot(const Ula& device)
+            : border_events_(device.border_events_),
+              screen_writes_(device.screen_writes_),
+              beeper_edges_(device.beeper_edges_),
+              border_per_line_(device.border_per_line_),
+              current_border_(device.current_border_),
+              beeper_level_(device.beeper_level_),
+              key_rows_(device.key_rows_),
+              frame_start_(device.frame_start_),
+              frame_counter_(device.frame_counter_) {}
+    public:
+        bool operator==(const Snapshot&) const = default;
+    };
+    [[nodiscard]] Snapshot CaptureState() const { return Snapshot(*this); }
+    // Copy the argument before mutation; swapping does not allocate.
+    void RestoreState(Snapshot state) noexcept {
+        using std::swap;
+        swap(border_events_, state.border_events_);
+        swap(screen_writes_, state.screen_writes_);
+        swap(beeper_edges_, state.beeper_edges_);
+        swap(border_per_line_, state.border_per_line_);
+        swap(current_border_, state.current_border_);
+        swap(beeper_level_, state.beeper_level_);
+        swap(key_rows_, state.key_rows_);
+        swap(frame_start_, state.frame_start_);
+        swap(frame_counter_, state.frame_counter_);
+    }
+
+private:
     [[nodiscard]] uint32_t frame_tstate() const {
         if (!clock_) return 0;
         const uint64_t now = clock_();

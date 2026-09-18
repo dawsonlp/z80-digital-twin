@@ -118,6 +118,7 @@ bool DebugSession::BreakpointStopsAt(uint16_t pc) const {
 }
 
 StepResult DebugSession::StepInstruction(uint32_t stage_budget) {
+    if (recovery_required_) return {StopReason::RecoveryRequired, 0, cpu_.PC()};
     if (stage_budget == 0) return {StopReason::IncompleteInstruction, 0, cpu_.PC()};
     const uint64_t before = cpu_.GetCycleCount();
     PrepareExecution();
@@ -150,6 +151,7 @@ StepResult DebugSession::StepInstruction(uint32_t stage_budget) {
 }
 
 StepResult DebugSession::StepOver() {
+    if (recovery_required_) return {StopReason::RecoveryRequired, 0, cpu_.PC()};
     if (instruction_pending_) return StepInstruction();
     const uint64_t before = cpu_.GetCycleCount();
     PrepareExecution();
@@ -195,6 +197,7 @@ StepResult DebugSession::StepOver() {
 }
 
 StepResult DebugSession::RunSlice(uint64_t max_instructions) {
+    if (recovery_required_) return {StopReason::RecoveryRequired, 0, cpu_.PC()};
     if (state_ != RunState::Running) {
         state_ = RunState::Running;
     }
@@ -260,6 +263,7 @@ StepResult DebugSession::RunSlice(uint64_t max_instructions) {
 }
 
 StepResult DebugSession::RunForTStates(uint64_t tstate_budget) {
+    if (recovery_required_) return {StopReason::RecoveryRequired, 0, cpu_.PC()};
     if (state_ != RunState::Running) {
         state_ = RunState::Running;
     }
@@ -332,6 +336,18 @@ void DebugSession::ResetCpu() {
     instruction_pending_ = false;
     cpu_.GetMemory().EndInstructionCapture();
     smc_break_pending_ = false;
+}
+
+void DebugSession::AfterHostMutation(bool restored) {
+    if (restored) recovery_required_ = false;
+    state_ = cpu_.IsHalted() ? RunState::Halted : RunState::Paused;
+    watch_hit_.reset();
+    skip_breakpoint_once_.reset();
+    smc_break_pending_ = false;
+    if (restored) {
+        ClearAnalysis();
+        dirty_.clear();
+    }
 }
 
 bool DebugSession::ClearAnalysis() {

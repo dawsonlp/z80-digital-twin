@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <span>
 #include <vector>
+#include <utility>
 
 namespace z80::machine::spectrum {
 
@@ -232,6 +233,43 @@ public:
         }
         if (cursor_index_ >= pulses_.size()) return true;   // tape ended
         return initial_level_ ^ ((cursor_index_ & 1u) != 0);
+    }
+
+public:
+    class Snapshot {
+        friend class Tape;
+        std::vector<uint32_t> pulses_;
+        uint64_t total_;
+        std::size_t blocks_;
+        bool initial_level_;
+        bool playing_;
+        uint64_t start_cycle_;
+        std::size_t cursor_index_;
+        uint64_t cursor_tstate_;
+        explicit Snapshot(const Tape& device)
+            : pulses_(device.pulses_),
+              total_(device.total_),
+              blocks_(device.blocks_),
+              initial_level_(device.initial_level_),
+              playing_(device.playing_),
+              start_cycle_(device.start_cycle_),
+              cursor_index_(device.cursor_index_),
+              cursor_tstate_(device.cursor_tstate_) {}
+    public:
+        bool operator==(const Snapshot&) const = default;
+    };
+    [[nodiscard]] Snapshot CaptureState() const { return Snapshot(*this); }
+    // Copy the argument before mutation; swapping does not allocate.
+    void RestoreState(Snapshot state) noexcept {
+        using std::swap;
+        swap(pulses_, state.pulses_);
+        swap(total_, state.total_);
+        swap(blocks_, state.blocks_);
+        swap(initial_level_, state.initial_level_);
+        swap(playing_, state.playing_);
+        swap(start_cycle_, state.start_cycle_);
+        swap(cursor_index_, state.cursor_index_);
+        swap(cursor_tstate_, state.cursor_tstate_);
     }
 
 private:

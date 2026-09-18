@@ -166,6 +166,29 @@ public:
         }
     }
 
+    // Device state only; CPU and memory are captured by the session controller.
+    struct DeviceSnapshot {
+        Ula::Snapshot ula;
+        Tape::Snapshot tape;
+        bool frame_active;
+        uint64_t frame_deadline;
+        std::array<uint8_t, video::kFramePixels> completed_frame;
+        bool has_completed_frame;
+        bool operator==(const DeviceSnapshot&) const = default;
+    };
+    [[nodiscard]] DeviceSnapshot CaptureDevices() const {
+        return {ula_.CaptureState(), tape_.CaptureState(), frame_active_, frame_deadline_,
+                completed_frame_, has_completed_frame_};
+    }
+    // All allocation/copying occurs before entry. Live wiring is retained.
+    void RestoreDevices(DeviceSnapshot state) noexcept {
+        ula_.RestoreState(std::move(state.ula));
+        tape_.RestoreState(std::move(state.tape));
+        frame_active_ = state.frame_active; frame_deadline_ = state.frame_deadline;
+        completed_frame_ = state.completed_frame;
+        has_completed_frame_ = state.has_completed_frame;
+    }
+
     // -- Tape ----------------------------------------------------------------
     bool load_tape(std::span<const uint8_t> image) { return tape_.load(image); }
     void play_tape() { tape_.play(cpu_.GetCycleCount()); }

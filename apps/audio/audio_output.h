@@ -31,6 +31,9 @@ public:
     /// @brief Queue mono S16 samples for playback (drops if the buffer is full).
     void push(std::span<const int16_t> samples);
 
+    /// Discard sound queued on an abandoned execution branch.
+    bool clear();
+
     [[nodiscard]] bool active() const noexcept;
     [[nodiscard]] uint32_t sample_rate() const noexcept;
 

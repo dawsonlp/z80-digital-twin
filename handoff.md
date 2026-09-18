@@ -1,5 +1,30 @@
 # Current development handoff
 
+## Active work: live disassembly and patching, 17 September 2026
+
+Branch `feature/live-disassembly-patching` starts at `c4be116`; the first
+checkpoint/patch increment is recorded on this branch. The user approved implementation after reviewing the
+[design](docs/developers/live-disassembly-patching-design.md). Track progress in
+the [checklist](docs/developers/live-disassembly-patching-checklist.md).
+
+The first increment adds explicit CPU/memory/Spectrum snapshots, a UI-free
+paused patch controller, and a native **Live code update** panel. It supports
+changed-size binaries, selected PC/HL/word edits, retaining all other machine
+state, restoration, stale-review rejection and a recovery lock after failed
+rollback. The checkpoint is in-process only. No symbol relocation is automatic.
+The [worked example](examples/live-patching/README.md) and real-Pasmo/core tests
+exercise a moved return continuation. Full Debug/UI build and 47 CTest tests passed; two optional ZEX suites skipped.
+Native rendering is verified; button-level interaction is pending because the
+computer-use service timed out after unlock.
+
+Next work: complete native panel acceptance, then session attachment/coherent
+export and stable symbol/continuation correspondence. Preserve the single
+execution owner and optional user-approved state adjustments. Do not narrow the
+product to fixed-layout patches. Previous analysis findings below remain useful;
+the earlier product sequencing is superseded by this requested developer loop.
+
+## Prior analysis baseline
+
 **Reviewed:** 16 September 2026, after the evening analysis work.
 **Active branch:** `feature/deterministic-execution-analysis`.
 **Implementation checkpoint:** `3ff0629` (committed and pushed).
@@ -149,7 +174,8 @@ remaining native interactions are still tracked by the
 [address-metadata checklist](docs/developers/address-metadata-checklist.md).
 
 `Clear analysis` preserves machine state/protection; UI Restart program cold-boots
-Spectrum and clears RAM/analysis. Reload standalone programs through the existing
-fresh-process build/run workflow. Live reload is not delivered. Preserve user work
+Spectrum and clears RAM/analysis. The existing
+build/run command still launches a fresh process. Manual paused replacement is
+now available through Live code update; automatic editor-driven reload remains pending. Preserve user work
 in `examples/spectrum-dev/main.asm`; tests use their own fixtures. ROMs, tapes,
 generated listings, tool binaries and temporary experiment outputs remain local.

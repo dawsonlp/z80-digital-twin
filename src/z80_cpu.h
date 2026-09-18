@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <vector>
 #include <array>
+#include <optional>
 
 #include "memory/fast_memory.h"
 #include "io/open_bus_io.h"
@@ -44,6 +45,20 @@ enum class CPUState : uint8_t {
     FD_PREFIX = 4,     ///< FD prefix active - IY register mode
     DD_CB_PREFIX = 5,  ///< DD CB prefix sequence - IX bit operations with displacement
     FD_CB_PREFIX = 6   ///< FD CB prefix sequence - IY bit operations with displacement
+};
+
+// Execution state only: no memory, policy objects, callbacks or dispatch tables.
+// Captured/restored only between complete instructions. This is an in-process
+// API, not a portable checkpoint file format.
+struct CpuSnapshot {
+    uint64_t cycles = 0;
+    uint16_t pc = 0, sp = 0;
+    uint16_t af = 0, bc = 0, de = 0, hl = 0;
+    uint16_t alt_af = 0, alt_bc = 0, alt_de = 0, alt_hl = 0;
+    uint16_t ix = 0, iy = 0, ir = 0, wz = 0;
+    bool iff1 = false, iff2 = false, ei_defer = false, halted = false;
+    uint8_t interrupt_mode = 0;
+    bool operator==(const CpuSnapshot&) const = default;
 };
 
 enum class InstructionStop { Complete, Halted, BudgetExhausted };
@@ -178,6 +193,27 @@ public:
     ///          completes. A debugger calls Step() until this returns true to
     ///          advance exactly one whole instruction.
     bool InstructionComplete() const { return current_state == CPUState::NORMAL; }
+
+    [[nodiscard]] std::optional<CpuSnapshot> CaptureState() const noexcept {
+        if (!InstructionComplete()) return std::nullopt;
+        return CpuSnapshot{t_cycle, _PC, _SP, _AF.r16, _BC.r16, _DE.r16, _HL.r16,
+            _AF1.r16, _BC1.r16, _DE1.r16, _HL1.r16, _IX.r16, _IY.r16, _IR.r16, _WZ.r16,
+            _IFF1, _IFF2, ei_defer_, _halted, _interrupt_mode};
+    }
+
+    // Reject before mutation; restoring never resets memory, I/O or timing.
+    [[nodiscard]] bool RestoreState(const CpuSnapshot& state) noexcept {
+        if (!InstructionComplete() || state.interrupt_mode > 2) return false;
+        t_cycle = state.cycles; _PC = state.pc; _SP = state.sp;
+        _AF.r16 = state.af; _BC.r16 = state.bc; _DE.r16 = state.de; _HL.r16 = state.hl;
+        _AF1.r16 = state.alt_af; _BC1.r16 = state.alt_bc;
+        _DE1.r16 = state.alt_de; _HL1.r16 = state.alt_hl;
+        _IX.r16 = state.ix; _IY.r16 = state.iy; _IR.r16 = state.ir; _WZ.r16 = state.wz;
+        _IFF1 = state.iff1; _IFF2 = state.iff2; ei_defer_ = state.ei_defer;
+        _halted = state.halted; _interrupt_mode = state.interrupt_mode;
+        current_displacement = 0;
+        return true;
+    }
 
     /// @brief Current interrupt mode (0, 1, or 2).
     uint8_t InterruptMode() const { return _interrupt_mode; }

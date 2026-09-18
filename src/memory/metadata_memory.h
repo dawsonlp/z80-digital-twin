@@ -16,6 +16,16 @@ namespace z80 {
 class MetadataMemory {
 public:
     static constexpr std::size_t SIZE = ObservableMemory::SIZE;
+    using Snapshot = ObservableMemory::Snapshot;
+    [[nodiscard]] Snapshot CaptureState() const noexcept { return memory_.CaptureState(); }
+    // Revisions stay monotonic: restored bytes invalidate stale observations.
+    // The owning debugger starts a new analysis epoch after restoration.
+    void RestoreState(const Snapshot& state) noexcept {
+        for (uint32_t address = 0; address < SIZE; ++address)
+            Revise(static_cast<uint16_t>(address), state.bytes[address]);
+        memory_.RestoreState(state);
+    }
+
     static constexpr std::size_t kCaptureLimit = 256;
     struct InstructionRead { uint16_t address; uint8_t value; uint64_t revision; uint64_t changes; };
 

@@ -85,6 +85,13 @@ void AudioOutput::push(std::span<const int16_t> samples) {
 }
 
 bool AudioOutput::active() const noexcept { return impl_ && impl_->device_ok; }
+bool AudioOutput::clear() {
+    if (!impl_->rb_ok) return true;
+    // The callback is the ring's consumer. Stop it before resetting both ends.
+    if (impl_->device_ok && ma_device_stop(&impl_->device) != MA_SUCCESS) return false;
+    ma_pcm_rb_reset(&impl_->rb);
+    return !impl_->device_ok || ma_device_start(&impl_->device) == MA_SUCCESS;
+}
 uint32_t AudioOutput::sample_rate() const noexcept { return impl_ ? impl_->rate : 0; }
 
 } // namespace z80::audio

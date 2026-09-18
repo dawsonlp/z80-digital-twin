@@ -86,6 +86,7 @@ add_library(z80_debugger_core STATIC
     debugger/analysis/analysis_workspace.cpp
     debugger/analysis/analysis_export.cpp
     debugger/exec/debug_session.cpp
+    debugger/exec/live_patch.cpp
     debugger/exec/debug_session.h
     debugger/exec/instruction_history.h
     debugger/disasm/address_listing.h
@@ -228,6 +229,10 @@ target_link_libraries(spectrum_boot_test PRIVATE z80_machine)
 add_executable(spectrum_debug_test tests/spectrum_debug_test.cpp)
 target_link_libraries(spectrum_debug_test PRIVATE z80_debugger_core z80_machine)
 
+add_executable(live_patch_test tests/live_patch_test.cpp)
+target_link_libraries(live_patch_test PRIVATE z80_debugger_core z80_machine)
+add_test(NAME live_patch_test COMMAND live_patch_test)
+
 add_executable(spectrum_program_test tests/spectrum_program_test.cpp)
 target_link_libraries(spectrum_program_test PRIVATE z80_debugger_core z80_machine)
 
@@ -250,6 +255,11 @@ target_link_libraries(z80_disassemble PRIVATE z80_debugger_core)
 find_package(Python3 3.9 QUIET COMPONENTS Interpreter)
 find_program(Z80_PASMO_EXECUTABLE NAMES pasmo DOC "Pasmo 0.5.5 executable for assembly verification")
 if(Python3_Interpreter_FOUND)
+    add_test(NAME live_patch_workflow
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/live_patch_workflow_test.py
+            --pasmo ${Z80_PASMO_EXECUTABLE} --runner $<TARGET_FILE:live_patch_test>
+            --disassemble $<TARGET_FILE:z80_disassemble>)
+    set_tests_properties(live_patch_workflow PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
     add_test(NAME analysis_workflow
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/analysis_workflow_test.py
             --analyze $<TARGET_FILE:z80_analyze> --disassemble $<TARGET_FILE:z80_disassemble>
@@ -440,6 +450,7 @@ if(Z80_BUILD_UI)
 
     # --- The debugger application -------------------------------------------
     add_executable(z80_debugger
+        debugger/ui/live_patch_ui.cpp
         debugger/main.cpp
         debugger/ui/debugger_app.cpp
         debugger/ui/debugger_app.h

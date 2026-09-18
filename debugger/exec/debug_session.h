@@ -52,6 +52,7 @@ enum class RunState {
 
 /// @brief Why the most recent execution action stopped.
 enum class StopReason {
+    RecoveryRequired, ///< Failed host rollback; restore a checkpoint before execution.
     StepComplete,      ///< A single-instruction step finished.
     Breakpoint,        ///< Execution paused at an enabled breakpoint.
     Watchpoint,        ///< A watched memory address was written.
@@ -141,7 +142,7 @@ public:
     StepResult StepOver();
 
     /// @brief Mark the session running so RunSlice() will execute.
-    void Run() noexcept { if (state_ != RunState::Halted) state_ = RunState::Running; }
+    void Run() noexcept { if (!recovery_required_ && state_ != RunState::Halted) state_ = RunState::Running; }
 
     /// @brief Stop free-running. Safe to call between slices.
     void Pause() noexcept { if (state_ != RunState::Halted) state_ = RunState::Paused; }
@@ -168,6 +169,31 @@ public:
     void Reset();
     void ResetCpu();
     bool ClearAnalysis(); // false while an instruction is incomplete
+
+    [[nodiscard]] bool AtInstructionBoundary() const noexcept {
+        return !instruction_pending_ && cpu_.InstructionComplete();
+    }
+    // Host transactions retain breakpoints/watchpoints, discard transient stop
+    // bookkeeping, and never reset CPU or machine time. Restore starts a new
+    // analysis epoch; a patch keeps historical observations (byte revisions
+    // identify those that no longer apply).
+    void AfterHostMutation(bool restored);
+    void RequireRecovery() noexcept { recovery_required_ = true; state_ = RunState::Paused; }
+    [[nodiscard]] bool RecoveryRequired() const noexcept { return recovery_required_; }
+
+    struct ControlSnapshot {
+        std::unordered_map<uint16_t, Breakpoint> breakpoints;
+        std::unordered_set<uint16_t> watchpoints;
+        bool break_on_smc;
+    };
+    [[nodiscard]] ControlSnapshot CaptureControls() const {
+        return {breakpoints_, watchpoints_, break_on_smc_};
+    }
+    void RestoreControls(ControlSnapshot state) noexcept {
+        breakpoints_.swap(state.breakpoints);
+        watchpoints_.swap(state.watchpoints);
+        break_on_smc_ = state.break_on_smc;
+    }
 
     // -- Breakpoints ---------------------------------------------------------
 
@@ -263,6 +289,7 @@ private:
     void OnBlockedWrite(uint16_t address, uint8_t current_value, uint8_t attempted_value);
 
     std::function<void()> prepare_execution_, advance_execution_;
+    bool recovery_required_ = false;
     bool instruction_pending_ = false;
     uint32_t pending_decoded_length_ = 0;
     uint64_t instruction_start_cycle_ = 0;

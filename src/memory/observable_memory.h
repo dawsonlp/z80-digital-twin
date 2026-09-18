@@ -30,6 +30,22 @@ class ObservableMemory {
 public:
     static constexpr std::size_t SIZE = 65536;
 
+    struct Snapshot {
+        std::array<uint8_t, SIZE> bytes{};
+        bool protected_range = false;
+        uint16_t protect_lo = 0, protect_hi = 0;
+        bool operator==(const Snapshot&) const = default;
+    };
+    [[nodiscard]] Snapshot CaptureState() const noexcept {
+        return {data_, protect_enabled_, protect_lo_, protect_hi_};
+    }
+    // Restore storage only. Observer registrations retain their live ownership.
+    void RestoreState(const Snapshot& state) noexcept {
+        data_ = state.bytes;
+        protect_enabled_ = state.protected_range;
+        protect_lo_ = state.protect_lo; protect_hi_ = state.protect_hi;
+    }
+
     /// @brief Called on every committed write, with the byte before and after.
     using WriteObserver = std::function<void(uint16_t address,
                                              uint8_t old_value,

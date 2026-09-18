@@ -13,6 +13,7 @@
 #define Z80_DBG_DEBUGGER_APP_H
 
 #include "debug_session.h"
+#include "live_patch.h"
 #include "disassembler.h"
 #include "symbol_table.h"
 #include "ui_context.h"
@@ -61,6 +62,7 @@ public:
                              const machine::spectrum::ProgramLaunch& launch,
                              const std::string& symbols = {});
     void StartRunning();
+    void ShowLivePatch() noexcept { show_live_patch_ = true; }
 
     /// @brief Load a `.tap` for the Spectrum (press F5 in the window to play).
     bool LoadTape(const std::string& path);
@@ -86,6 +88,9 @@ public:
 
 private:
     void DrawMenuBar();
+    void DrawLivePatch();
+    void EnsureLivePatch();
+    void ForgetLivePatch();
     void ExecuteCommands();   // applies the commands panels posted last frame
     UiContext MakeContext();  // fresh per-frame context for the panels
 
@@ -101,6 +106,17 @@ private:
     std::unique_ptr<machine::spectrum::DebugSpectrumMachine> spectrum_;
     std::unique_ptr<DebugSession> session_ = std::make_unique<DebugSession>(*generic_cpu_);
     analysis::Workspace analysis_;
+    std::unique_ptr<LivePatch> live_patch_;
+    std::optional<LivePatch::Plan> patch_plan_;
+    std::optional<analysis::Workspace> patch_analysis_;
+    bool show_live_patch_ = false;
+    std::string patch_path_;
+    std::string patch_hash_;
+    uint16_t patch_origin_ = 0x8000;
+    bool patch_pc_enabled_ = false, patch_hl_enabled_ = false;
+    uint16_t patch_pc_ = 0x8000, patch_hl_ = 0;
+    bool patch_stack_enabled_ = false;
+    uint16_t patch_stack_address_ = 0, patch_stack_value_ = 0;
     Disassembler disasm_;
 
     GLFWwindow* window_ = nullptr;

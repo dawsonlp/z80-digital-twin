@@ -5,6 +5,7 @@
 //
 
 #include "debugger_app.h"
+#include "content_hash.h"
 
 #include "panels/control_panel.h"
 #include "panels/registers_panel.h"
@@ -40,6 +41,7 @@ namespace {
 
 const char* reason_text(StopReason r) {
     switch (r) {
+        case StopReason::RecoveryRequired: return "checkpoint recovery required";
         case StopReason::StepComplete:    return "step complete";
         case StopReason::Breakpoint:      return "breakpoint";
         case StopReason::Watchpoint:      return "watchpoint";
@@ -80,6 +82,7 @@ bool DebuggerApp::LoadProgramFile(const std::string& path, uint16_t start_addres
     std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)),
                                std::istreambuf_iterator<char>());
     if (auto result = analysis_.Initialize(bytes, start_address); !result) { status_ = result.error().message; return false; }
+    ForgetLivePatch();
     session_->Cpu().Reset();
     session_->Cpu().LoadProgram(bytes, start_address);
     session_->ClearDirty();   // program load isn't a "change" to highlight
@@ -103,6 +106,7 @@ bool DebuggerApp::OpenAnalysisFile(const std::string& path) {
 }
 
 void DebuggerApp::LoadDemo() {
+    ForgetLivePatch();
     // GCD by repeated subtraction; result stored to RESULT (0x9000) then HALT.
     const std::vector<uint8_t> program = {
         0x7A,             // 0x0000 LD A, D
@@ -134,6 +138,7 @@ void DebuggerApp::LoadDemo() {
 }
 
 void DebuggerApp::LoadSmcDemo() {
+    ForgetLivePatch();
     // Self-incrementing operand loop — modifies its own LD A,n operand each pass.
     //   0x0000 3E 00     LD A, 0x00      (operand at 0x0001 is rewritten)
     //   0x0002 21 01 00  LD HL, 0x0001
@@ -172,6 +177,7 @@ bool DebuggerApp::LoadSpectrumRom(const std::string& path) {
 }
 
 void DebuggerApp::ConfigureSpectrumRom(const std::vector<uint8_t>& rom) {
+    ForgetLivePatch();
     if (!spectrum_) {
         session_.reset();
         spectrum_ = std::make_unique<machine::spectrum::DebugSpectrumMachine>();
@@ -296,7 +302,8 @@ void DebuggerApp::DriveSpectrumFrame() {
     while (spectrum_->frame_count() == frame) {
         const StepResult r = session_->RunSlice(1);
         if (r.reason == StopReason::Breakpoint || r.reason == StopReason::Watchpoint ||
-            r.reason == StopReason::SelfModified || r.reason == StopReason::IncompleteInstruction) {
+            r.reason == StopReason::SelfModified || r.reason == StopReason::IncompleteInstruction ||
+            r.reason == StopReason::RecoveryRequired) {
             spectrum_running_ = false;
             status_ = std::format("Spectrum stopped: {} @ 0x{:04X}", reason_text(r.reason), r.pc);
             break;
@@ -308,7 +315,8 @@ void DebuggerApp::DriveSpectrumFrame() {
 }
 
 void DebuggerApp::PollSpectrumKeyboard() {
-    if (!spectrum_mode_ || ImGui::GetIO().WantCaptureKeyboard) return;
+    if (!spectrum_mode_ || ImGui::GetIO().WantCaptureKeyboard ||
+        (!spectrum_running_ && !commands_.step && !commands_.step_over && !commands_.run)) return;
     namespace kb = machine::spectrum::keyboard;
 
     spectrum_->ula().release_all_keys();
@@ -329,7 +337,7 @@ void DebuggerApp::RunInstructions(uint64_t count) {
     for (uint64_t i = 0; i < count; ++i) {
         const StepResult r = session_->StepInstruction();
         if (r.reason == StopReason::Halted || r.reason == StopReason::AlreadyHalted ||
-            r.reason == StopReason::IncompleteInstruction) break;
+            r.reason == StopReason::IncompleteInstruction || r.reason == StopReason::RecoveryRequired) break;
     }
 }
 
@@ -433,6 +441,10 @@ void DebuggerApp::DrawMenuBar() {
         if (ImGui::MenuItem("Quit")) {
             glfwSetWindowShouldClose(window_, GLFW_TRUE);
         }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Debug")) {
+        ImGui::MenuItem("Live code update", nullptr, &show_live_patch_);
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Help")) {
@@ -569,6 +581,7 @@ int DebuggerApp::Run(bool smoke, int smoke_frames, const std::string& shot_path)
         }
         UiContext ctx = MakeContext();
         for (auto& panel : panels_) panel->Draw(ctx);
+        DrawLivePatch();
 
         ImGui::Render();
         int w, h;

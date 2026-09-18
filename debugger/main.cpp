@@ -66,6 +66,7 @@ void print_usage(const char* prog) {
         "  --run N              Run N instructions (or N PAL frames in Spectrum\n"
         "                       mode) at startup — e.g. to populate state for a shot.\n"
         "  --steps N            Step N instructions in any mode, then pause (after --run).\n"
+        "  --live-update        Open the checkpoint and live code update panel.\n"
         "  --shot FILE          Write a PPM screenshot on the final frame.\n"
         "  --smoke              Render a few frames headless and exit (CI smoke test).\n"
         "  -h, --help           Show this help and exit.\n"
@@ -89,6 +90,7 @@ int main(int argc, char** argv) {
     bool writable_rom = false;
     uint16_t org = 0x0000;
     bool smoke = false;
+    bool live_update = false;
     std::string shot_path;
     std::vector<uint16_t> breakpoints;
     std::string demo = "gcd";
@@ -105,6 +107,8 @@ int main(int argc, char** argv) {
             if (arg == "-h" || arg == "--help") {
                 print_usage(argv[0]);
                 return 0;
+            } else if (arg == "--live-update") {
+                live_update = true;
             } else if (arg == "--smoke") {
                 smoke = true;
             } else if (arg == "--shot" && i + 1 < argc) {
@@ -187,6 +191,7 @@ int main(int argc, char** argv) {
         }
         if (step_count > 0) app.RunInstructions(step_count);
         if (start) app.StartRunning();
+        if (live_update) app.ShowLivePatch();
 
         return app.Run(smoke, 5, shot_path);
     } catch (const std::exception& e) {
